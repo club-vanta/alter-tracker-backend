@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.models import PossibleRoles
 
-
 # ── Role ──────────────────────────────────────────────────────────────────────
 
 
@@ -83,7 +82,7 @@ class GuestListResponse(BaseModel):
 class MazmoRsvpEntry(BaseModel):
     """One entry in the event.rsvps dict returned by Mazmo."""
 
-    model_config = ConfigDict(strict=False)  # External API – be lenient
+    model_config = ConfigDict(strict=False)  # External API - be lenient
 
     userId: int
     joinedAt: datetime

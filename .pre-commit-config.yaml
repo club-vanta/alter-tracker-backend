@@ -1,0 +1,37 @@
+# Notes:
+# `language: system` Tells pre-commit to use the system's environment to find the command rather than creating an isolated virtualenv for it.
+# Required here because our tools come from Nix/devenv, not from a pip-managed pre-commit environment.
+
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format --check
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: ruff-lint
+        name: ruff lint
+        entry: ruff check
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: basedpyright
+        name: basedpyright
+        entry: basedpyright
+        language: system
+        types: [python]
+        pass_filenames: false
+
+        # pytest runs on every push instead of every commit
+      - id: pytest
+        name: pytest
+        entry: uv run pytest
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

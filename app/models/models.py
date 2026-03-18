@@ -1,14 +1,14 @@
 from datetime import datetime
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 
 from sqlmodel import Field, Relationship, SQLModel
 
+from app.services.mazmo import MazmoUserId
 
 # ── Python enum (validation only, not stored in Postgres as a type) ───────────
 
 
-class PossibleRoles(str, Enum):
+class PossibleRoles(StrEnum):
     """
     Used for Python/Pydantic validation only.
     The actual role name is stored as a VARCHAR in the `user_roles` table
@@ -29,7 +29,7 @@ class Role(SQLModel, table=True):
     `users.role_id` is a foreign key to this table.
     """
 
-    __tablename__ = "user_roles"
+    __tablename__ = "user_roles"  # type: ignore[assignment]
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, max_length=32)
@@ -50,7 +50,7 @@ class User(SQLModel, table=True):
     `role_id` is a FK to `user_roles`, defaulting to the STAFF row.
     """
 
-    __tablename__ = "staff_users"
+    __tablename__ = "staff_users"  # type: ignore[assignment]
 
     id: int | None = Field(default=None, primary_key=True)
     username: str = Field(unique=True, index=True, max_length=64)
@@ -59,8 +59,8 @@ class User(SQLModel, table=True):
     role_id: int = Field(foreign_key="user_roles.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    # Relationship – loads the full Role object
-    role: Optional[Role] = Relationship(back_populates="users")
+    # Relationship - loads the full Role object
+    role: Role | None = Relationship(back_populates="users")
 
 
 # ── Guest table ───────────────────────────────────────────────────────────────
@@ -80,17 +80,17 @@ class Guest(SQLModel, table=True):
     ordering even under concurrent check-ins from multiple staff phones.
     """
 
-    __tablename__ = "guests"
+    __tablename__ = "guests"  # type: ignore[assignment]
 
-    mazmo_user_id: int = Field(primary_key=True)
+    mazmo_user_id: MazmoUserId = Field(primary_key=True)
     username: str = Field(index=True)
     displayname: str
     rsvp_time: datetime
 
     # ── Door tracker fields (mutated only by check-in endpoint) ──────────────
     has_arrived: bool = Field(default=False, index=True)
-    arrival_time: Optional[datetime] = None
+    arrival_time: datetime | None = None
 
     # Atomic, sequential arrival number. Enforced unique at the DB level.
     # NULL until the guest checks in.
-    arrival_order: Optional[int] = Field(default=None, unique=True)
+    arrival_order: int | None = Field(default=None, unique=True)

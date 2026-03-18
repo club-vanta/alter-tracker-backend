@@ -2,7 +2,7 @@
 Auth router
 
 POST /auth/register  → create a new staff account (unapproved by default)
-POST /auth/token     → OAuth2 password flow – returns a JWT
+POST /auth/token     → OAuth2 password flow - returns a JWT
 GET  /auth/userinfo        → returns the currently logged-in user's profile
 """
 
@@ -19,7 +19,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.models import PossibleRoles, Role, User
-from app.schemas.schemas import StaffRegisterRequest, UserPublic, TokenResponse
+from app.schemas.schemas import StaffRegisterRequest, TokenResponse, UserPublic
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -45,15 +45,18 @@ async def register(
         )
 
     # Look up the STAFF role row — must exist (seeded at startup)
-    staff_role = session.exec(
-        select(Role).where(Role.name == PossibleRoles.STAFF)
-    ).first()
+    staff_role = session.exec(select(Role).where(Role.name == PossibleRoles.STAFF)).first()
     if not staff_role:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Role table not seeded. Contact an administrator.",
         )
 
+    if staff_role.id is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Role row has no ID. This is a data integrity error.",
+        )
     user = User(
         username=body.username,
         hashed_password=get_password_hash(body.password),
@@ -72,7 +75,7 @@ async def register(
 @router.post(
     "/token",
     response_model=TokenResponse,
-    summary="Login – returns a JWT bearer token",
+    summary="Login - returns a JWT bearer token",
 )
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),

@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta, timezone
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import TypedDict
 
 from jose import ExpiredSignatureError, JWTError, jwt
@@ -48,7 +48,7 @@ def create_access_token(
     expires_delta: timedelta | None = None,
 ) -> str:
     to_encode: dict = dict(data)
-    expire = datetime.now(timezone.utc) + (
+    expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
     )
     to_encode["exp"] = expire
@@ -58,9 +58,7 @@ def create_access_token(
 def decode_access_token(token: str) -> JWTPayload | None:
     """Returns the decoded payload or None if the token is invalid/expired."""
     try:
-        payload = jwt.decode(
-            token, settings.secret_key, algorithms=[settings.algorithm]
-        )
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         return JWTPayload(
             sub=payload["sub"],
             role=payload["role"],

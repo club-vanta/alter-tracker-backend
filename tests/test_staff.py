@@ -1,13 +1,11 @@
 """Tests for the /staff router."""
 
 from fastapi import status
-
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from tests.conftest import make_user
 from app.models.models import PossibleRoles
-
+from tests.conftest import make_user
 
 # ── List all staff ────────────────────────────────────────────────────────────
 
@@ -24,9 +22,7 @@ def test_list_all_staff_returns_200_ok_with_all_accounts(
     assert "extra2" in usernames
 
 
-def test_list_all_staff_by_non_admin_returns_403_forbidden(
-    client: TestClient, staff_headers: dict
-):
+def test_list_all_staff_by_non_admin_returns_403_forbidden(client: TestClient, staff_headers: dict):
     resp = client.get("/staff/", headers=staff_headers)
     assert resp.status_code == status.HTTP_403_FORBIDDEN
 
@@ -57,9 +53,7 @@ def test_list_pending_is_empty_when_all_accounts_are_approved(
     assert resp.json() == []
 
 
-def test_list_pending_by_non_admin_returns_403_forbidden(
-    client: TestClient, staff_headers: dict
-):
+def test_list_pending_by_non_admin_returns_403_forbidden(client: TestClient, staff_headers: dict):
     resp = client.get("/staff/pending", headers=staff_headers)
     assert resp.status_code == status.HTTP_403_FORBIDDEN
 
@@ -103,9 +97,7 @@ def test_admin_revoking_own_approval_returns_400_bad_request(
     assert "cannot revoke" in resp.json()["detail"].lower()
 
 
-def test_approving_nonexistent_user_returns_404_not_found(
-    client: TestClient, admin_headers: dict
-):
+def test_approving_nonexistent_user_returns_404_not_found(client: TestClient, admin_headers: dict):
     resp = client.patch(
         "/staff/99999/approve",
         json={"is_approved": True},
@@ -125,9 +117,7 @@ def test_approving_user_by_non_admin_returns_403_forbidden(
     assert resp.status_code == status.HTTP_403_FORBIDDEN
 
 
-def test_approving_user_without_token_returns_401_unauthorized(
-    client: TestClient, pending_user
-):
+def test_approving_user_without_token_returns_401_unauthorized(client: TestClient, pending_user):
     resp = client.patch(
         f"/staff/{pending_user.id}/approve",
         json={"is_approved": True},
@@ -216,9 +206,7 @@ def test_admin_deleting_own_account_returns_400_bad_request(
     assert "cannot delete" in resp.json()["detail"].lower()
 
 
-def test_deleting_nonexistent_user_returns_404_not_found(
-    client: TestClient, admin_headers: dict
-):
+def test_deleting_nonexistent_user_returns_404_not_found(client: TestClient, admin_headers: dict):
     resp = client.delete("/staff/99999", headers=admin_headers)
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
@@ -230,8 +218,6 @@ def test_deleting_user_by_non_admin_returns_403_forbidden(
     assert resp.status_code == status.HTTP_403_FORBIDDEN
 
 
-def test_deleting_user_without_token_returns_401_unauthorized(
-    client: TestClient, pending_user
-):
+def test_deleting_user_without_token_returns_401_unauthorized(client: TestClient, pending_user):
     resp = client.delete(f"/staff/{pending_user.id}")
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED

@@ -1,5 +1,5 @@
 """
-Sync service – orchestrates the full guest list refresh.
+Sync service - orchestrates the full guest list refresh.
 
 Kept separate from the router so the logic can be unit-tested or called from
 a scheduled job in the future without going through HTTP.
@@ -10,7 +10,7 @@ We use a raw SQLAlchemy Core INSERT ... ON CONFLICT (mazmo_user_id) DO NOTHING.
 This is intentional:
   - DO NOTHING (not DO UPDATE) means existing rows are NEVER touched.
   - has_arrived / arrival_time / arrival_order are therefore immutable from
-    the sync side – only the check-in endpoint may set them.
+    the sync side - only the check-in endpoint may set them.
   - The `inserted` count comes from the rowcount of the INSERT statement;
     rows that were skipped due to conflict report rowcount=0 per PG spec.
 """
@@ -41,7 +41,7 @@ async def sync_guests(session: Session, settings: Settings) -> SyncResponse:
         )
 
     if not rsvps:
-        log.warning("Mazmo returned zero RSVPs – nothing to sync.")
+        log.warning("Mazmo returned zero RSVPs - nothing to sync.")
         total = session.exec(select(func.count()).select_from(Guest)).one()
         return SyncResponse(inserted=0, skipped=0, total_in_db=total)
 
@@ -51,7 +51,7 @@ async def sync_guests(session: Session, settings: Settings) -> SyncResponse:
     for user_id, rsvp in rsvps.items():
         user = user_details.get(user_id)
         if user is None:
-            log.warning("No user detail found for mazmo_user_id=%d – skipping", user_id)
+            log.warning("No user detail found for mazmo_user_id=%d - skipping", user_id)
             continue
 
         guests_to_insert.append(
@@ -64,7 +64,7 @@ async def sync_guests(session: Session, settings: Settings) -> SyncResponse:
         )
 
     if not guests_to_insert:
-        log.warning("All RSVPs lacked user detail – nothing inserted.")
+        log.warning("All RSVPs lacked user detail - nothing inserted.")
         total = session.exec(select(func.count()).select_from(Guest)).one()
         return SyncResponse(inserted=0, skipped=len(rsvps), total_in_db=total)
 
@@ -76,11 +76,7 @@ async def sync_guests(session: Session, settings: Settings) -> SyncResponse:
     ]
     count_before: int = session.exec(select(func.count()).select_from(Guest)).one()
 
-    stmt = (
-        pg_insert(Guest)
-        .values(rows)
-        .on_conflict_do_nothing(index_elements=["mazmo_user_id"])
-    )
+    stmt = pg_insert(Guest).values(rows).on_conflict_do_nothing(index_elements=["mazmo_user_id"])
     session.exec(stmt)  # type: ignore[arg-type]
     session.commit()
 
@@ -90,7 +86,7 @@ async def sync_guests(session: Session, settings: Settings) -> SyncResponse:
     skipped: int = attempted - inserted
 
     log.info(
-        "Sync complete – attempted=%d, inserted=%d, skipped=%d, total_in_db=%d",
+        "Sync complete - attempted=%d, inserted=%d, skipped=%d, total_in_db=%d",
         attempted,
         inserted,
         skipped,

@@ -6,7 +6,7 @@ All methods are async and use a shared httpx.AsyncClient.
 
 Two-step fetch flow
 ───────────────────
-Step 1 – Thread endpoint
+Step 1 - Thread endpoint
   GET /communities/{community_slug}/threads/{thread_slug}-{thread_id}
   Response shape (we only care about the `event.rsvps` field):
   {
@@ -19,7 +19,7 @@ Step 1 – Thread endpoint
     }
   }
 
-Step 2 – Users endpoint (batched to avoid URL length limits)
+Step 2 - Users endpoint (batched to avoid URL length limits)
   GET /users?ids=195749,153151,...
   Response shape:
   {
@@ -138,7 +138,7 @@ class MazmoClient:
             raw_rsvps: dict[str, RawRsvpEntry] = body["event"]["rsvps"]
         except (KeyError, TypeError) as exc:
             raise ValueError(
-                f"Unexpected Mazmo thread response shape – could not find "
+                f"Unexpected Mazmo thread response shape - could not find "
                 f"event.rsvps. Keys found: {list(response.json().keys())}"
             ) from exc
 
@@ -152,9 +152,7 @@ class MazmoClient:
 
     # ── Step 2: User details (batched) ────────────────────────────────────────
 
-    async def fetch_users(
-        self, user_ids: list[MazmoUserId]
-    ) -> dict[MazmoUserId, MazmoUserEntry]:
+    async def fetch_users(self, user_ids: list[MazmoUserId]) -> dict[MazmoUserId, MazmoUserEntry]:
         """
         Returns a mapping of  MazmoUserId → MazmoUserEntry  for every ID
         provided. IDs are sent in batches to avoid URL length limits.

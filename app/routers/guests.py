@@ -9,7 +9,7 @@ POST /api/guests/{id}/checkin  → mark a guest as arrived                   [Ph
 import logging
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 
 from app.core.config import Settings, get_settings
@@ -51,20 +51,21 @@ async def sync(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Mazmo API returned an error: {exc}",
-        )
+        ) from exc
+
     except httpx.RequestError as exc:
         log.error("Mazmo network error during sync: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail=f"Could not reach Mazmo API: {exc}",
-        )
+        ) from exc
+
     except ValueError as exc:
-        # Unexpected response shape from Mazmo
         log.error("Mazmo response parse error: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
-        )
+        ) from exc
 
 
 # ── Guest list + check-in (Phase 4 placeholders) ─────────────────────────────

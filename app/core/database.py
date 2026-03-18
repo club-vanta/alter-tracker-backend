@@ -1,6 +1,8 @@
-from sqlmodel import SQLModel, create_engine, Session
+from collections.abc import Generator
+
+from sqlmodel import Session, create_engine
+
 from app.core.config import get_settings
-from typing import Generator
 
 settings = get_settings()
 
@@ -16,7 +18,7 @@ engine = create_engine(
 )
 
 
-def get_session() -> Generator[Session, None, None]:
+def get_session() -> Generator[Session]:
     """FastAPI dependency that provides a database session per request."""
     with Session(engine) as session:
         yield session

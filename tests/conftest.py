@@ -13,10 +13,11 @@ Architecture
 - `client` is a synchronous TestClient (no async needed in tests).
 """
 
+from datetime import UTC
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel
 
 from app.core.config import get_settings
@@ -78,14 +79,10 @@ def setup_test_database():
     # Seed roles and arrival_order sequence
     with test_engine.connect() as conn:
         conn.execute(
-            text(
-                "INSERT INTO user_roles (name) VALUES ('STAFF'), ('ADMIN') ON CONFLICT DO NOTHING"
-            )
+            text("INSERT INTO user_roles (name) VALUES ('STAFF'), ('ADMIN') ON CONFLICT DO NOTHING")
         )
         conn.execute(
-            text(
-                "CREATE SEQUENCE IF NOT EXISTS arrival_order_seq START 1 INCREMENT 1 NO CYCLE"
-            )
+            text("CREATE SEQUENCE IF NOT EXISTS arrival_order_seq START 1 INCREMENT 1 NO CYCLE")
         )
         conn.commit()
 
@@ -183,13 +180,13 @@ def make_guest(
     has_arrived: bool = False,
 ) -> Guest:
     """Helper to create a Guest directly in the test session."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     guest = Guest(
         mazmo_user_id=mazmo_user_id,
         username=username,
         displayname=displayname,
-        rsvp_time=datetime.now(timezone.utc),
+        rsvp_time=datetime.now(UTC),
         has_arrived=has_arrived,
     )
     session.add(guest)
@@ -224,9 +221,7 @@ def staff_user(session: Session) -> User:
 
 @pytest.fixture()
 def pending_user(session: Session) -> User:
-    return make_user(
-        session, username="pending", is_approved=False, role=PossibleRoles.STAFF
-    )
+    return make_user(session, username="pending", is_approved=False, role=PossibleRoles.STAFF)
 
 
 @pytest.fixture()

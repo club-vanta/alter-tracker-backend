@@ -1,5 +1,5 @@
 """
-Alembic env.py – runtime migration configuration.
+Alembic env.py - runtime migration configuration.
 
 Key decisions:
   1. DATABASE_URL is read from the environment (never hardcoded).
@@ -11,12 +11,13 @@ Key decisions:
 import os
 from logging.config import fileConfig
 
-from alembic import context
 from sqlmodel import SQLModel
+
+from alembic import context
 
 # ── Import all models so Alembic autogenerate sees them ──────────────────────
 # Add new model modules here as the project grows.
-from app.models.models import User, Guest  # noqa: F401
+from app.models.models import Guest, User  # noqa: F401
 
 # ── Alembic Config ────────────────────────────────────────────────────────────
 config = context.config

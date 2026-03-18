@@ -17,9 +17,9 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.5.1",
     "pytest",
     "pytest-asyncio",
-    "ruff"
 ]
 
 
@@ -40,6 +40,9 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]  # allow assert statements in tests
+# B008 — Depends in argument defaults — this is a false positive for FastAPI. Ruff doesn't know that FastAPI specifically relies on this pattern.
+"app/routers/*" = ["B008"]
+"app/core/deps.py" = ["B008"]
 
 [tool.basedpyright]
 venvPath = ".devenv/state"

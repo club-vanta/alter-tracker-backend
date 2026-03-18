@@ -1,5 +1,6 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -50,6 +51,7 @@ class Settings(BaseSettings):
     # tests or if Mazmo ever changes their domain.
     mazmo_base_url: str = "https://prod.mazmoapi.net"
 
+    # TODO: This needs to change, every event will have
     # The community slug that appears in the thread URL path.
     mazmo_community_slug: str = "eventos-reuniones-argentina"
 
@@ -62,7 +64,7 @@ class Settings(BaseSettings):
 
     # Maximum number of user IDs sent per /users request.
     # Keeps query strings short enough to avoid 414 URI Too Long errors.
-    mazmo_user_batch_size: int = 100
+    mazmo_user_batch_size: int = 30
 
     # Timeout in seconds for outbound HTTP calls to Mazmo.
     # If Mazmo doesn't respond within this window the request is aborted.
@@ -71,5 +73,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """Cached singleton – avoids re-reading env on every request."""
-    return Settings()
+    """Cached singleton - avoids re-reading env on every request."""
+    # call-arg is a false positive
+    # pydantic-settings reads them from the environment, not from the constructor.
+    return Settings()  # type: ignore[call-arg]

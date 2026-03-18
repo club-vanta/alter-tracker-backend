@@ -15,16 +15,17 @@ Schema decisions:
     call nextval() inside a single atomic UPDATE.
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 import sqlmodel
+
 from alembic import op
 
 revision: str = "0001"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -46,22 +47,16 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("username", sqlmodel.AutoString(length=64), nullable=False),
         sa.Column("hashed_password", sqlmodel.AutoString(), nullable=False),
-        sa.Column(
-            "is_approved", sa.Boolean(), nullable=False, server_default=sa.false()
-        ),
+        sa.Column("is_approved", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("role_id", sa.Integer(), nullable=False),
-        sa.Column(
-            "created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()
-        ),
+        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(["role_id"], ["user_roles.id"]),
     )
     op.create_index("ix_staff_users_username", "staff_users", ["username"], unique=True)
 
     # ── 3. arrival_order sequence ─────────────────────────────────────────────
-    op.execute(
-        "CREATE SEQUENCE IF NOT EXISTS arrival_order_seq START 1 INCREMENT 1 NO CYCLE"
-    )
+    op.execute("CREATE SEQUENCE IF NOT EXISTS arrival_order_seq START 1 INCREMENT 1 NO CYCLE")
 
     # ── 4. guests ─────────────────────────────────────────────────────────────
     op.create_table(
@@ -70,9 +65,7 @@ def upgrade() -> None:
         sa.Column("username", sqlmodel.AutoString(), nullable=False),
         sa.Column("displayname", sqlmodel.AutoString(), nullable=False),
         sa.Column("rsvp_time", sa.DateTime(timezone=True), nullable=False),
-        sa.Column(
-            "has_arrived", sa.Boolean(), nullable=False, server_default=sa.false()
-        ),
+        sa.Column("has_arrived", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("arrival_time", sa.DateTime(timezone=True), nullable=True),
         sa.Column("arrival_order", sa.Integer(), nullable=True, unique=True),
         sa.PrimaryKeyConstraint("mazmo_user_id"),

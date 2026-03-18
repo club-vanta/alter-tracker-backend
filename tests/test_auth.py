@@ -1,12 +1,10 @@
 """Tests for the /auth router."""
 
 from fastapi import status
-
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from tests.conftest import make_user
-
 
 # ── Register ──────────────────────────────────────────────────────────────────
 
@@ -27,9 +25,7 @@ def test_register_new_account_is_pending_approval_by_default(client: TestClient)
     assert "hashed_password" not in data
 
 
-def test_register_duplicate_username_returns_409_conflict(
-    client: TestClient, session: Session
-):
+def test_register_duplicate_username_returns_409_conflict(client: TestClient, session: Session):
     make_user(session, username="existing")
     resp = client.post(
         "/auth/register",
@@ -93,9 +89,7 @@ def test_login_with_valid_credentials_returns_200_ok_with_bearer_token(
     assert data["token_type"] == "bearer"
 
 
-def test_login_with_wrong_password_returns_401_unauthorized(
-    client: TestClient, session: Session
-):
+def test_login_with_wrong_password_returns_401_unauthorized(client: TestClient, session: Session):
     make_user(session, username="loginuser2", password="a-very-secure-passphrase")
     resp = client.post(
         "/auth/token",
@@ -118,9 +112,7 @@ def test_login_with_nonexistent_username_returns_401_unauthorized(client: TestCl
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-def test_login_with_unapproved_account_returns_403_forbidden(
-    client: TestClient, session: Session
-):
+def test_login_with_unapproved_account_returns_403_forbidden(client: TestClient, session: Session):
     make_user(
         session,
         username="pendinguser",
@@ -148,9 +140,7 @@ def test_login_without_password_field_returns_422_unprocessable_entity(
 # ── /auth/userinfo ──────────────────────────────────────────────────────────────────
 
 
-def test_userinfo_returns_200_ok_with_current_user_profile(
-    client: TestClient, admin_headers: dict
-):
+def test_userinfo_returns_200_ok_with_current_user_profile(client: TestClient, admin_headers: dict):
     resp = client.get("/auth/userinfo", headers=admin_headers)
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
@@ -164,25 +154,20 @@ def test_userinfo_without_token_returns_401_unauthorized(client: TestClient):
 
 
 def test_userinfo_with_tampered_token_returns_401_unauthorized(client: TestClient):
-    resp = client.get(
-        "/auth/userinfo", headers={"Authorization": "Bearer notavalidtoken"}
-    )
+    resp = client.get("/auth/userinfo", headers={"Authorization": "Bearer notavalidtoken"})
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-def test_userinfo_with_expired_token_returns_401_unauthorized(
-    client: TestClient, admin_user
-):
+def test_userinfo_with_expired_token_returns_401_unauthorized(client: TestClient, admin_user):
     from datetime import timedelta
+
     from app.core.security import create_access_token
 
     expired_token = create_access_token(
         data={"sub": admin_user.username},
         expires_delta=timedelta(seconds=-1),
     )
-    resp = client.get(
-        "/auth/userinfo", headers={"Authorization": f"Bearer {expired_token}"}
-    )
+    resp = client.get("/auth/userinfo", headers={"Authorization": f"Bearer {expired_token}"})
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
 

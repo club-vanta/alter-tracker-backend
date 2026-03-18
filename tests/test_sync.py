@@ -1,24 +1,19 @@
 """Tests for the guest sync endpoint. Mazmo HTTP client is always mocked."""
 
-from datetime import datetime, timezone
-from fastapi import status
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import httpx
+from fastapi import status
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from app.models.models import Guest
 from tests.conftest import make_guest
 
-
 FAKE_RSVPS = {
-    111: type(
-        "R", (), {"userId": 111, "joinedAt": datetime(2026, 3, 17, tzinfo=timezone.utc)}
-    )(),
-    222: type(
-        "R", (), {"userId": 222, "joinedAt": datetime(2026, 3, 17, tzinfo=timezone.utc)}
-    )(),
+    111: type("R", (), {"userId": 111, "joinedAt": datetime(2026, 3, 17, tzinfo=UTC)})(),
+    222: type("R", (), {"userId": 222, "joinedAt": datetime(2026, 3, 17, tzinfo=UTC)})(),
 }
 
 FAKE_USERS = {
@@ -81,7 +76,7 @@ def test_sync_does_not_overwrite_checkin_data_of_arrived_guests_returns_200_ok(
 ):
     alice = make_guest(session, mazmo_user_id=111, username="alice", has_arrived=True)
     alice.arrival_order = 1
-    alice.arrival_time = datetime(2026, 3, 17, 22, 0, tzinfo=timezone.utc)
+    alice.arrival_time = datetime(2026, 3, 17, 22, 0, tzinfo=UTC)
     session.add(alice)
     session.flush()
 
@@ -97,9 +92,7 @@ def test_sync_does_not_overwrite_checkin_data_of_arrived_guests_returns_200_ok(
 def test_sync_with_empty_rsvp_list_returns_200_ok_with_zero_counts(
     client: TestClient, admin_headers: dict
 ):
-    with patch(
-        "app.services.sync.MazmoClient", return_value=mock_mazmo_client(rsvps={})
-    ):
+    with patch("app.services.sync.MazmoClient", return_value=mock_mazmo_client(rsvps={})):
         resp = client.post("/guests/sync", headers=admin_headers)
 
     assert resp.status_code == status.HTTP_200_OK
@@ -111,9 +104,7 @@ def test_sync_with_empty_rsvp_list_returns_200_ok_with_zero_counts(
 def test_sync_is_accessible_by_regular_staff_returns_200_ok(
     client: TestClient, staff_headers: dict
 ):
-    with patch(
-        "app.services.sync.MazmoClient", return_value=mock_mazmo_client(rsvps={})
-    ):
+    with patch("app.services.sync.MazmoClient", return_value=mock_mazmo_client(rsvps={})):
         resp = client.post("/guests/sync", headers=staff_headers)
     assert resp.status_code == status.HTTP_200_OK
 
