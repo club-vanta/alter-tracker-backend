@@ -1,0 +1,54 @@
+[project]
+name = "alter-tracker-backend"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi[standard]",
+    "sqlmodel",
+    "alembic",
+    "psycopg[binary]",
+    "pydantic-settings",
+    "passlib[argon2]",
+    "argon2-cffi",
+    "python-jose[cryptography]",
+    "httpx",
+    "python-dotenv",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff"
+]
+
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "RUF", # ruff-specific rules
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]  # allow assert statements in tests
+
+[tool.basedpyright]
+venvPath = ".devenv/state"
+venv = "venv"
+pythonVersion = "3.13"
+pythonPlatform = "Linux"
+
+typeCheckingMode = "standard"
+
+# Paths basedpyright should analyse
+include = ["app"]
+exclude = ["**/__pycache__"]
