@@ -1,9 +1,10 @@
 from datetime import datetime
 from enum import StrEnum
 
+from sqlalchemy import Integer
 from sqlmodel import Field, Relationship, SQLModel
 
-from app.services.mazmo import MazmoUserId
+from app.domain_types import MazmoUserId
 
 # ── Python enum (validation only, not stored in Postgres as a type) ───────────
 
@@ -82,7 +83,7 @@ class Guest(SQLModel, table=True):
 
     __tablename__ = "guests"  # type: ignore[assignment]
 
-    mazmo_user_id: MazmoUserId = Field(primary_key=True)
+    mazmo_user_id: MazmoUserId = Field(primary_key=True, sa_type=Integer)
     username: str = Field(index=True)
     displayname: str
     rsvp_time: datetime

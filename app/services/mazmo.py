@@ -33,18 +33,16 @@ Headers mimic a real browser session to avoid 403s from Mazmo's CDN/WAF.
 import asyncio
 import logging
 from itertools import islice
-from typing import NewType, TypedDict
+from typing import TypedDict
 
 import httpx
 
 from app.core.config import Settings
+from app.domain_types import MazmoUserId
 from app.schemas.schemas import MazmoRsvpEntry, MazmoUserEntry
 
 log = logging.getLogger(__name__)
 
-# Distinct type for Mazmo user IDs — prevents accidentally mixing them with
-# other integers (e.g. internal DB IDs) at the type checker level.
-MazmoUserId = NewType("MazmoUserId", int)
 
 # Browser-like headers that Mazmo's API expects.
 _HEADERS: dict[str, str] = {

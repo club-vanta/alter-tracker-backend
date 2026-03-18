@@ -21,9 +21,10 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import Session, func, select
 
 from app.core.config import Settings
+from app.domain_types import MazmoUserId
 from app.models.models import Guest
 from app.schemas.schemas import MazmoRsvpEntry, MazmoUserEntry, SyncResponse
-from app.services.mazmo import MazmoClient, MazmoUserId
+from app.services.mazmo import MazmoClient
 
 log = logging.getLogger(__name__)
 
