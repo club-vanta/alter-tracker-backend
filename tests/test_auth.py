@@ -2,27 +2,35 @@
 
 from fastapi import status
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
+from app.models.models import User
 from tests.conftest import make_user
 
 # ── Register ──────────────────────────────────────────────────────────────────
 
 
-def test_register_new_account_is_pending_approval_by_default(client: TestClient):
-    resp = client.post(
-        "/auth/register",
-        json={
-            "username": "newuser",
-            "password": "a-very-secure-passphrase",
-        },
-    )
-    assert resp.status_code == status.HTTP_201_CREATED
+def test_register_new_account_success(client: TestClient, session: Session):
+    # 1. Arrange
+    payload = {
+        "username": "newuser",
+        "password": "a-very-secure-passphrase",
+    }
+
+    # 2. Act
+    resp = client.post("/auth/register", json=payload)
     data = resp.json()
-    assert data["username"] == "newuser"
-    assert data["is_approved"] is False
-    assert data["role"]["name"] == "STAFF"
-    assert "hashed_password" not in data
+
+    # 3. Assert Response
+    assert resp.status_code == status.HTTP_201_CREATED
+    assert data["username"] == "newuser", "Username should match payload"
+    assert data["is_approved"] is False, "New accounts should not be approved by default"
+    assert data["role"]["name"] == "STAFF", "Default role should be STAFF"
+    assert "hashed_password" not in data, "Hashed password must not leak in response"
+
+    # 4. Assert Database State
+    db_user = session.exec(select(User).where(User.username == "newuser")).first()
+    assert db_user is not None, "User should be persisted in the database"
 
 
 def test_register_duplicate_username_returns_409_conflict(client: TestClient, session: Session):
@@ -164,7 +172,7 @@ def test_userinfo_with_expired_token_returns_401_unauthorized(client: TestClient
     from app.core.security import create_access_token
 
     expired_token = create_access_token(
-        data={"sub": admin_user.username},
+        data={"sub": admin_user.username, "role": admin_user.role.name},
         expires_delta=timedelta(seconds=-1),
     )
     resp = client.get("/auth/userinfo", headers={"Authorization": f"Bearer {expired_token}"})

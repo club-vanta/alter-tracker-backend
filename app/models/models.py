@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from sqlalchemy import Integer
@@ -51,14 +51,14 @@ class User(SQLModel, table=True):
     `role_id` is a FK to `user_roles`, defaulting to the STAFF row.
     """
 
-    __tablename__ = "staff_users"  # type: ignore[assignment]
+    __tablename__ = "users"  # type: ignore[assignment]
 
     id: int | None = Field(default=None, primary_key=True)
     username: str = Field(unique=True, index=True, max_length=64)
     hashed_password: str
     is_approved: bool = Field(default=False)
     role_id: int = Field(foreign_key="user_roles.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # Relationship - loads the full Role object
     role: Role | None = Relationship(back_populates="users")
@@ -87,6 +87,7 @@ class Guest(SQLModel, table=True):
     username: str = Field(index=True)
     displayname: str
     rsvp_time: datetime
+    cancelled_rsvp: bool = Field(default=False)
 
     # ── Door tracker fields (mutated only by check-in endpoint) ──────────────
     has_arrived: bool = Field(default=False, index=True)

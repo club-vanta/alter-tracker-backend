@@ -13,7 +13,9 @@ Architecture
 - `client` is a synchronous TestClient (no async needed in tests).
 """
 
-from datetime import UTC
+from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,6 +25,7 @@ from sqlmodel import Session, SQLModel
 from app.core.config import get_settings
 from app.core.database import get_session
 from app.core.security import get_password_hash
+from app.domain_types import MazmoUserId
 from app.main import app
 from app.models.models import Guest, PossibleRoles, Role, User
 
@@ -159,6 +162,12 @@ def make_user(
     from sqlmodel import select
 
     role_row = session.exec(select(Role).where(Role.name == role.value)).one()
+
+    if role_row.id is None:
+        raise Exception(
+            "When making a user, the Role table had no STAFF role. \
+            That is an error, the STAFF role should exist before a new user is made"
+        )
     user = User(
         username=username,
         hashed_password=get_password_hash(password),
@@ -183,7 +192,7 @@ def make_guest(
     from datetime import datetime
 
     guest = Guest(
-        mazmo_user_id=mazmo_user_id,
+        mazmo_user_id=MazmoUserId(mazmo_user_id),
         username=username,
         displayname=displayname,
         rsvp_time=datetime.now(UTC),
@@ -232,3 +241,48 @@ def admin_headers(client: TestClient, admin_user: User) -> dict:
 @pytest.fixture()
 def staff_headers(client: TestClient, staff_user: User) -> dict:
     return get_auth_headers(client, "staff", "a-very-secure-passphrase")
+
+
+# ── Shared Mock Data ──────────────────────────────────────────────────────────
+
+FAKE_RSVPS = {
+    111: SimpleNamespace(userId=111, joinedAt=datetime(2026, 3, 17, tzinfo=UTC)),
+    222: SimpleNamespace(userId=222, joinedAt=datetime(2026, 3, 17, tzinfo=UTC)),
+}
+
+FAKE_USERS = {
+    111: SimpleNamespace(username="alice", displayname="Alice"),
+    222: SimpleNamespace(username="bob", displayname="Bob"),
+}
+
+# --- Sync fixtures ---
+
+
+@pytest.fixture
+def mock_mazmo():
+    """
+    Automatically patches MazmoClient for any test that requests this fixture.
+    Defaults to returning the successful FAKE data
+    """
+    with patch("app.services.sync.MazmoClient") as MockClientClass:
+        mock_instance = AsyncMock()
+
+        # Default happy-path behaviour
+        mock_instance.fetch_rsvps.return_value = FAKE_RSVPS
+        mock_instance.fetch_users.return_value = FAKE_USERS
+
+        # (Handling the 'async with' context manager)
+
+        # When the 'async with' block starts, yield this exact mock object
+        mock_instance.__aenter__.return_value = mock_instance
+
+        # When the 'async with' block ends, just return None
+        mock_instance.__aexit__.return_value = None
+
+        # When someone calls MazmoClient(), give them the `mock_instance` pre-configured instance
+        MockClientClass.return_value = mock_instance
+
+        # Yield gives the mock to the test, and cleans up the patch after the test finishes
+        yield mock_instance
+
+        # Teardown happens after this line, but its implied

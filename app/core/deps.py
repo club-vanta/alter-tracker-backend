@@ -38,7 +38,6 @@ def get_current_user(
     if payload is None:
         raise credentials_exception
 
-    # payload is now a JWTPayload TypedDict — direct field access, no .get()
     user = session.exec(select(User).where(User.username == payload["sub"])).first()
     if user is None:
         raise credentials_exception

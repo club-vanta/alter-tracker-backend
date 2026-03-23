@@ -55,7 +55,7 @@ async def register(
     if staff_role.id is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Role row has no ID. This is a data integrity error.",
+            detail="Role row has no ID. This is a data integrity error. Contact an administrator",
         )
     user = User(
         username=body.username,

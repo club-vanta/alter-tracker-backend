@@ -2,8 +2,8 @@
 Guests router
 
 POST /api/guests/sync          → pull latest RSVP list from Mazmo (approved staff+)
-GET  /api/guests/              → list/search guests (approved staff+)      [Phase 4]
-POST /api/guests/{id}/checkin  → mark a guest as arrived                   [Phase 4]
+GET  /api/guests/              → list/search guests (approved staff+)      [NOT YET IMPLEMENTED]
+POST /api/guests/{id}/checkin  → mark a guest as arrived                   [NOT YET IMPLEMENTED]
 """
 
 import logging
@@ -64,23 +64,25 @@ async def sync(
         log.error("Mazmo response parse error: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
+            detail="Received an invalid data format from the Mazmo API:" + str(exc),
         ) from exc
 
 
-# ── Guest list + check-in (Phase 4 placeholders) ─────────────────────────────
+# ── Guest list + check-in (NOT YET IMPLEMENTED placeholders) ─────────────────────────────
 
 
-@router.get("/", summary="List / search guests [Phase 4]")
+# TODO:
+@router.get("/", summary="List / search guests")
 async def list_guests(
     _staff: User = Depends(get_approved_user),
 ) -> dict:
-    return {"detail": "Implemented in Phase 4"}
+    return {"detail": "NOT YET IMPLEMENTED"}
 
 
-@router.post("/{mazmo_user_id}/checkin", summary="Check in a guest [Phase 4]")
+# TODO:
+@router.post("/{mazmo_user_id}/checkin", summary="Check in a guest")
 async def checkin(
     mazmo_user_id: int,
     _staff: User = Depends(get_approved_user),
 ) -> dict:
-    return {"detail": "Implemented in Phase 4"}
+    return {"detail": "NOT YET IMPLEMENTED"}

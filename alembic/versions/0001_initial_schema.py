@@ -6,7 +6,7 @@ Create Date: 2026-03-17 00:00:00.000000
 
 Schema decisions:
   - `user_roles` is a plain lookup table (id, name) seeded with STAFF and ADMIN.
-    `staff_users.role_id` is a foreign key to it. This is more flexible than a
+    `users.role_id` is a foreign key to it. This is more flexible than a
     Postgres ENUM — adding a new role is just an INSERT, not an ALTER TYPE.
 
   - `PossibleRoles` in Python is used for validation only, not stored as a DB type.
@@ -41,9 +41,9 @@ def upgrade() -> None:
     # Seed the two built-in roles immediately
     op.execute("INSERT INTO user_roles (name) VALUES ('STAFF'), ('ADMIN')")
 
-    # ── 2. staff_users ────────────────────────────────────────────────────────
+    # ── 2. users ────────────────────────────────────────────────────────
     op.create_table(
-        "staff_users",
+        "users",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("username", sqlmodel.AutoString(length=64), nullable=False),
         sa.Column("hashed_password", sqlmodel.AutoString(), nullable=False),
@@ -53,7 +53,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(["role_id"], ["user_roles.id"]),
     )
-    op.create_index("ix_staff_users_username", "staff_users", ["username"], unique=True)
+    op.create_index("ix_users_username", "users", ["username"], unique=True)
 
     # ── 3. arrival_order sequence ─────────────────────────────────────────────
     op.execute("CREATE SEQUENCE IF NOT EXISTS arrival_order_seq START 1 INCREMENT 1 NO CYCLE")
@@ -66,6 +66,7 @@ def upgrade() -> None:
         sa.Column("displayname", sqlmodel.AutoString(), nullable=False),
         sa.Column("rsvp_time", sa.DateTime(timezone=True), nullable=False),
         sa.Column("has_arrived", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column("cancelled_rsvp", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("arrival_time", sa.DateTime(timezone=True), nullable=True),
         sa.Column("arrival_order", sa.Integer(), nullable=True, unique=True),
         sa.PrimaryKeyConstraint("mazmo_user_id"),
@@ -80,5 +81,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("guests")
     op.execute("DROP SEQUENCE IF EXISTS arrival_order_seq")
-    op.drop_table("staff_users")
+    op.drop_table("users")
     op.drop_table("user_roles")

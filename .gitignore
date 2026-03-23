@@ -222,3 +222,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# This is something i use locally
+bundle.py
+bundles/

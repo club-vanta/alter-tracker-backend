@@ -1,6 +1,6 @@
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from jose import ExpiredSignatureError, JWTError, jwt
 from passlib.context import CryptContext
@@ -23,7 +23,7 @@ class JWTPayload(TypedDict):
 
     sub: str  # username
     role: str  # PossibleRoles value
-    exp: datetime  # set automatically by create_access_token
+    exp: NotRequired[datetime]  # set automatically by create_access_token
 
 
 # ── Password hashing ──────────────────────────────────────────────────────────
