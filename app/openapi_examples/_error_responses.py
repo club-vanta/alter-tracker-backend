@@ -1,0 +1,581 @@
+"""
+Reusable error response factories for OpenAPI examples.
+
+These factories generate consistent error response examples across all routers.
+Each factory returns a dict suitable for use in FastAPI's `responses` parameter.
+
+Usage:
+    @router.post("/ban", responses={**error_404_guest(), **error_409_already_banned()})
+"""
+# ruff: noqa: E501  # Long lines are intentional - detailed error messages for docs
+
+from typing import Any
+
+# Type alias for FastAPI responses dict
+ResponsesDict = dict[int | str, dict[str, Any]]
+
+# ── Generic HTTP Errors ───────────────────────────────────────────────────────
+
+
+def error_401_invalid_credentials() -> ResponsesDict:
+    """401 - Invalid or missing authentication credentials."""
+    return {
+        401: {
+            "description": "Invalid or missing credentials",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "missing_token": {
+                            "summary": "No token provided",
+                            "value": {"detail": "Not authenticated"},
+                        },
+                        "invalid_token": {
+                            "summary": "Invalid or expired JWT",
+                            "value": {"detail": "Could not validate credentials"},
+                        },
+                        "wrong_password": {
+                            "summary": "Wrong username or password",
+                            "value": {"detail": "Incorrect username or password."},
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_403_not_approved() -> ResponsesDict:
+    """403 - User account not yet approved by admin."""
+    return {
+        403: {
+            "description": "Account not approved or disabled",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "pending_approval": {
+                            "summary": "Account pending approval",
+                            "value": {
+                                "detail": "Your account is pending admin approval. Please try again later."
+                            },
+                        },
+                        "account_disabled": {
+                            "summary": "Account disabled",
+                            "value": {"detail": "Your account has been disabled."},
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_403_admin_required() -> ResponsesDict:
+    """403 - Admin role required for this operation."""
+    return {
+        403: {
+            "description": "Admin role required",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "admin_required": {
+                            "summary": "Admin privileges needed",
+                            "value": {
+                                "detail": "This operation requires admin privileges. Your role is STAFF."
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_403_staff_own_events_only() -> ResponsesDict:
+    """403 - Staff can only view their own events."""
+    return {
+        403: {
+            "description": "Staff can only view their own events",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "not_own_events": {
+                            "summary": "Cannot view another staff member's events",
+                            "value": {
+                                "detail": (
+                                    "You can only view your own events. "
+                                    "You are user id=2, but requested events for user id=5. "
+                                    "Admins can view any staff member's events."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+# ── 400 Bad Request Errors ────────────────────────────────────────────────────
+
+
+def error_400_self_operation() -> ResponsesDict:
+    """400 - Cannot perform this operation on yourself."""
+    return {
+        400: {
+            "description": "Invalid self-operation",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "self_revoke": {
+                            "summary": "Cannot revoke own approval",
+                            "value": {"detail": "Admins cannot revoke their own approval."},
+                        },
+                        "self_demote": {
+                            "summary": "Cannot demote yourself",
+                            "value": {"detail": "Admins cannot demote themselves."},
+                        },
+                        "self_disable": {
+                            "summary": "Cannot disable own account",
+                            "value": {"detail": "Admins cannot disable their own account."},
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_400_invalid_event_type() -> ResponsesDict:
+    """400 - Invalid event type in filter."""
+    return {
+        400: {
+            "description": "Invalid event type filter",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "invalid_type": {
+                            "summary": "Unknown event type",
+                            "value": {
+                                "detail": (
+                                    "Invalid event type 'INVALID' in filter. "
+                                    "Valid types are: BAN, CHECK_IN, UNBAN, UNDO_CHECK_IN. "
+                                    "You can combine multiple types with commas, e.g. ?type=CHECK_IN,UNDO_CHECK_IN"
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+# ── 404 Not Found Errors ──────────────────────────────────────────────────────
+
+
+def error_404_staff() -> ResponsesDict:
+    """404 - Staff user not found."""
+    return {
+        404: {
+            "description": "Staff user not found",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "staff_not_found": {
+                            "summary": "Staff ID does not exist",
+                            "value": {"detail": "Staff user not found."},
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_404_guest() -> ResponsesDict:
+    """404 - Guest not found in database."""
+    return {
+        404: {
+            "description": "Guest not found",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "guest_not_found": {
+                            "summary": "Guest has never RSVPed",
+                            "value": {
+                                "detail": (
+                                    "Guest with mazmo_user_id=99999 does not exist in our database. "
+                                    "This guest may not have RSVPed to any meetup yet, or the ID might be incorrect. "
+                                    "Guests are only added when they RSVP to a meetup and we sync from Mazmo. "
+                                    "Try POST /meetups/{meetup_id}/sync first, or verify the mazmo_user_id."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_404_meetup() -> ResponsesDict:
+    """404 - Meetup not found."""
+    return {
+        404: {
+            "description": "Meetup not found",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "meetup_not_found": {
+                            "summary": "Meetup UUID does not exist",
+                            "value": {
+                                "detail": (
+                                    "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. "
+                                    "It may have been deleted, or the UUID is incorrect. "
+                                    "List all meetups via GET /meetups/ to find the correct ID."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_404_rsvp() -> ResponsesDict:
+    """404 - Guest not RSVPed to this meetup."""
+    return {
+        404: {
+            "description": "Guest not RSVPed to meetup",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "not_rsvped": {
+                            "summary": "Guest didn't RSVP to this meetup",
+                            "value": {
+                                "detail": (
+                                    "Cannot check in: guest mazmo_user_id=12345 is not RSVPed. "
+                                    "Either: (1) they haven't RSVPed on Mazmo yet, "
+                                    "(2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, "
+                                    "or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+# ── 409 Conflict Errors ───────────────────────────────────────────────────────
+
+
+def error_409_username_taken() -> ResponsesDict:
+    """409 - Username already exists."""
+    return {
+        409: {
+            "description": "Username already taken",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "username_taken": {
+                            "summary": "Username already registered",
+                            "value": {"detail": "Username 'maria_admin' is already taken."},
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_already_disabled() -> ResponsesDict:
+    """409 - Account is already disabled."""
+    return {
+        409: {
+            "description": "Account already disabled",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "already_disabled": {
+                            "summary": "Cannot disable twice",
+                            "value": {"detail": "This account is already disabled."},
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_not_disabled() -> ResponsesDict:
+    """409 - Account is not currently disabled."""
+    return {
+        409: {
+            "description": "Account not disabled",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "not_disabled": {
+                            "summary": "Cannot enable an active account",
+                            "value": {"detail": "This account is not disabled."},
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_already_banned() -> ResponsesDict:
+    """409 - Guest is already banned."""
+    return {
+        409: {
+            "description": "Guest already banned",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "already_banned": {
+                            "summary": "Cannot ban twice",
+                            "value": {
+                                "detail": (
+                                    "Cannot ban guest: 'usuario_problematico' (mazmo_user_id=99999) "
+                                    "is already banned. They were banned on 2024-03-20 18:30:00+00:00 "
+                                    "for reason: 'Comportamiento agresivo'. To update the ban reason, "
+                                    "unban first via PATCH /guests/99999/unban, then re-ban."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_not_banned() -> ResponsesDict:
+    """409 - Guest is not currently banned."""
+    return {
+        409: {
+            "description": "Guest not banned",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "not_banned": {
+                            "summary": "Cannot unban a non-banned guest",
+                            "value": {
+                                "detail": (
+                                    "Cannot unban guest: 'fiestero_feliz' (mazmo_user_id=12345) "
+                                    "is not currently banned. They may have been unbanned by another admin. "
+                                    "Check audit trail at GET /events/guests/12345."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_already_checked_in() -> ResponsesDict:
+    """409 - Guest already checked in."""
+    return {
+        409: {
+            "description": "Guest already checked in",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "already_checked_in": {
+                            "summary": "Cannot check in twice",
+                            "value": {
+                                "detail": (
+                                    "Cannot check in: guest 'fiestero_feliz' (mazmo_user_id=12345) "
+                                    "is already checked in. They arrived at 2024-03-23 20:05:32+00:00 "
+                                    "(arrival #1). "
+                                    "To undo this, use PATCH /meetups/{meetup_id}/guests/12345/undo-checkin."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_not_checked_in() -> ResponsesDict:
+    """409 - Guest not currently checked in."""
+    return {
+        409: {
+            "description": "Guest not checked in",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "not_checked_in": {
+                            "summary": "Cannot undo non-existent check-in",
+                            "value": {
+                                "detail": (
+                                    "Cannot undo check-in: guest 'fiestero_feliz' "
+                                    "(mazmo_user_id=12345) is not currently checked in. "
+                                    "They may have been un-checked by someone else. "
+                                    "See event log: GET /events/meetups/{meetup_id}?type=CHECK_IN,UNDO_CHECK_IN"
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_duplicate_meetup() -> ResponsesDict:
+    """409 - Meetup with this Mazmo URL already exists."""
+    return {
+        409: {
+            "description": "Duplicate meetup URL",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "duplicate_url": {
+                            "summary": "Mazmo URL already tracked",
+                            "value": {
+                                "detail": (
+                                    "Cannot create meetup: a meetup with this Mazmo URL already exists. "
+                                    "Existing meetup: id=a1b2c3d4-e5f6-7890-abcd-ef1234567890, "
+                                    "name='Alter Córdoba - Marzo 2024', date=2024-03-23 19:00:00+00:00. "
+                                    "Each Mazmo event can only be tracked once."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+# ── 422 Validation Errors ─────────────────────────────────────────────────────
+
+
+def error_422_validation() -> ResponsesDict:
+    """422 - Request body validation failed."""
+    return {
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "password_too_short": {
+                            "summary": "Password validation failed",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "type": "string_too_short",
+                                        "loc": ["body", "password"],
+                                        "msg": "String should have at least 15 characters",
+                                        "input": "short",
+                                        "ctx": {"min_length": 15},
+                                    }
+                                ]
+                            },
+                        },
+                        "invalid_url": {
+                            "summary": "Invalid Mazmo URL format",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "type": "value_error",
+                                        "loc": ["body", "mazmo_meetup_url"],
+                                        "msg": "Value error, URL must match pattern: https://mazmo.net/{community}/{thread-slug}-{id}",
+                                        "input": "https://invalid-url.com/meetup",
+                                    }
+                                ]
+                            },
+                        },
+                        "reason_too_short": {
+                            "summary": "Reason too short",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "type": "string_too_short",
+                                        "loc": ["body", "reason"],
+                                        "msg": "String should have at least 5 characters",
+                                        "input": "bad",
+                                        "ctx": {"min_length": 5},
+                                    }
+                                ]
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+# ── 502/504 Gateway Errors ────────────────────────────────────────────────────
+
+
+def error_502_mazmo_api() -> ResponsesDict:
+    """502 - Mazmo API returned an error."""
+    return {
+        502: {
+            "description": "Mazmo API error",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "mazmo_error": {
+                            "summary": "Mazmo returned an error",
+                            "value": {
+                                "detail": (
+                                    "Cannot create meetup: Mazmo API returned an error. "
+                                    "Error: HTTP 404 - Event not found. "
+                                    "This could mean the Mazmo URL is invalid or the event doesn't exist. "
+                                    "Verify the URL is correct and points to a valid Mazmo event page."
+                                )
+                            },
+                        },
+                        "mazmo_parse_error": {
+                            "summary": "Mazmo response parse failed",
+                            "value": {
+                                "detail": (
+                                    "Sync failed: Mazmo returned data in an unexpected format. "
+                                    "Error: Missing 'date' field in response. "
+                                    "This could indicate Mazmo changed their API. Please report this issue."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_504_mazmo_timeout() -> ResponsesDict:
+    """504 - Mazmo API unreachable or timed out."""
+    return {
+        504: {
+            "description": "Mazmo API timeout",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "mazmo_timeout": {
+                            "summary": "Could not connect to Mazmo",
+                            "value": {
+                                "detail": (
+                                    "Cannot create meetup: failed to connect to Mazmo API. "
+                                    "This is likely a temporary network issue. Error: Connection timed out. "
+                                    "Try again in a few moments, or check if Mazmo is experiencing an outage."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }

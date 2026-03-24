@@ -38,19 +38,19 @@ Headers mimic a real browser session to avoid 403s from Mazmo's CDN/WAF.
 """
 
 import asyncio
-import logging
 from datetime import datetime
 from itertools import islice
 from typing import TypedDict
 from urllib.parse import urlparse
 
 import httpx
+import structlog
 
 from app.core.config import Settings
 from app.domain_types import MazmoUserId
 from app.schemas import MazmoRsvpEntry, MazmoUserEntry
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 
 # Browser-like headers that Mazmo's API expects.

@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     # Never enable in production.
     debug: bool = False
 
+    # When True, output JSON logs (for CloudWatch/production).
+    # When False, output pretty console logs (for local development).
+    json_logs: bool = False
+
+    # Minimum log level. Valid values: DEBUG, INFO, WARNING, ERROR.
+    log_level: str = "INFO"
+
     # ── Mazmo External API ────────────────────────────────────────────────────
 
     # Base URL of the Mazmo API. Extracted here so it can be overridden in

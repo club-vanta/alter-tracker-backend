@@ -10,11 +10,12 @@ POST  /api/meetups/{id}/guests/.../checkin      → check in a guest (approved s
 PATCH /api/meetups/{id}/guests/.../undo-checkin → undo a check-in (approved staff+)
 """
 
-import logging
 import uuid
+from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+import structlog
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
@@ -23,6 +24,17 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.deps import get_approved_user
 from app.models.models import EventLog, EventType, Guest, Meetup, MeetupRsvp, User
+from app.openapi_examples.meetups_examples import (
+    CHECKIN_RESPONSES,
+    CREATE_MEETUP_REQUEST_EXAMPLES,
+    CREATE_MEETUP_RESPONSES,
+    GET_MEETUP_RESPONSES,
+    LIST_MEETUP_GUESTS_RESPONSES,
+    LIST_MEETUPS_RESPONSES,
+    SYNC_MEETUP_RESPONSES,
+    UNDO_CHECKIN_REQUEST_EXAMPLES,
+    UNDO_CHECKIN_RESPONSES,
+)
 from app.schemas import (
     CheckedInByPublic,
     CheckInResponse,
@@ -38,7 +50,7 @@ from app.schemas import (
 from app.services.mazmo import MazmoAPIError, MazmoClient, MazmoNetworkError
 from app.services.sync import sync_guests
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/meetups", tags=["meetups"])
 
 
@@ -68,9 +80,10 @@ def _get_meetup_or_404(session: Session, meetup_id: uuid.UUID) -> Meetup:
     response_model=MeetupPublic,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new meetup",
+    responses=CREATE_MEETUP_RESPONSES,
 )
 async def create_meetup(
-    payload: MeetupCreate,
+    payload: Annotated[MeetupCreate, Body(openapi_examples=CREATE_MEETUP_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
     _staff: User = Depends(get_approved_user),
     settings: Settings = Depends(get_settings),
@@ -101,7 +114,7 @@ async def create_meetup(
         async with MazmoClient(settings) as client:
             event_date = await client.fetch_meetup_date(mazmo_url)
     except MazmoNetworkError as exc:
-        log.error("Mazmo network error: %s", exc)
+        log.error("Mazmo network error", error=str(exc), mazmo_url=mazmo_url)
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail=(
@@ -111,7 +124,7 @@ async def create_meetup(
             ),
         ) from exc
     except MazmoAPIError as exc:
-        log.error("Mazmo API error: %s", exc)
+        log.error("Mazmo API error", error=str(exc), mazmo_url=mazmo_url)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=(
@@ -139,6 +152,7 @@ async def create_meetup(
     "/",
     response_model=MeetupListResponse,
     summary="List all meetups",
+    responses=LIST_MEETUPS_RESPONSES,
 )
 async def list_meetups(
     session: Session = Depends(get_session),
@@ -159,6 +173,7 @@ async def list_meetups(
     "/{meetup_id}",
     response_model=MeetupPublic,
     summary="Get a single meetup",
+    responses=GET_MEETUP_RESPONSES,
 )
 async def get_meetup(
     meetup_id: uuid.UUID,
@@ -176,6 +191,7 @@ async def get_meetup(
     "/{meetup_id}/sync",
     response_model=SyncResponse,
     summary="Sync guest list from Mazmo for this meetup",
+    responses=SYNC_MEETUP_RESPONSES,
 )
 async def sync_meetup_guests(
     meetup_id: uuid.UUID,
@@ -196,7 +212,11 @@ async def sync_meetup_guests(
     try:
         return await sync_guests(session, settings, meetup)
     except httpx.HTTPStatusError as exc:
-        log.error("Mazmo HTTP error during sync: %s", exc)
+        log.error(
+            "Mazmo HTTP error during sync",
+            status_code=exc.response.status_code,
+            meetup_id=str(meetup_id),
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=(
@@ -206,7 +226,11 @@ async def sync_meetup_guests(
             ),
         ) from exc
     except httpx.RequestError as exc:
-        log.error("Mazmo network error during sync: %s", exc)
+        log.error(
+            "Mazmo network error during sync",
+            error=str(exc),
+            meetup_id=str(meetup_id),
+        )
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail=(
@@ -215,7 +239,11 @@ async def sync_meetup_guests(
             ),
         ) from exc
     except ValueError as exc:
-        log.error("Mazmo response parse error: %s", exc)
+        log.error(
+            "Mazmo response parse error",
+            error=str(exc),
+            meetup_id=str(meetup_id),
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=(
@@ -232,6 +260,7 @@ async def sync_meetup_guests(
     "/{meetup_id}/guests",
     response_model=MeetupGuestListResponse,
     summary="List guests RSVPed to this meetup",
+    responses=LIST_MEETUP_GUESTS_RESPONSES,
 )
 async def list_meetup_guests(
     meetup_id: uuid.UUID,
@@ -266,6 +295,7 @@ async def list_meetup_guests(
     "/{meetup_id}/guests/{mazmo_user_id}/checkin",
     response_model=CheckInResponse,
     summary="Check in a guest at this meetup",
+    responses=CHECKIN_RESPONSES,
 )
 async def checkin_guest(
     meetup_id: uuid.UUID,
@@ -363,11 +393,12 @@ class UndoCheckInRequest(BaseModel):
     "/{meetup_id}/guests/{mazmo_user_id}/undo-checkin",
     response_model=GuestPublic,
     summary="Undo a guest check-in at this meetup",
+    responses=UNDO_CHECKIN_RESPONSES,
 )
 async def undo_checkin_guest(
     meetup_id: uuid.UUID,
     mazmo_user_id: int,
-    request: UndoCheckInRequest,
+    request: Annotated[UndoCheckInRequest, Body(openapi_examples=UNDO_CHECKIN_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
     staff: User = Depends(get_approved_user),
 ) -> Guest:
@@ -443,7 +474,11 @@ async def undo_checkin_guest(
         )
 
     log.info(
-        f"Staff {staff.username} undid check-in for guest {guest.username} "
-        f"at meetup {meetup_id}: {request.reason}"
+        "Check-in undone",
+        staff=staff.username,
+        guest=guest.username,
+        guest_id=guest.mazmo_user_id,
+        meetup_id=str(meetup_id),
+        reason=request.reason,
     )
     return guest

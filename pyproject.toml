@@ -13,6 +13,8 @@ dependencies = [
     "python-jose[cryptography]",
     "httpx",
     "python-dotenv",
+    "prometheus-fastapi-instrumentator >= 7.1.0",
+    "structlog>=25.5.0",
 ]
 
 [dependency-groups]

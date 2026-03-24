@@ -6,7 +6,9 @@ POST /auth/token     → OAuth2 password flow - returns a JWT
 GET  /auth/userinfo        → returns the currently logged-in user's profile
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
 
@@ -19,6 +21,12 @@ from app.core.security import (
     verify_password,
 )
 from app.models.models import PossibleRoles, Role, User
+from app.openapi_examples.auth_examples import (
+    REGISTER_REQUEST_EXAMPLES,
+    REGISTER_RESPONSES,
+    TOKEN_RESPONSES,
+    USERINFO_RESPONSES,
+)
 from app.schemas import StaffRegisterRequest, TokenResponse, UserPublic
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -32,9 +40,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
     response_model=UserPublic,
     status_code=status.HTTP_201_CREATED,
     summary="Register a new staff account (pending admin approval)",
+    responses=REGISTER_RESPONSES,
 )
 async def register(
-    body: StaffRegisterRequest,
+    body: Annotated[StaffRegisterRequest, Body(openapi_examples=REGISTER_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
 ) -> User:
     existing = session.exec(select(User).where(User.username == body.username)).first()
@@ -76,6 +85,7 @@ async def register(
     "/token",
     response_model=TokenResponse,
     summary="Login - returns a JWT bearer token",
+    responses=TOKEN_RESPONSES,
 )
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -119,6 +129,7 @@ async def login(
     "/userinfo",
     response_model=UserPublic,
     summary="Return the currently authenticated user's profile",
+    responses=USERINFO_RESPONSES,
 )
 async def get_me(
     current_user: User = Depends(get_approved_user),

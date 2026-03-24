@@ -10,13 +10,25 @@ PATCH  /staff/{id}/role        → promote / demote role (admin only)
 """
 
 from datetime import UTC, datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlmodel import Session, col, select
 
 from app.core.database import get_session
 from app.core.deps import get_admin_user
 from app.models.models import PossibleRoles, Role, User
+from app.openapi_examples.staff_examples import (
+    APPROVE_REQUEST_EXAMPLES,
+    APPROVE_RESPONSES,
+    DISABLE_REQUEST_EXAMPLES,
+    DISABLE_RESPONSES,
+    ENABLE_RESPONSES,
+    LIST_PENDING_RESPONSES,
+    LIST_STAFF_RESPONSES,
+    ROLE_REQUEST_EXAMPLES,
+    ROLE_RESPONSES,
+)
 from app.schemas import ApproveUserRequest, DisableUserRequest, RoleRequest, UserPublic
 
 router = APIRouter(prefix="/staff", tags=["staff"])
@@ -49,6 +61,7 @@ def _get_role_or_404(role: PossibleRoles, session: Session) -> Role:
     "/",
     response_model=list[UserPublic],
     summary="List all staff accounts (admin only)",
+    responses=LIST_STAFF_RESPONSES,
 )
 async def list_staff(
     session: Session = Depends(get_session),
@@ -64,6 +77,7 @@ async def list_staff(
     "/pending",
     response_model=list[UserPublic],
     summary="List unapproved staff accounts (admin only)",
+    responses=LIST_PENDING_RESPONSES,
 )
 async def list_pending(
     session: Session = Depends(get_session),
@@ -85,10 +99,11 @@ async def list_pending(
     "/{user_id}/approve",
     response_model=UserPublic,
     summary="Approve or revoke a staff account (admin only)",
+    responses=APPROVE_RESPONSES,
 )
 async def set_approval(
     user_id: int,
-    body: ApproveUserRequest,
+    body: Annotated[ApproveUserRequest, Body(openapi_examples=APPROVE_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
     admin: User = Depends(get_admin_user),
 ) -> User:
@@ -114,10 +129,11 @@ async def set_approval(
     "/{user_id}/role",
     response_model=UserPublic,
     summary="Promote or demote a staff member's role (admin only)",
+    responses=ROLE_RESPONSES,
 )
 async def set_role(
     user_id: int,
-    body: RoleRequest,
+    body: Annotated[RoleRequest, Body(openapi_examples=ROLE_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
     admin: User = Depends(get_admin_user),
 ) -> User:
@@ -149,10 +165,11 @@ async def set_role(
     "/{user_id}/disable",
     response_model=UserPublic,
     summary="Disable a staff account (admin only)",
+    responses=DISABLE_RESPONSES,
 )
 async def disable_staff(
     user_id: int,
-    body: DisableUserRequest,
+    body: Annotated[DisableUserRequest, Body(openapi_examples=DISABLE_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
     admin: User = Depends(get_admin_user),
 ) -> User:
@@ -193,6 +210,7 @@ async def disable_staff(
     "/{user_id}/enable",
     response_model=UserPublic,
     summary="Re-enable a disabled staff account (admin only)",
+    responses=ENABLE_RESPONSES,
 )
 async def enable_staff(
     user_id: int,

@@ -20,10 +20,10 @@ All endpoints support filtering by:
   - limit/offset: Pagination
 """
 
-import logging
 import uuid
 from datetime import datetime
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
@@ -31,6 +31,12 @@ from sqlmodel import Session, select
 from app.core.database import get_session
 from app.core.deps import get_admin_user, get_approved_user
 from app.models.models import EventLog, EventType, Guest, Meetup, PossibleRoles, User
+from app.openapi_examples.events_examples import (
+    LIST_ALL_EVENTS_RESPONSES,
+    LIST_GUEST_EVENTS_RESPONSES,
+    LIST_MEETUP_EVENTS_RESPONSES,
+    LIST_STAFF_EVENTS_RESPONSES,
+)
 from app.schemas.events import (
     EventActorPublic,
     EventGuestPublic,
@@ -38,7 +44,7 @@ from app.schemas.events import (
     EventLogPublic,
 )
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/events", tags=["events"])
 
 
@@ -190,6 +196,7 @@ def _is_admin(user: User) -> bool:
     "/",
     response_model=EventLogListResponse,
     summary="List all events (admin only)",
+    responses=LIST_ALL_EVENTS_RESPONSES,
 )
 async def list_all_events(
     session: Session = Depends(get_session),
@@ -233,6 +240,7 @@ async def list_all_events(
     "/meetups/{meetup_id}",
     response_model=EventLogListResponse,
     summary="List events at a specific meetup",
+    responses=LIST_MEETUP_EVENTS_RESPONSES,
 )
 async def list_meetup_events(
     meetup_id: uuid.UUID,
@@ -285,6 +293,7 @@ async def list_meetup_events(
     "/guests/{guest_id}",
     response_model=EventLogListResponse,
     summary="List events for a specific guest",
+    responses=LIST_GUEST_EVENTS_RESPONSES,
 )
 async def list_guest_events(
     guest_id: int,
@@ -355,6 +364,7 @@ async def list_guest_events(
     "/staff/{staff_id}",
     response_model=EventLogListResponse,
     summary="List events by a specific staff member",
+    responses=LIST_STAFF_EVENTS_RESPONSES,
 )
 async def list_staff_events(
     staff_id: int,

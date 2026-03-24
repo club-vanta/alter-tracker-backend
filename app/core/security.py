@@ -1,14 +1,14 @@
-import logging
 from datetime import UTC, datetime, timedelta
 from typing import NotRequired, TypedDict
 
+import structlog
 from jose import ExpiredSignatureError, JWTError, jwt
 from passlib.context import CryptContext
 
 from app.core.config import get_settings
 
 settings = get_settings()
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 
 # ── Types ─────────────────────────────────────────────────────────────────────

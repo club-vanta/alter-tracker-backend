@@ -10,15 +10,24 @@ PATCH /api/guests/{mazmo_user_id}/unban → unban a guest (admin only)
 Note: Meetup-specific operations (sync, checkin) are in the meetups router.
 """
 
-import logging
 from datetime import UTC, datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import structlog
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from app.core.database import get_session
 from app.core.deps import get_admin_user, get_approved_user
 from app.models.models import EventLog, EventType, Guest, User
+from app.openapi_examples.guests_examples import (
+    BAN_REQUEST_EXAMPLES,
+    BAN_RESPONSES,
+    GET_GUEST_RESPONSES,
+    LIST_BANNED_RESPONSES,
+    LIST_GUESTS_RESPONSES,
+    UNBAN_RESPONSES,
+)
 from app.schemas import (
     BanGuestRequest,
     BannedGuestListResponse,
@@ -27,7 +36,7 @@ from app.schemas import (
     GuestPublic,
 )
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/guests", tags=["guests"])
 
 
@@ -38,6 +47,7 @@ router = APIRouter(prefix="/guests", tags=["guests"])
     "/",
     response_model=GuestListResponse,
     summary="List all known guests (identity only)",
+    responses=LIST_GUESTS_RESPONSES,
 )
 async def list_guests(
     session: Session = Depends(get_session),
@@ -58,6 +68,7 @@ async def list_guests(
     "/banned",
     response_model=BannedGuestListResponse,
     summary="List all banned guests",
+    responses=LIST_BANNED_RESPONSES,
 )
 async def list_banned_guests(
     session: Session = Depends(get_session),
@@ -80,6 +91,7 @@ async def list_banned_guests(
     "/{mazmo_user_id}",
     response_model=GuestPublic,
     summary="Get a single guest's identity",
+    responses=GET_GUEST_RESPONSES,
 )
 async def get_guest(
     mazmo_user_id: int,
@@ -108,10 +120,11 @@ async def get_guest(
     "/{mazmo_user_id}/ban",
     response_model=BannedGuestPublic,
     summary="Ban a guest (admin only)",
+    responses=BAN_RESPONSES,
 )
 async def ban_guest(
     mazmo_user_id: int,
-    request: BanGuestRequest,
+    request: Annotated[BanGuestRequest, Body(openapi_examples=BAN_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
     admin: User = Depends(get_admin_user),
 ) -> Guest:
@@ -160,7 +173,13 @@ async def ban_guest(
     session.commit()
     session.refresh(guest)
 
-    log.info(f"Admin {admin.username} banned guest {guest.username}: {request.reason}")
+    log.info(
+        "Guest banned",
+        admin=admin.username,
+        guest=guest.username,
+        guest_id=guest.mazmo_user_id,
+        reason=request.reason,
+    )
     return guest
 
 
@@ -171,6 +190,7 @@ async def ban_guest(
     "/{mazmo_user_id}/unban",
     response_model=GuestPublic,
     summary="Unban a guest (admin only)",
+    responses=UNBAN_RESPONSES,
 )
 async def unban_guest(
     mazmo_user_id: int,
@@ -219,5 +239,10 @@ async def unban_guest(
     session.commit()
     session.refresh(guest)
 
-    log.info(f"Admin {admin.username} unbanned guest {guest.username}")
+    log.info(
+        "Guest unbanned",
+        admin=admin.username,
+        guest=guest.username,
+        guest_id=guest.mazmo_user_id,
+    )
     return guest

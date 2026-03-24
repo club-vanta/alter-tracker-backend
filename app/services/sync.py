@@ -15,8 +15,7 @@ MeetupRsvp table:
   arrival_time, arrival_order).
 """
 
-import logging
-
+import structlog
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import Session, func, select
 
@@ -26,7 +25,7 @@ from app.models.models import Guest, Meetup, MeetupRsvp
 from app.schemas import MazmoRsvpEntry, MazmoUserEntry, SyncResponse
 from app.services.mazmo import MazmoClient
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 
 class GuestSyncer:
@@ -49,7 +48,7 @@ class GuestSyncer:
         rsvps, user_details = await self._fetch_from_mazmo()
 
         if not rsvps:
-            log.warning("Mazmo returned zero RSVPs - nothing to sync.")
+            log.warning("Mazmo returned zero RSVPs", meetup_id=str(self._meetup.id))
             return SyncResponse(
                 inserted=0,
                 skipped=0,
@@ -75,10 +74,10 @@ class GuestSyncer:
         total = self._count_rsvps()
 
         log.info(
-            "Sync complete for meetup %s - inserted=%d, total_in_db=%d",
-            self._meetup.id,
-            inserted,
-            total,
+            "Sync complete",
+            meetup_id=str(self._meetup.id),
+            inserted=inserted,
+            total_in_db=total,
         )
         return SyncResponse(inserted=inserted, skipped=0, total_in_db=total)
 
@@ -94,7 +93,11 @@ class GuestSyncer:
         async with MazmoClient(self._settings) as client:
             rsvps = await client.fetch_rsvps(self._meetup.mazmo_meetup_url)
             user_details = await client.fetch_users(list(rsvps.keys()))
-        log.info("Fetched %d RSVPs from Mazmo for meetup %s", len(rsvps), self._meetup.id)
+        log.info(
+            "Fetched RSVPs from Mazmo",
+            rsvp_count=len(rsvps),
+            meetup_id=str(self._meetup.id),
+        )
         return rsvps, user_details
 
     def _build_guests(
