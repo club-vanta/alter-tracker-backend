@@ -90,6 +90,14 @@
       description = "Run pytest test suite";
     };
 
+    coverage = {
+      exec = ''
+        uv run pytest --cov=app --cov-report=html "$@"
+        echo "✓ Coverage report: htmlcov/index.html"
+      '';
+      description = "Run tests with coverage and generate HTML report";
+    };
+
     lint = {
       exec = "ruff check .";
       description = "Run ruff linter";

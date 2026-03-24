@@ -23,6 +23,7 @@ dev = [
     "pre-commit>=4.5.1",
     "pytest",
     "pytest-asyncio",
+    "pytest-cov>=7.1.0",
 ]
 
 
@@ -58,3 +59,6 @@ typeCheckingMode = "standard"
 # Paths basedpyright should analyse
 include = ["app"]
 exclude = ["**/__pycache__"]
+
+# pytest fixtures injected for side-effects only (not accessed in body) trigger this
+reportUnusedParameter = "none"

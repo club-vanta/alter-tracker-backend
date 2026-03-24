@@ -167,6 +167,7 @@ All commands are defined in `devenv.nix` and available in the dev shell:
 | `dev-backend`            | Start FastAPI with hot-reload on port 8000                 |
 | `seed-admin`             | Create initial admin user (idempotent)                     |
 | `run-tests`              | Run pytest test suite                                      |
+| `coverage`               | Run tests with coverage, generate HTML report in `htmlcov/`|
 | `lint`                   | Run ruff linter                                            |
 | `format`                 | Run ruff formatter                                         |
 | `export-aws-credentials` | Export AWS credentials as env vars (for OpenTofu)          |
