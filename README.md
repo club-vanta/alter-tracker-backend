@@ -321,7 +321,8 @@ export TF_VAR_cloudflare_api_token="your-api-token-here"
 **Option B — tfvars file (set once, persists):**
 ```hcl
 # infra/terraform.tfvars
-cloudflare_api_token = "your-api-token-here"
+cloudflare_api_token  = "your-api-token-here"
+cloudflare_account_id = "your-account-id-here"
 ```
 
 > `terraform.tfvars` is gitignored. Never commit it — it contains secrets.
