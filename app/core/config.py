@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # Random secret used to sign and verify tokens. Must be kept private -
     # anyone who knows this value can forge valid tokens.
     # Generate with: openssl rand -hex 32
-    secret_key: str
+    jwt_signing_key: str
 
     # Signing algorithm. HS256 (HMAC-SHA256) is a symmetric algorithm -
     # the same key is used to both sign and verify.

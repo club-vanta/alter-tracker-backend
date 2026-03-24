@@ -71,10 +71,7 @@ async def test_mazmo_client_transforms_frontend_url_to_api_url():
     frontend_url = "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217"
     api_url = client._to_api_url(frontend_url)
 
-    assert (
-        api_url
-        == "https://prod.mazmoapi.net/communities/eventos-reuniones-argentina/threads/alter-cordoba-4217"
-    )
+    assert api_url == "https://prod.mazmoapi.net/communities/eventos-reuniones-argentina/threads/alter-cordoba-4217"
 
 
 # ── fetch_rsvps ───────────────────────────────────────────────────────────────
@@ -226,9 +223,7 @@ async def test_fetch_users_batches_requests():
         mock_resp = MagicMock()
         # Return users for whatever IDs were requested
         ids = params["ids"].split(",") if params else []
-        mock_resp.json.return_value = {
-            uid: {"username": f"user{uid}", "displayname": f"User {uid}"} for uid in ids
-        }
+        mock_resp.json.return_value = {uid: {"username": f"user{uid}", "displayname": f"User {uid}"} for uid in ids}
         mock_resp.is_error = False
         return mock_resp
 

@@ -15,9 +15,7 @@ from tests.conftest import make_user
 # ── List all staff ────────────────────────────────────────────────────────────
 
 
-def test_list_all_staff_returns_200_ok_with_all_accounts(
-    client: TestClient, admin_headers: dict, session: Session
-):
+def test_list_all_staff_returns_200_ok_with_all_accounts(client: TestClient, admin_headers: dict, session: Session):
     """
     Verify that admins can list all staff accounts.
 
@@ -139,9 +137,7 @@ def test_revoking_approval_of_staff_user_returns_200_ok_with_is_approved_false(
     assert resp.json()["is_approved"] is False
 
 
-def test_admin_revoking_own_approval_returns_400_bad_request(
-    client: TestClient, admin_headers: dict, admin_user
-):
+def test_admin_revoking_own_approval_returns_400_bad_request(client: TestClient, admin_headers: dict, admin_user):
     """
     Verify that admins cannot revoke their own approval.
 
@@ -172,9 +168,7 @@ def test_approving_nonexistent_user_returns_404_not_found(client: TestClient, ad
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_approving_user_by_non_admin_returns_403_forbidden(
-    client: TestClient, staff_headers: dict, pending_user
-):
+def test_approving_user_by_non_admin_returns_403_forbidden(client: TestClient, staff_headers: dict, pending_user):
     """
     Verify that regular staff cannot approve other users.
 
@@ -206,9 +200,7 @@ def test_approving_user_without_token_returns_401_unauthorized(client: TestClien
 # ── Change role ───────────────────────────────────────────────────────────────
 
 
-def test_promoting_staff_to_admin_returns_200_ok_with_updated_role(
-    client: TestClient, admin_headers: dict, staff_user
-):
+def test_promoting_staff_to_admin_returns_200_ok_with_updated_role(client: TestClient, admin_headers: dict, staff_user):
     """
     Verify that admins can promote staff to admin role.
 
@@ -243,9 +235,7 @@ def test_demoting_another_admin_to_staff_returns_200_ok_with_updated_role(
     assert resp.json()["role"]["name"] == "STAFF"
 
 
-def test_admin_demoting_themselves_returns_400_bad_request(
-    client: TestClient, admin_headers: dict, admin_user
-):
+def test_admin_demoting_themselves_returns_400_bad_request(client: TestClient, admin_headers: dict, admin_user):
     """
     Verify that admins cannot demote themselves.
 
@@ -278,9 +268,7 @@ def test_setting_role_to_unknown_value_returns_422_unprocessable_entity(
     assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
-def test_changing_role_by_non_admin_returns_403_forbidden(
-    client: TestClient, staff_headers: dict, pending_user
-):
+def test_changing_role_by_non_admin_returns_403_forbidden(client: TestClient, staff_headers: dict, pending_user):
     """
     Verify that regular staff cannot change roles.
 
@@ -321,9 +309,7 @@ def test_disabling_staff_user_returns_200_ok_with_audit_trail(
     assert data["disabled_at"] is not None
 
 
-def test_admin_disabling_themselves_returns_400_bad_request(
-    client: TestClient, admin_headers: dict, admin_user
-):
+def test_admin_disabling_themselves_returns_400_bad_request(client: TestClient, admin_headers: dict, admin_user):
     """
     Verify that admins cannot disable their own account.
 
@@ -380,9 +366,7 @@ def test_disabling_nonexistent_user_returns_404_not_found(client: TestClient, ad
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_disabling_user_by_non_admin_returns_403_forbidden(
-    client: TestClient, staff_headers: dict, pending_user
-):
+def test_disabling_user_by_non_admin_returns_403_forbidden(client: TestClient, staff_headers: dict, pending_user):
     """
     Verify that regular staff cannot disable accounts.
 
@@ -431,9 +415,7 @@ def test_disable_reason_too_short_returns_422_unprocessable_entity(
     assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
-def test_disabling_user_without_token_returns_401_unauthorized(
-    client: TestClient, session: Session
-):
+def test_disabling_user_without_token_returns_401_unauthorized(client: TestClient, session: Session):
     """
     Verify that unauthenticated disable attempts are rejected.
 
@@ -450,9 +432,7 @@ def test_disabling_user_without_token_returns_401_unauthorized(
 # ── Enable ────────────────────────────────────────────────────────────────────
 
 
-def test_enabling_disabled_user_returns_200_ok(
-    client: TestClient, admin_headers: dict, session: Session
-):
+def test_enabling_disabled_user_returns_200_ok(client: TestClient, admin_headers: dict, session: Session):
     """
     Verify that admins can re-enable disabled staff accounts.
 
@@ -475,9 +455,7 @@ def test_enabling_disabled_user_returns_200_ok(
     assert data["disabled_reason"] is None
 
 
-def test_enabling_already_enabled_user_returns_409_conflict(
-    client: TestClient, admin_headers: dict, session: Session
-):
+def test_enabling_already_enabled_user_returns_409_conflict(client: TestClient, admin_headers: dict, session: Session):
     """
     Verify that enabling an already-enabled user returns 409.
 

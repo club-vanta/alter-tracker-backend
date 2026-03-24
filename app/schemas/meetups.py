@@ -66,9 +66,7 @@ class MeetupCreate(BaseModel):
         """
         url_str = str(v)
         if not MAZMO_URL_PATTERN.match(url_str):
-            raise ValueError(
-                "URL must match pattern: https://mazmo.net/{community}/{thread-slug}-{id}"
-            )
+            raise ValueError("URL must match pattern: https://mazmo.net/{community}/{thread-slug}-{id}")
         return v
 
 

@@ -27,7 +27,7 @@
 
   env = {
     DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:5432/alter_event_tracker";
-    SECRET_KEY = "CHANGE_ME_IN_PRODUCTION_USE_openssl_rand_-hex_32";
+    JWT_SIGNING_KEY = "CHANGE_ME_IN_PRODUCTION_USE_openssl_rand_-hex_32";
     ALGORITHM = "HS256";
     ACCESS_TOKEN_EXPIRE_MINUTES = "60";
     BACKEND_PORT = "8000";

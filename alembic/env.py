@@ -28,8 +28,7 @@ if config.config_file_name is not None:
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError(
-        "DATABASE_URL environment variable is not set. "
-        "Make sure you are running inside the devenv shell."
+        "DATABASE_URL environment variable is not set. Make sure you are running inside the devenv shell."
     )
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 

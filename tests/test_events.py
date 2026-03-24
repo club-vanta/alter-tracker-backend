@@ -24,9 +24,7 @@ from tests.conftest import make_guest, make_meetup, make_rsvp, make_user
 class TestBanCreatesEvent:
     """Verify that banning a guest creates an EventLog entry."""
 
-    def test_ban_creates_event_log_entry(
-        self, client: TestClient, admin_headers: dict, session: Session, admin_user
-    ):
+    def test_ban_creates_event_log_entry(self, client: TestClient, admin_headers: dict, session: Session, admin_user):
         """
         When an admin bans a guest, an EventLog entry should be created
         with the correct event_type, actor, guest, and reason.
@@ -53,9 +51,7 @@ class TestBanCreatesEvent:
 class TestUnbanCreatesEvent:
     """Verify that unbanning a guest creates an EventLog entry."""
 
-    def test_unban_creates_event_log_entry(
-        self, client: TestClient, admin_headers: dict, session: Session, admin_user
-    ):
+    def test_unban_creates_event_log_entry(self, client: TestClient, admin_headers: dict, session: Session, admin_user):
         """
         When an admin unbans a guest, an EventLog entry should be created.
         """
@@ -169,9 +165,7 @@ class TestUndoCheckinCreatesEvent:
 class TestUndoCheckin:
     """Tests for the undo check-in endpoint."""
 
-    def test_undo_checkin_returns_200_ok(
-        self, client: TestClient, staff_headers: dict, session: Session
-    ):
+    def test_undo_checkin_returns_200_ok(self, client: TestClient, staff_headers: dict, session: Session):
         """Staff can undo a check-in."""
         meetup = make_meetup(session)
         guest = make_guest(session, mazmo_user_id=1, username="attendee")
@@ -191,9 +185,7 @@ class TestUndoCheckin:
         )
         assert resp.status_code == status.HTTP_200_OK
 
-    def test_undo_checkin_clears_arrival_fields(
-        self, client: TestClient, staff_headers: dict, session: Session
-    ):
+    def test_undo_checkin_clears_arrival_fields(self, client: TestClient, staff_headers: dict, session: Session):
         """Undoing a check-in clears has_arrived, arrival_time, arrival_order."""
         meetup = make_meetup(session)
         guest = make_guest(session, mazmo_user_id=1, username="attendee")
@@ -253,9 +245,7 @@ class TestUndoCheckin:
         )
         assert resp.status_code == status.HTTP_404_NOT_FOUND
 
-    def test_undo_checkin_requires_reason(
-        self, client: TestClient, staff_headers: dict, session: Session
-    ):
+    def test_undo_checkin_requires_reason(self, client: TestClient, staff_headers: dict, session: Session):
         """Undo check-in requires a reason for the audit trail."""
         meetup = make_meetup(session)
         guest = make_guest(session, mazmo_user_id=1, username="attendee")
@@ -275,9 +265,7 @@ class TestUndoCheckin:
         )
         assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
-    def test_undo_checkin_reason_too_short_returns_422(
-        self, client: TestClient, staff_headers: dict, session: Session
-    ):
+    def test_undo_checkin_reason_too_short_returns_422(self, client: TestClient, staff_headers: dict, session: Session):
         """Undo reason must be at least 5 characters."""
         meetup = make_meetup(session)
         guest = make_guest(session, mazmo_user_id=1, username="attendee")
@@ -306,9 +294,7 @@ class TestUndoCheckin:
 class TestListAllEvents:
     """Tests for GET /events (admin only)."""
 
-    def test_list_all_events_as_admin_returns_200_ok(
-        self, client: TestClient, admin_headers: dict, session: Session
-    ):
+    def test_list_all_events_as_admin_returns_200_ok(self, client: TestClient, admin_headers: dict, session: Session):
         """Admins can list all events."""
         # Create some events via actions
         guest = make_guest(session, mazmo_user_id=1, username="testguest")
@@ -326,9 +312,7 @@ class TestListAllEvents:
         assert "limit" in data
         assert "offset" in data
 
-    def test_list_all_events_as_staff_returns_403_forbidden(
-        self, client: TestClient, staff_headers: dict
-    ):
+    def test_list_all_events_as_staff_returns_403_forbidden(self, client: TestClient, staff_headers: dict):
         """Staff cannot access the global events list."""
         resp = client.get("/events/", headers=staff_headers)
         assert resp.status_code == status.HTTP_403_FORBIDDEN
@@ -338,9 +322,7 @@ class TestListAllEvents:
         resp = client.get("/events/")
         assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_list_all_events_filter_by_type(
-        self, client: TestClient, admin_headers: dict, session: Session
-    ):
+    def test_list_all_events_filter_by_type(self, client: TestClient, admin_headers: dict, session: Session):
         """Can filter events by type."""
         guest = make_guest(session, mazmo_user_id=1, username="testguest")
 
@@ -358,9 +340,7 @@ class TestListAllEvents:
         data = resp.json()
         assert all(e["event_type"] == "BAN" for e in data["events"])
 
-    def test_list_all_events_filter_by_multiple_types(
-        self, client: TestClient, admin_headers: dict, session: Session
-    ):
+    def test_list_all_events_filter_by_multiple_types(self, client: TestClient, admin_headers: dict, session: Session):
         """Can filter by multiple event types."""
         guest = make_guest(session, mazmo_user_id=1, username="testguest")
 
@@ -376,17 +356,13 @@ class TestListAllEvents:
         data = resp.json()
         assert data["total"] == 2
 
-    def test_list_all_events_invalid_type_returns_400(
-        self, client: TestClient, admin_headers: dict
-    ):
+    def test_list_all_events_invalid_type_returns_400(self, client: TestClient, admin_headers: dict):
         """Invalid event type returns 400."""
         resp = client.get("/events/?type=INVALID", headers=admin_headers)
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
         assert "invalid event type" in resp.json()["detail"].lower()
 
-    def test_list_all_events_pagination(
-        self, client: TestClient, admin_headers: dict, session: Session
-    ):
+    def test_list_all_events_pagination(self, client: TestClient, admin_headers: dict, session: Session):
         """Pagination works correctly."""
         # Create multiple events
         for i in range(5):
@@ -439,9 +415,7 @@ class TestListMeetupEvents:
         assert data["total"] == 1
         assert data["events"][0]["event_type"] == "CHECK_IN"
 
-    def test_list_meetup_events_nonexistent_meetup_returns_404(
-        self, client: TestClient, staff_headers: dict
-    ):
+    def test_list_meetup_events_nonexistent_meetup_returns_404(self, client: TestClient, staff_headers: dict):
         """Nonexistent meetup returns 404."""
         import uuid
 
@@ -545,9 +519,7 @@ class TestListGuestEvents:
         event_types = {e["event_type"] for e in data["events"]}
         assert event_types == {"CHECK_IN", "BAN"}
 
-    def test_list_guest_events_nonexistent_guest_returns_404(
-        self, client: TestClient, staff_headers: dict
-    ):
+    def test_list_guest_events_nonexistent_guest_returns_404(self, client: TestClient, staff_headers: dict):
         """Nonexistent guest returns 404."""
         resp = client.get("/events/guests/99999", headers=staff_headers)
         assert resp.status_code == status.HTTP_404_NOT_FOUND
@@ -566,9 +538,7 @@ class TestListGuestEvents:
         )
 
         # Staff filtering for CHECK_IN - should return empty
-        resp = client.get(
-            f"/events/guests/{guest.mazmo_user_id}?type=CHECK_IN", headers=staff_headers
-        )
+        resp = client.get(f"/events/guests/{guest.mazmo_user_id}?type=CHECK_IN", headers=staff_headers)
         data = resp.json()
         assert data["total"] == 0
         assert data["events"] == []
@@ -634,9 +604,7 @@ class TestListStaffEvents:
         assert resp.status_code == status.HTTP_200_OK
         assert resp.json()["total"] >= 1
 
-    def test_list_staff_events_nonexistent_staff_returns_404(
-        self, client: TestClient, admin_headers: dict
-    ):
+    def test_list_staff_events_nonexistent_staff_returns_404(self, client: TestClient, admin_headers: dict):
         """Nonexistent staff member returns 404."""
         resp = client.get("/events/staff/99999", headers=admin_headers)
         assert resp.status_code == status.HTTP_404_NOT_FOUND
@@ -694,9 +662,7 @@ class TestEventFiltering:
         assert data["total"] == 1
         assert data["events"][0]["guest"]["username"] == "guest1"
 
-    def test_filter_by_actor_id(
-        self, client: TestClient, admin_headers: dict, session: Session, admin_user
-    ):
+    def test_filter_by_actor_id(self, client: TestClient, admin_headers: dict, session: Session, admin_user):
         """Can filter events by actor_id."""
         guest = make_guest(session, mazmo_user_id=1, username="testguest")
 
@@ -720,9 +686,7 @@ class TestEventFiltering:
 class TestEventResponseFormat:
     """Tests for correct response format."""
 
-    def test_event_includes_actor_details(
-        self, client: TestClient, admin_headers: dict, session: Session, admin_user
-    ):
+    def test_event_includes_actor_details(self, client: TestClient, admin_headers: dict, session: Session, admin_user):
         """Events include actor username and id."""
         guest = make_guest(session, mazmo_user_id=1, username="testguest")
 
@@ -737,13 +701,9 @@ class TestEventResponseFormat:
         assert event["actor"]["id"] == admin_user.id
         assert event["actor"]["username"] == admin_user.username
 
-    def test_event_includes_guest_details(
-        self, client: TestClient, admin_headers: dict, session: Session
-    ):
+    def test_event_includes_guest_details(self, client: TestClient, admin_headers: dict, session: Session):
         """Events include guest username, displayname, and mazmo_user_id."""
-        guest = make_guest(
-            session, mazmo_user_id=123, username="guestuser", displayname="Guest User"
-        )
+        guest = make_guest(session, mazmo_user_id=123, username="guestuser", displayname="Guest User")
 
         client.patch(
             f"/guests/{guest.mazmo_user_id}/ban",
@@ -774,9 +734,7 @@ class TestEventResponseFormat:
         event = resp.json()["events"][0]
         assert event["meetup_id"] == str(meetup.id)
 
-    def test_event_includes_reason_when_present(
-        self, client: TestClient, admin_headers: dict, session: Session
-    ):
+    def test_event_includes_reason_when_present(self, client: TestClient, admin_headers: dict, session: Session):
         """Events include reason when one was provided."""
         guest = make_guest(session, mazmo_user_id=1, username="testguest")
 
@@ -790,9 +748,7 @@ class TestEventResponseFormat:
         event = resp.json()["events"][0]
         assert event["reason"] == "Specific reason here"
 
-    def test_events_ordered_by_timestamp_descending(
-        self, client: TestClient, admin_headers: dict, session: Session
-    ):
+    def test_events_ordered_by_timestamp_descending(self, client: TestClient, admin_headers: dict, session: Session):
         """Events are returned newest first."""
         for i in range(3):
             guest = make_guest(session, mazmo_user_id=i + 1, username=f"guest{i}")

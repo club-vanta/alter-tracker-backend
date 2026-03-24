@@ -144,9 +144,7 @@ def test_sync_is_accessible_by_regular_staff_returns_200_ok(
     assert resp.status_code == status.HTTP_200_OK
 
 
-def test_sync_returns_404_for_nonexistent_meetup(
-    client: TestClient, admin_headers: dict, mock_mazmo: AsyncMock
-):
+def test_sync_returns_404_for_nonexistent_meetup(client: TestClient, admin_headers: dict, mock_mazmo: AsyncMock):
     """
     Verify that syncing a nonexistent meetup returns 404.
 
@@ -265,9 +263,7 @@ def test_checkin_stores_staff_id_who_performed_checkin(
 
     # Verify it's stored in the database
     rsvp = session.exec(
-        select(MeetupRsvp)
-        .where(MeetupRsvp.meetup_id == meetup.id)
-        .where(MeetupRsvp.guest_id == guest.mazmo_user_id)
+        select(MeetupRsvp).where(MeetupRsvp.meetup_id == meetup.id).where(MeetupRsvp.guest_id == guest.mazmo_user_id)
     ).first()
     assert rsvp is not None
     assert rsvp.checked_in_by_id == staff_user.id

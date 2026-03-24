@@ -158,9 +158,7 @@ class GuestSyncer:
         rows = [g.model_dump(exclude={"rsvps", "meetups"}) for g in guests]
         count_before = self._count_guests()
 
-        stmt = (
-            pg_insert(Guest).values(rows).on_conflict_do_nothing(index_elements=["mazmo_user_id"])
-        )
+        stmt = pg_insert(Guest).values(rows).on_conflict_do_nothing(index_elements=["mazmo_user_id"])
         self._session.exec(stmt)  # type: ignore[arg-type]
         self._session.commit()
 
@@ -176,10 +174,7 @@ class GuestSyncer:
             return 0
 
         rows = [
-            r.model_dump(
-                exclude={"guest", "meetup", "has_arrived", "arrival_time", "arrival_order"}
-            )
-            for r in rsvps
+            r.model_dump(exclude={"guest", "meetup", "has_arrived", "arrival_time", "arrival_order"}) for r in rsvps
         ]
         count_before = self._count_rsvps()
 
@@ -202,9 +197,7 @@ class GuestSyncer:
         - RSVPs no longer in Mazmo's list are marked as cancelled.
         Only writes rows where the status actually changed.
         """
-        all_rsvps = self._session.exec(
-            select(MeetupRsvp).where(MeetupRsvp.meetup_id == self._meetup.id)
-        ).all()
+        all_rsvps = self._session.exec(select(MeetupRsvp).where(MeetupRsvp.meetup_id == self._meetup.id)).all()
         changed = 0
         for rsvp in all_rsvps:
             should_be_cancelled = rsvp.guest_id not in current_ids
@@ -228,9 +221,7 @@ class GuestSyncer:
     def _count_rsvps(self) -> int:
         """Returns the current total number of RSVPs for this meetup."""
         return self._session.exec(
-            select(func.count())
-            .select_from(MeetupRsvp)
-            .where(MeetupRsvp.meetup_id == self._meetup.id)
+            select(func.count()).select_from(MeetupRsvp).where(MeetupRsvp.meetup_id == self._meetup.id)
         ).one()
 
 

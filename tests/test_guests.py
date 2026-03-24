@@ -52,9 +52,7 @@ def test_get_nonexistent_guest_returns_404_not_found(client: TestClient, staff_h
 # ── Guest public includes is_banned field ─────────────────────────────────────
 
 
-def test_guest_public_includes_is_banned_field(
-    client: TestClient, staff_headers: dict, session: Session
-):
+def test_guest_public_includes_is_banned_field(client: TestClient, staff_headers: dict, session: Session):
     """
     Verify that GuestPublic schema includes is_banned field.
 
@@ -71,9 +69,7 @@ def test_guest_public_includes_is_banned_field(
 # ── Ban guest ─────────────────────────────────────────────────────────────────
 
 
-def test_ban_guest_as_admin_returns_200_ok(
-    client: TestClient, admin_headers: dict, session: Session
-):
+def test_ban_guest_as_admin_returns_200_ok(client: TestClient, admin_headers: dict, session: Session):
     """
     Verify that admins can ban guests.
 
@@ -92,9 +88,7 @@ def test_ban_guest_as_admin_returns_200_ok(
     assert data["banned_reason"] == "Violated community guidelines"
 
 
-def test_ban_guest_stores_audit_trail(
-    client: TestClient, admin_headers: dict, session: Session, admin_user
-):
+def test_ban_guest_stores_audit_trail(client: TestClient, admin_headers: dict, session: Session, admin_user):
     """
     Verify that banning a guest stores the audit trail.
 
@@ -113,9 +107,7 @@ def test_ban_guest_stores_audit_trail(
     assert data["banned_reason"] == "Violated community guidelines"
 
 
-def test_ban_guest_as_staff_returns_403_forbidden(
-    client: TestClient, staff_headers: dict, session: Session
-):
+def test_ban_guest_as_staff_returns_403_forbidden(client: TestClient, staff_headers: dict, session: Session):
     """
     Verify that regular staff cannot ban guests.
 
@@ -131,9 +123,7 @@ def test_ban_guest_as_staff_returns_403_forbidden(
     assert resp.status_code == status.HTTP_403_FORBIDDEN
 
 
-def test_ban_already_banned_guest_returns_409_conflict(
-    client: TestClient, admin_headers: dict, session: Session
-):
+def test_ban_already_banned_guest_returns_409_conflict(client: TestClient, admin_headers: dict, session: Session):
     """
     Verify that banning an already-banned guest returns 409.
 
@@ -219,9 +209,7 @@ def test_ban_guest_without_token_returns_401_unauthorized(client: TestClient, se
 # ── Unban guest ───────────────────────────────────────────────────────────────
 
 
-def test_unban_guest_as_admin_returns_200_ok(
-    client: TestClient, admin_headers: dict, session: Session
-):
+def test_unban_guest_as_admin_returns_200_ok(client: TestClient, admin_headers: dict, session: Session):
     """
     Verify that admins can unban guests.
 
@@ -265,9 +253,7 @@ def test_unban_clears_ban_fields(client: TestClient, admin_headers: dict, sessio
     assert data["is_banned"] is False
 
 
-def test_unban_not_banned_guest_returns_409_conflict(
-    client: TestClient, admin_headers: dict, session: Session
-):
+def test_unban_not_banned_guest_returns_409_conflict(client: TestClient, admin_headers: dict, session: Session):
     """
     Verify that unbanning an unbanned guest returns 409.
 
@@ -307,9 +293,7 @@ def test_unban_nonexistent_guest_returns_404_not_found(client: TestClient, admin
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_unban_guest_without_token_returns_401_unauthorized(
-    client: TestClient, admin_headers: dict, session: Session
-):
+def test_unban_guest_without_token_returns_401_unauthorized(client: TestClient, admin_headers: dict, session: Session):
     """Verify that unauthenticated unban attempts are rejected."""
     guest = make_guest(session, mazmo_user_id=1, username="unbannotoken")
     # Admin bans
@@ -353,9 +337,7 @@ def test_list_banned_guests_as_staff_returns_200_ok(
     assert data["guests"][0]["is_banned"] is True
 
 
-def test_list_banned_guests_empty_returns_empty_list(
-    client: TestClient, staff_headers: dict, session: Session
-):
+def test_list_banned_guests_empty_returns_empty_list(client: TestClient, staff_headers: dict, session: Session):
     """
     Verify that /banned returns empty list when no guests are banned.
 

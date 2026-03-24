@@ -115,7 +115,7 @@ def test_get_secret_fetches_from_aws_when_env_not_set():
     """
     mock_client = MagicMock()
     mock_client.get_secret_value.return_value = {
-        "SecretString": '{"username": "prod-admin", "password": "prod-secret"}'
+        "SecretString": '{"admin_username": "prod-admin", "admin_password": "prod-secret", "jwt_signing_key": "abc123"}'
     }
 
     with (
@@ -129,7 +129,11 @@ def test_get_secret_fetches_from_aws_when_env_not_set():
 
         result = get_secret("my-app/credentials")
 
-    assert result == {"username": "prod-admin", "password": "prod-secret"}
+    assert result == {
+        "admin_username": "prod-admin",
+        "admin_password": "prod-secret",
+        "jwt_signing_key": "abc123",
+    }
     mock_client.get_secret_value.assert_called_once_with(SecretId="my-app/credentials")
 
 
@@ -212,7 +216,11 @@ def test_get_admin_credentials_uses_secrets_manager_when_available():
         patch.dict(os.environ, {}, clear=True),
         patch(
             "app.core.secrets.get_secret",
-            return_value={"username": "prod-admin", "password": "prod-secret"},
+            return_value={
+                "admin_username": "prod-admin",
+                "admin_password": "prod-secret",
+                "jwt_signing_key": "abc123",
+            },
         ),
     ):
         username, password = get_admin_credentials()

@@ -7,8 +7,8 @@ environment variables for local development.
 Usage:
     from app.core.secrets import get_secret
 
-    # Returns dict like {"username": "admin", "password": "..."}
-    admin_creds = get_secret("alter-tracker-backend/admin-credentials")
+    # Returns dict like {"admin_username": "admin", "admin_password": "...", "jwt_signing_key": "..."}
+    secrets = get_secret("alter-tracker-backend/secrets")
 """
 
 import json
@@ -33,9 +33,7 @@ def _get_boto3_client():
     try:
         import boto3
     except ImportError as e:
-        raise ImportError(
-            "boto3 is required for AWS Secrets Manager. Install it with: uv add boto3"
-        ) from e
+        raise ImportError("boto3 is required for AWS Secrets Manager. Install it with: uv add boto3") from e
 
     return boto3.client("secretsmanager", region_name=os.getenv("AWS_REGION", "us-east-1"))
 
@@ -102,8 +100,7 @@ def get_secret(secret_name: str, *, required: bool = True) -> dict[str, Any] | N
         )
         if required:
             raise SecretNotFoundError(
-                f"Secret '{secret_name}' not accessible. "
-                f"Set {env_key} environment variable for local development."
+                f"Secret '{secret_name}' not accessible. Set {env_key} environment variable for local development."
             ) from e
         return None
 
@@ -128,9 +125,9 @@ def get_admin_credentials() -> tuple[str, str]:
         return username, password
 
     # Try Secrets Manager (will fail gracefully if boto3 not installed)
-    secret = get_secret("alter-tracker-backend/admin-credentials", required=False)
+    secret = get_secret("alter-tracker-backend/secrets", required=False)
     if secret:
-        return secret["username"], secret["password"]
+        return secret["admin_username"], secret["admin_password"]
 
     # Final fallback for local dev only
     log.warning(

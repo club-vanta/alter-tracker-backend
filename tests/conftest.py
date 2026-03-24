@@ -32,9 +32,7 @@ from app.models.models import Guest, Meetup, MeetupRsvp, PossibleRoles, Role, Us
 settings = get_settings()
 
 # ── Test database URL ─────────────────────────────────────────────────────────
-TEST_DATABASE_URL = settings.database_url.replace(
-    "/alter_event_tracker", "/alter_event_tracker_test"
-)
+TEST_DATABASE_URL = settings.database_url.replace("/alter_event_tracker", "/alter_event_tracker_test")
 
 # URL to connect to the default postgres DB (needed to CREATE DATABASE)
 ADMIN_DATABASE_URL = settings.database_url.replace("/alter_event_tracker", "/postgres")
@@ -55,9 +53,7 @@ def _ensure_test_database_exists() -> None:
         isolation_level="AUTOCOMMIT",
     )
     with admin_engine.connect() as conn:
-        exists = conn.execute(
-            text("SELECT 1 FROM pg_database WHERE datname = 'alter_event_tracker_test'")
-        ).scalar()
+        exists = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = 'alter_event_tracker_test'")).scalar()
         if not exists:
             conn.execute(text("CREATE DATABASE alter_event_tracker_test"))
     admin_engine.dispose()
@@ -81,9 +77,7 @@ def setup_test_database():
 
     # Seed roles and create the arrival_order trigger function
     with test_engine.connect() as conn:
-        conn.execute(
-            text("INSERT INTO user_roles (name) VALUES ('STAFF'), ('ADMIN') ON CONFLICT DO NOTHING")
-        )
+        conn.execute(text("INSERT INTO user_roles (name) VALUES ('STAFF'), ('ADMIN') ON CONFLICT DO NOTHING"))
         # Create the trigger function for arrival_order (same as in migration)
         conn.execute(
             text("""

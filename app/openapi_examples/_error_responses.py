@@ -7,7 +7,6 @@ Each factory returns a dict suitable for use in FastAPI's `responses` parameter.
 Usage:
     @router.post("/ban", responses={**error_404_guest(), **error_409_already_banned()})
 """
-# ruff: noqa: E501  # Long lines are intentional - detailed error messages for docs
 
 from typing import Any
 
@@ -54,9 +53,7 @@ def error_403_not_approved() -> ResponsesDict:
                     "examples": {
                         "pending_approval": {
                             "summary": "Account pending approval",
-                            "value": {
-                                "detail": "Your account is pending admin approval. Please try again later."
-                            },
+                            "value": {"detail": "Your account is pending admin approval. Please try again later."},
                         },
                         "account_disabled": {
                             "summary": "Account disabled",
@@ -79,9 +76,7 @@ def error_403_admin_required() -> ResponsesDict:
                     "examples": {
                         "admin_required": {
                             "summary": "Admin privileges needed",
-                            "value": {
-                                "detail": "This operation requires admin privileges. Your role is STAFF."
-                            },
+                            "value": {"detail": "This operation requires admin privileges. Your role is STAFF."},
                         },
                     }
                 }

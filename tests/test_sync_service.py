@@ -146,12 +146,8 @@ def test_update_cancelled_rsvps_only_affects_current_meetup(session: Session):
     WHY: A guest cancelling from one meetup must not affect their RSVP
     status at other meetups.
     """
-    meetup_a = make_meetup(
-        session, name="Meetup A", mazmo_meetup_url="https://mazmo.net/test/meetup-a-601"
-    )
-    meetup_b = make_meetup(
-        session, name="Meetup B", mazmo_meetup_url="https://mazmo.net/test/meetup-b-601"
-    )
+    meetup_a = make_meetup(session, name="Meetup A", mazmo_meetup_url="https://mazmo.net/test/meetup-a-601")
+    meetup_b = make_meetup(session, name="Meetup B", mazmo_meetup_url="https://mazmo.net/test/meetup-b-601")
     alice = make_guest(session, mazmo_user_id=601, username="alice_scope")
     rsvp_a = make_rsvp(session, meetup=meetup_a, guest=alice)
     rsvp_b = make_rsvp(session, meetup=meetup_b, guest=alice)

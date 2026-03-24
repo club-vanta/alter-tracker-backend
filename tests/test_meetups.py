@@ -132,9 +132,7 @@ def test_create_meetup_requires_auth(client: TestClient, mock_mazmo_for_meetups:
 # ── List meetups ──────────────────────────────────────────────────────────────
 
 
-def test_list_meetups_returns_all_meetups(
-    client: TestClient, staff_headers: dict, session: Session
-):
+def test_list_meetups_returns_all_meetups(client: TestClient, staff_headers: dict, session: Session):
     """
     Verify that list returns all meetups with total count.
     """
@@ -195,9 +193,7 @@ def test_get_meetup_returns_404_for_unknown_id(client: TestClient, staff_headers
 # ── List meetup guests ────────────────────────────────────────────────────────
 
 
-def test_list_meetup_guests_returns_all_rsvps(
-    client: TestClient, staff_headers: dict, session: Session, meetup
-):
+def test_list_meetup_guests_returns_all_rsvps(client: TestClient, staff_headers: dict, session: Session, meetup):
     """
     Verify that listing meetup guests returns all RSVPed guests.
     """
@@ -245,9 +241,7 @@ def test_list_meetup_guests_returns_404_for_unknown_meetup(client: TestClient, s
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_list_meetup_guests_returns_empty_when_no_rsvps(
-    client: TestClient, staff_headers: dict, meetup
-):
+def test_list_meetup_guests_returns_empty_when_no_rsvps(client: TestClient, staff_headers: dict, meetup):
     """
     Verify that a meetup with no RSVPs returns empty list.
     """
@@ -262,9 +256,7 @@ def test_list_meetup_guests_returns_empty_when_no_rsvps(
 # ── Check in ─────────────────────────────────────────────────────────────────
 
 
-def test_checkin_marks_guest_as_arrived(
-    client: TestClient, staff_headers: dict, session: Session, meetup
-):
+def test_checkin_marks_guest_as_arrived(client: TestClient, staff_headers: dict, session: Session, meetup):
     """
     Verify that check-in marks the guest as arrived and returns their data.
 
@@ -285,9 +277,7 @@ def test_checkin_marks_guest_as_arrived(
     assert data["arrival_order"] is not None
 
 
-def test_checkin_writes_event_log_entry(
-    client: TestClient, staff_headers: dict, session: Session, meetup, staff_user
-):
+def test_checkin_writes_event_log_entry(client: TestClient, staff_headers: dict, session: Session, meetup, staff_user):
     """
     Verify that check-in creates an audit log entry.
 
@@ -323,9 +313,7 @@ def test_checkin_returns_404_when_guest_not_rsvped(client: TestClient, staff_hea
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_checkin_returns_409_when_already_checked_in(
-    client: TestClient, staff_headers: dict, session: Session, meetup
-):
+def test_checkin_returns_409_when_already_checked_in(client: TestClient, staff_headers: dict, session: Session, meetup):
     """
     Verify that double check-in returns 409.
 
@@ -363,9 +351,7 @@ def test_checkin_returns_404_for_unknown_meetup(client: TestClient, staff_header
 # ── Undo check-in ─────────────────────────────────────────────────────────────
 
 
-def test_undo_checkin_clears_arrival_data(
-    client: TestClient, staff_headers: dict, session: Session, meetup
-):
+def test_undo_checkin_clears_arrival_data(client: TestClient, staff_headers: dict, session: Session, meetup):
     """
     Verify that undo check-in clears all arrival fields.
 
@@ -430,9 +416,7 @@ def test_undo_checkin_writes_event_log_with_reason(
     assert event.actor_id == staff_user.id
 
 
-def test_undo_checkin_returns_404_when_guest_not_rsvped(
-    client: TestClient, staff_headers: dict, meetup
-):
+def test_undo_checkin_returns_404_when_guest_not_rsvped(client: TestClient, staff_headers: dict, meetup):
     """
     Verify that undo on a non-RSVPed guest returns 404.
     """

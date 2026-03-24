@@ -113,9 +113,7 @@ def test_register_without_password_returns_422_unprocessable_entity(client: Test
 # ── Login ─────────────────────────────────────────────────────────────────────
 
 
-def test_login_with_valid_credentials_returns_200_ok_with_bearer_token(
-    client: TestClient, session: Session
-):
+def test_login_with_valid_credentials_returns_200_ok_with_bearer_token(client: TestClient, session: Session):
     """
     Verify that valid credentials produce a JWT token.
 
@@ -269,9 +267,7 @@ def test_userinfo_with_expired_token_returns_401_unauthorized(client: TestClient
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-def test_userinfo_unapproved_user_cannot_obtain_token_returns_403_forbidden(
-    client: TestClient, session: Session
-):
+def test_userinfo_unapproved_user_cannot_obtain_token_returns_403_forbidden(client: TestClient, session: Session):
     """
     Verify that unapproved users are blocked at login, not just at /userinfo.
 

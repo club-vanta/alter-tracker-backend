@@ -128,9 +128,7 @@ class MeetupRsvp(SQLModel, table=True):
     # Both fields together form the PK: (meetup_id, guest_id)
     # This means a guest can only RSVP once per meetup.
     meetup_id: uuid.UUID = Field(foreign_key="meetups.id", primary_key=True)
-    guest_id: MazmoUserId = Field(
-        foreign_key="guests.mazmo_user_id", primary_key=True, sa_type=Integer
-    )
+    guest_id: MazmoUserId = Field(foreign_key="guests.mazmo_user_id", primary_key=True, sa_type=Integer)
 
     # ── RSVP state ──
     rsvp_time: datetime

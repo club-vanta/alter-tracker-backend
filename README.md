@@ -110,7 +110,7 @@ Note: "Events" here refers to audit log entries, not Mazmo "eventos" (meetups).
 | Variable                      | Required | Default                     | Description                                                                        |
 | ----------------------------- | -------- | --------------------------- | ---------------------------------------------------------------------------------- |
 | `DATABASE_URL`                | Yes      | -                           | PostgreSQL connection string (e.g., `postgresql+psycopg://user:pass@host:5432/db`) |
-| `SECRET_KEY`                  | Yes      | -                           | JWT signing key. Generate with: `openssl rand -hex 32`                             |
+| `JWT_SIGNING_KEY`             | Yes      | -                           | JWT signing key. Generate with: `openssl rand -hex 32`                             |
 | `ALGORITHM`                   | No       | `HS256`                     | JWT signing algorithm                                                              |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | No       | `720`                       | JWT token lifetime (12 hours)                                                      |
 | `JSON_LOGS`                   | No       | `false`                     | Set `true` for JSON output (CloudWatch)                                            |
@@ -130,26 +130,32 @@ Override any variable by creating a `.env` file (gitignored):
 ```bash
 # .env
 LOG_LEVEL=DEBUG
-SECRET_KEY=your-custom-key
+JWT_SIGNING_KEY=your-custom-key
 ```
 
 ### Production (AWS Secrets Manager)
 
 Secrets are stored in AWS Secrets Manager and fetched automatically:
 
-| Secret Name                               | Format                                   | Description        |
-| ----------------------------------------- | ---------------------------------------- | ------------------ |
-| `alter-tracker-backend/admin-credentials` | `{"username": "...", "password": "..."}` | Initial admin user |
+All secrets are merged into a single AWS Secrets Manager entry:
 
-**Create secrets via AWS CLI:**
+| Secret Name                      | Fields                                                          |
+| -------------------------------- | --------------------------------------------------------------- |
+| `alter-tracker-backend/secrets`  | `admin_username`, `admin_password`, `jwt_signing_key`           |
+
+**Create via AWS CLI:**
 
 ```bash
 aws secretsmanager create-secret \
-  --name "alter-tracker-backend/admin-credentials" \
-  --secret-string '{"username": "admin", "password": "secure-password-here"}'
+  --name "alter-tracker-backend/secrets" \
+  --secret-string '{
+    "admin_username": "admin",
+    "admin_password": "secure-password-here",
+    "jwt_signing_key": "$(openssl rand -hex 32)"
+  }'
 ```
 
-**Local override:** Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` environment variables, or use defaults (admin/changeme-insecure-123).
+**Local override:** Set `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `JWT_SIGNING_KEY` environment variables (devenv.nix does this automatically).
 
 ---
 
@@ -341,7 +347,7 @@ tofu apply
 
 ## Troubleshooting
 
-### "database_url is required" / "secret_key is required"
+### "database_url is required" / "jwt_signing_key is required"
 
 You're not in the devenv shell. Run:
 ```bash

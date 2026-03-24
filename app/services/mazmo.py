@@ -248,9 +248,7 @@ class MazmoClient:
             self._raise_for_status(resp, f"users endpoint (batch of {len(ids)})")
             return resp.json()  # type: ignore[return-value]
 
-        raw_results: list[dict[str, RawUserEntry]] = await asyncio.gather(
-            *[_fetch_batch(b) for b in batches]
-        )
+        raw_results: list[dict[str, RawUserEntry]] = await asyncio.gather(*[_fetch_batch(b) for b in batches])
 
         result: dict[MazmoUserId, MazmoUserEntry] = {}
         for batch_data in raw_results:
@@ -272,8 +270,7 @@ class MazmoClient:
         """
         if response.is_error:
             raise httpx.HTTPStatusError(
-                f"Mazmo {context} returned HTTP {response.status_code}. "
-                f"Body: {response.text[:200]}",
+                f"Mazmo {context} returned HTTP {response.status_code}. Body: {response.text[:200]}",
                 request=response.request,
                 response=response,
             )
