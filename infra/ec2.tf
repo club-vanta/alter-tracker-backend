@@ -27,6 +27,7 @@ resource "aws_instance" "app_server" {
   vpc_security_group_ids      = [aws_security_group.app_sg.id]
   iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
   associate_public_ip_address = true
+  ipv6_address_count          = 1
 
   # 1. Enforce IMDSv2 and set Hop Limit to 2 for Docker
   # Setting http_put_response_hop_limit = 2 is the "magic fix" for Docker. 
@@ -51,17 +52,19 @@ resource "aws_security_group" "app_sg" {
   vpc_id = module.vpc.vpc_id
 
   ingress {
-    from_port   = 8000
-    to_port     = 8000
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port        = 8000
+    to_port          = 8000
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
   }
 
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
   }
 }
 

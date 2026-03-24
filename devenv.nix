@@ -112,9 +112,25 @@
       exec = "PYTHONPATH=. uv run python scripts/seed_admin.py";
       description = "Create initial admin user (credentials from AWS Secrets Manager or env vars)";
     };
-    export-aws-credentials = {
-      exec = "eval $(aws configure export-credentials --format env)";
-      description = "Exports the AWS credentials as environment variables. Needed for opentofu. Use after doing aws  login";
+    aws-login = {
+      exec = ''
+        echo ""
+        echo "Step 1 — log in to AWS:"
+        echo "  aws login"
+        echo ""
+        echo "Step 2 — export AWS credentials into your current shell"
+        echo "  (scripts can't do this for you — copy and run this):"
+        echo ""
+        echo '  eval $(aws configure export-credentials --format env)'
+        echo ""
+        echo "Step 3 — export Cloudflare API token:"
+        echo ""
+        echo '  export TF_VAR_cloudflare_api_token="your-api-token-here"'
+        echo ""
+        echo "After both steps, tofu plan/apply will work."
+        echo ""
+      '';
+      description = "Print AWS + Cloudflare credential export instructions for tofu";
     };
   };
 
