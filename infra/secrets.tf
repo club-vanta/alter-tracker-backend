@@ -2,8 +2,9 @@
 # Stores sensitive configuration that shouldn't be in code or environment variables.
 
 resource "aws_secretsmanager_secret" "app_secrets" {
-  name        = "${local.project_name}/secrets"
-  description = "All application secrets: admin credentials and JWT signing key"
+  name                    = "${local.project_name}/secrets"
+  description             = "All application secrets: admin credentials and JWT signing key"
+  recovery_window_in_days = 0
 
   tags = {
     Purpose = "app-config"

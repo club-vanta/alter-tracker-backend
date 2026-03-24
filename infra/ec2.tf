@@ -5,12 +5,12 @@ data "aws_ami" "latest_al2023" {
 
   filter {
     name   = "name"
-    values = ["al2023-ami-2023.*-x86_64"]
+    values = ["al2023-ami-2023.*-arm64"]
   }
 
   filter {
     name   = "architecture"
-    values = ["x86_64"]
+    values = ["arm64"]
   }
 
   filter {
@@ -21,7 +21,7 @@ data "aws_ami" "latest_al2023" {
 
 resource "aws_instance" "app_server" {
   ami           = data.aws_ami.latest_al2023.id
-  instance_type = "t3.micro"
+  instance_type = "t4g.small"
 
   subnet_id                   = module.vpc.public_subnets[0]
   vpc_security_group_ids      = [aws_security_group.app_sg.id]
