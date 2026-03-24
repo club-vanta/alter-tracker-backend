@@ -101,35 +101,8 @@
     };
 
     seed-admin = {
-      exec = ''
-                uv run python -c "
-        from app.models.models import User, PossibleRoles, Role
-        from app.core.security import get_password_hash
-        from sqlmodel import Session, select, create_engine
-        import os
-
-        engine = create_engine(os.environ['DATABASE_URL'])
-        with Session(engine) as session:
-            existing = session.exec(select(User).where(User.username == 'admin')).first()
-            if not existing:
-                admin_role = session.exec(select(Role).where(Role.name == PossibleRoles.ADMIN)).first()
-                if not admin_role:
-                    print('ERROR: user_roles table not seeded. Run db-migrate first.')
-                    exit(1)
-                admin = User(
-                    username='admin',
-                    hashed_password=get_password_hash('changeme-insecure-123'),
-                    is_approved=True,
-                    role_id=admin_role.id,
-                )
-                session.add(admin)
-                session.commit()
-                print('Admin user created: username=admin, password=changeme-insecure-123')
-            else:
-                print('Admin user already exists.')
-        "
-      '';
-      description = "Create initial admin user (run once after db-migrate)";
+      exec = "PYTHONPATH=. uv run python scripts/seed_admin.py";
+      description = "Create initial admin user (credentials from AWS Secrets Manager or env vars)";
     };
     export-aws-credentials = {
       exec = "eval $(aws configure export-credentials --format env)";
