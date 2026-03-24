@@ -44,7 +44,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Type check (basedpyright)
-        run: uv run basedpyright --venvpath . --venv .venv
+        run: uv run basedpyright
 
       - name: Run tests
         run: uv run pytest

@@ -51,8 +51,8 @@ select = [
 "app/core/deps.py" = ["B008"]
 
 [tool.basedpyright]
-venvPath = ".devenv/state"
-venv = "venv"
+venvPath = "."
+venv = ".venv"
 pythonVersion = "3.13"
 pythonPlatform = "Linux"
 

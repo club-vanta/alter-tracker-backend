@@ -152,6 +152,9 @@ in {
   };
 
   enterShell = ''
+    # Keep .venv symlink in sync so basedpyright and other tools find the venv
+    ln -sfn .devenv/state/venv .venv
+
     echo ""
     echo "  🎪  Alter Event Tracker - Dev Environment"
     echo ""
