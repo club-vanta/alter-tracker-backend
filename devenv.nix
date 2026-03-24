@@ -21,6 +21,9 @@
       sync.enable = true;
     };
   };
+  languages.opentofu = {
+    enable = true;
+  };
 
   env = {
     DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:5432/alter_event_tracker";
@@ -127,6 +130,10 @@
         "
       '';
       description = "Create initial admin user (run once after db-migrate)";
+    };
+    export-aws-credentials = {
+      exec = "eval $(aws configure export-credentials --format env)";
+      description = "Exports the AWS credentials as environment variables. Needed for opentofu. Use after doing aws  login";
     };
   };
 
