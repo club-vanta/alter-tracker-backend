@@ -4,9 +4,12 @@ Staff / Admin management router
 GET    /staff/pending          → list unapproved accounts (admin only)
 GET    /staff/                 → list all staff accounts (admin only)
 PATCH  /staff/{id}/approve     → approve or revoke a staff account (admin only)
-DELETE /staff/{id}             → delete a staff account (admin only)
+PATCH  /staff/{id}/disable     → disable a staff account (admin only)
+PATCH  /staff/{id}/enable      → re-enable a disabled staff account (admin only)
 PATCH  /staff/{id}/role        → promote / demote role (admin only)
 """
+
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, col, select
@@ -14,7 +17,7 @@ from sqlmodel import Session, col, select
 from app.core.database import get_session
 from app.core.deps import get_admin_user
 from app.models.models import PossibleRoles, Role, User
-from app.schemas.schemas import ApproveUserRequest, RoleRequest, UserPublic
+from app.schemas import ApproveUserRequest, DisableUserRequest, RoleRequest, UserPublic
 
 router = APIRouter(prefix="/staff", tags=["staff"])
 
@@ -139,26 +142,81 @@ async def set_role(
     return user
 
 
-# ── Delete staff user ─────────────────────────────────────────────────────────
+# ── Disable staff user ────────────────────────────────────────────────────────
 
 
-@router.delete(
-    "/{user_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a staff account (admin only)",
+@router.patch(
+    "/{user_id}/disable",
+    response_model=UserPublic,
+    summary="Disable a staff account (admin only)",
 )
-async def delete_staff(
+async def disable_staff(
     user_id: int,
+    body: DisableUserRequest,
     session: Session = Depends(get_session),
     admin: User = Depends(get_admin_user),
-) -> None:
+) -> User:
+    """
+    Disable a staff account (soft-delete).
+
+    Disabled accounts cannot log in but their data is preserved for
+    audit trails. Records who disabled the account, when, and why.
+    """
     user = _get_staff_or_404(user_id, session)
 
     if user.id == admin.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Admins cannot delete their own account.",
+            detail="Admins cannot disable their own account.",
         )
 
-    session.delete(user)
+    if user.is_disabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This account is already disabled.",
+        )
+
+    user.is_disabled = True
+    user.disabled_at = datetime.now(UTC)
+    user.disabled_by_id = admin.id
+    user.disabled_reason = body.reason
+    session.add(user)
     session.commit()
+    session.refresh(user)
+    return user
+
+
+# ── Enable staff user ─────────────────────────────────────────────────────────
+
+
+@router.patch(
+    "/{user_id}/enable",
+    response_model=UserPublic,
+    summary="Re-enable a disabled staff account (admin only)",
+)
+async def enable_staff(
+    user_id: int,
+    session: Session = Depends(get_session),
+    _admin: User = Depends(get_admin_user),
+) -> User:
+    """
+    Re-enable a previously disabled staff account.
+
+    Clears the disable fields, allowing the user to log in again.
+    """
+    user = _get_staff_or_404(user_id, session)
+
+    if not user.is_disabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This account is not disabled.",
+        )
+
+    user.is_disabled = False
+    user.disabled_at = None
+    user.disabled_by_id = None
+    user.disabled_reason = None
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user

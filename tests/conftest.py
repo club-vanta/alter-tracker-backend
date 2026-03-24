@@ -27,7 +27,7 @@ from app.core.database import get_session
 from app.core.security import get_password_hash
 from app.domain_types import MazmoUserId
 from app.main import app
-from app.models.models import Guest, PossibleRoles, Role, User
+from app.models.models import Guest, Meetup, MeetupRsvp, PossibleRoles, Role, User
 
 settings = get_settings()
 
@@ -79,13 +79,42 @@ def setup_test_database():
     SQLModel.metadata.drop_all(test_engine)
     SQLModel.metadata.create_all(test_engine)
 
-    # Seed roles and arrival_order sequence
+    # Seed roles and create the arrival_order trigger function
     with test_engine.connect() as conn:
         conn.execute(
             text("INSERT INTO user_roles (name) VALUES ('STAFF'), ('ADMIN') ON CONFLICT DO NOTHING")
         )
+        # Create the trigger function for arrival_order (same as in migration)
         conn.execute(
-            text("CREATE SEQUENCE IF NOT EXISTS arrival_order_seq START 1 INCREMENT 1 NO CYCLE")
+            text("""
+            CREATE OR REPLACE FUNCTION set_arrival_order()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                IF NEW.has_arrived = TRUE
+                   AND (OLD.has_arrived = FALSE OR OLD.has_arrived IS NULL)
+                THEN
+                    NEW.arrival_time := NOW();
+                    NEW.arrival_order := COALESCE(
+                        (SELECT MAX(arrival_order) + 1
+                         FROM meetup_rsvps
+                         WHERE meetup_id = NEW.meetup_id),
+                        1
+                    );
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+        """)
+        )
+        # Create trigger on meetup_rsvps if table exists
+        conn.execute(
+            text("""
+            DROP TRIGGER IF EXISTS trg_set_arrival_order ON meetup_rsvps;
+            CREATE TRIGGER trg_set_arrival_order
+                BEFORE UPDATE ON meetup_rsvps
+                FOR EACH ROW
+                EXECUTE FUNCTION set_arrival_order();
+        """)
         )
         conn.commit()
 
@@ -186,22 +215,60 @@ def make_guest(
     mazmo_user_id: int = 1,
     username: str = "guestuser",
     displayname: str = "Guest User",
-    has_arrived: bool = False,
 ) -> Guest:
-    """Helper to create a Guest directly in the test session."""
-    from datetime import datetime
-
+    """Helper to create a Guest (identity only) directly in the test session."""
     guest = Guest(
         mazmo_user_id=MazmoUserId(mazmo_user_id),
         username=username,
         displayname=displayname,
-        rsvp_time=datetime.now(UTC),
-        has_arrived=has_arrived,
     )
     session.add(guest)
     session.flush()
     session.refresh(guest)
     return guest
+
+
+def make_meetup(
+    session: Session,
+    *,
+    name: str = "Test Meetup",
+    mazmo_meetup_url: str = "https://mazmo.net/test-community/test-meetup-123",
+    date: datetime | None = None,
+) -> Meetup:
+    """Helper to create a Meetup directly in the test session."""
+    meetup = Meetup(
+        name=name,
+        mazmo_meetup_url=mazmo_meetup_url,
+        date=date or datetime.now(UTC),
+    )
+    session.add(meetup)
+    session.flush()
+    session.refresh(meetup)
+    return meetup
+
+
+def make_rsvp(
+    session: Session,
+    *,
+    meetup: Meetup,
+    guest: Guest,
+    has_arrived: bool = False,
+    arrival_order: int | None = None,
+    arrival_time: datetime | None = None,
+) -> MeetupRsvp:
+    """Helper to create a MeetupRsvp directly in the test session."""
+    rsvp = MeetupRsvp(
+        meetup_id=meetup.id,
+        guest_id=guest.mazmo_user_id,
+        rsvp_time=datetime.now(UTC),
+        has_arrived=has_arrived,
+        arrival_order=arrival_order,
+        arrival_time=arrival_time,
+    )
+    session.add(rsvp)
+    session.flush()
+    session.refresh(rsvp)
+    return rsvp
 
 
 def get_auth_headers(client: TestClient, username: str, password: str) -> dict:
@@ -243,6 +310,12 @@ def staff_headers(client: TestClient, staff_user: User) -> dict:
     return get_auth_headers(client, "staff", "a-very-secure-passphrase")
 
 
+@pytest.fixture()
+def meetup(session: Session) -> Meetup:
+    """Create a default test meetup."""
+    return make_meetup(session)
+
+
 # ── Shared Mock Data ──────────────────────────────────────────────────────────
 
 FAKE_RSVPS = {
@@ -262,14 +335,17 @@ FAKE_USERS = {
 def mock_mazmo():
     """
     Automatically patches MazmoClient for any test that requests this fixture.
-    Defaults to returning the successful FAKE data
+    Defaults to returning the successful FAKE data.
+
+    The fetch_rsvps method now accepts a URL parameter (meetup-aware).
     """
     with patch("app.services.sync.MazmoClient") as MockClientClass:
         mock_instance = AsyncMock()
 
-        # Default happy-path behaviour
+        # Default happy-path behaviour (meetup-aware - accepts URL param)
         mock_instance.fetch_rsvps.return_value = FAKE_RSVPS
         mock_instance.fetch_users.return_value = FAKE_USERS
+        mock_instance.fetch_meetup_date.return_value = datetime(2026, 4, 1, tzinfo=UTC)
 
         # (Handling the 'async with' context manager)
 
@@ -286,3 +362,30 @@ def mock_mazmo():
         yield mock_instance
 
         # Teardown happens after this line, but its implied
+
+
+@pytest.fixture
+def mock_mazmo_for_meetups():
+    """
+    Patches MazmoClient for meetup router tests (also patches in routers.meetups).
+    """
+    with (
+        patch("app.services.sync.MazmoClient") as SyncMockClass,
+        patch("app.routers.meetups.MazmoClient") as RouterMockClass,
+    ):
+        mock_instance = AsyncMock()
+
+        # Default happy-path behaviour
+        mock_instance.fetch_rsvps.return_value = FAKE_RSVPS
+        mock_instance.fetch_users.return_value = FAKE_USERS
+        mock_instance.fetch_meetup_date.return_value = datetime(2026, 4, 1, tzinfo=UTC)
+
+        # Context manager support
+        mock_instance.__aenter__.return_value = mock_instance
+        mock_instance.__aexit__.return_value = None
+
+        # Both patches return the same mock
+        SyncMockClass.return_value = mock_instance
+        RouterMockClass.return_value = mock_instance
+
+        yield mock_instance

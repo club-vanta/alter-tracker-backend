@@ -19,7 +19,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.models import PossibleRoles, Role, User
-from app.schemas.schemas import StaffRegisterRequest, TokenResponse, UserPublic
+from app.schemas import StaffRegisterRequest, TokenResponse, UserPublic
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -94,6 +94,12 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Your account is pending admin approval. Please try again later.",
+        )
+
+    if user.is_disabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has been disabled.",
         )
 
     token = create_access_token(

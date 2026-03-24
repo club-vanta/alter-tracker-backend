@@ -48,11 +48,16 @@ def get_current_user(
 def get_approved_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    """Ensures the authenticated user has been approved by an admin."""
+    """Ensures the authenticated user has been approved and is not disabled."""
     if not current_user.is_approved:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Your account is pending admin approval.",
+        )
+    if current_user.is_disabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has been disabled.",
         )
     return current_user
 

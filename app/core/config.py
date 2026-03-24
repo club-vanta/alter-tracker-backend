@@ -51,17 +51,6 @@ class Settings(BaseSettings):
     # tests or if Mazmo ever changes their domain.
     mazmo_base_url: str = "https://prod.mazmoapi.net"
 
-    # TODO: This needs to change, every event will have
-    # The community slug that appears in the thread URL path.
-    mazmo_community_slug: str = "eventos-reuniones-argentina"
-
-    # The human-readable slug for the specific event thread.
-    mazmo_thread_slug: str = "alter-cordoba-nos-ponemos-la-10-edicion"
-
-    # The numeric ID that Mazmo appends to the slug, e.g. the URL ends in
-    # "alter-cordoba-nos-ponemos-la-10-edicion-4217". Set via env var.
-    mazmo_thread_id: int
-
     # Maximum number of user IDs sent per /users request.
     # Keeps query strings short enough to avoid 414 URI Too Long errors.
     mazmo_user_batch_size: int = 30

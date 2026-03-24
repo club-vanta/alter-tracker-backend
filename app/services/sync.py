@@ -1,16 +1,18 @@
 """
-Sync service - orchestrates the full guest list refresh.
+Sync service - orchestrates the full guest list refresh for a specific meetup.
 
 Kept separate from the router so the logic can be unit-tested or called from
 a scheduled job in the future without going through HTTP.
 
 Upsert strategy
 ---------------
-We use a raw SQLAlchemy Core INSERT ... ON CONFLICT (mazmo_user_id) DO NOTHING.
-This is intentional:
-  - DO NOTHING (not DO UPDATE) means existing rows are NEVER touched.
-  - has_arrived / arrival_time / arrival_order are therefore immutable from
-    the sync side - only the check-in endpoint may set them.
+Guest table:
+  INSERT ... ON CONFLICT (mazmo_user_id) DO NOTHING - identity data is immutable.
+
+MeetupRsvp table:
+  INSERT ... ON CONFLICT (meetup_id, guest_id) DO UPDATE - updates rsvp_time and
+  reactivates cancelled RSVPs. NEVER touches check-in fields (has_arrived,
+  arrival_time, arrival_order).
 """
 
 import logging
@@ -20,8 +22,8 @@ from sqlmodel import Session, func, select
 
 from app.core.config import Settings
 from app.domain_types import MazmoUserId
-from app.models.models import Guest
-from app.schemas.schemas import MazmoRsvpEntry, MazmoUserEntry, SyncResponse
+from app.models.models import Guest, Meetup, MeetupRsvp
+from app.schemas import MazmoRsvpEntry, MazmoUserEntry, SyncResponse
 from app.services.mazmo import MazmoClient
 
 log = logging.getLogger(__name__)
@@ -29,15 +31,16 @@ log = logging.getLogger(__name__)
 
 class GuestSyncer:
     """
-    Orchestrates a full guest list refresh from Mazmo into the local database.
+    Orchestrates a full guest list refresh from Mazmo for a specific meetup.
 
     Each method has a single responsibility and can be tested in isolation.
     Call `sync()` to run the full pipeline.
     """
 
-    def __init__(self, session: Session, settings: Settings) -> None:
+    def __init__(self, session: Session, settings: Settings, meetup: Meetup) -> None:
         self._session = session
         self._settings = settings
+        self._meetup = meetup
 
     # ── Public entry point ────────────────────────────────────────────────────
 
@@ -50,34 +53,34 @@ class GuestSyncer:
             return SyncResponse(
                 inserted=0,
                 skipped=0,
-                total_in_db=self._count_guests(),
+                total_in_db=self._count_rsvps(),
             )
 
         guests_to_insert = self._build_guests(rsvps, user_details)
+        rsvps_to_upsert = self._build_rsvps(rsvps, user_details)
 
         if not guests_to_insert:
             log.warning("All RSVPs lacked user detail - nothing inserted.")
             return SyncResponse(
                 inserted=0,
                 skipped=len(rsvps),
-                total_in_db=self._count_guests(),
+                total_in_db=self._count_rsvps(),
             )
 
-        inserted = self._upsert_guests(guests_to_insert)
+        # First upsert guests (identity), then upsert RSVPs
+        self._upsert_guests(guests_to_insert)
+        inserted = self._upsert_rsvps(rsvps_to_upsert)
         self._update_cancelled_rsvps(set(rsvps.keys()))
 
-        attempted = len(guests_to_insert)
-        skipped = attempted - inserted
-        total = self._count_guests()
+        total = self._count_rsvps()
 
         log.info(
-            "Sync complete - attempted=%d, inserted=%d, skipped=%d, total_in_db=%d",
-            attempted,
+            "Sync complete for meetup %s - inserted=%d, total_in_db=%d",
+            self._meetup.id,
             inserted,
-            skipped,
             total,
         )
-        return SyncResponse(inserted=inserted, skipped=skipped, total_in_db=total)
+        return SyncResponse(inserted=inserted, skipped=0, total_in_db=total)
 
     # ── Private methods ───────────────────────────────────────────────────────
 
@@ -89,9 +92,9 @@ class GuestSyncer:
         Returns both as a tuple so they can be used together by the caller.
         """
         async with MazmoClient(self._settings) as client:
-            rsvps = await client.fetch_rsvps()
+            rsvps = await client.fetch_rsvps(self._meetup.mazmo_meetup_url)
             user_details = await client.fetch_users(list(rsvps.keys()))
-        log.info("Fetched %d RSVPs from Mazmo", len(rsvps))
+        log.info("Fetched %d RSVPs from Mazmo for meetup %s", len(rsvps), self._meetup.id)
         return rsvps, user_details
 
     def _build_guests(
@@ -100,11 +103,11 @@ class GuestSyncer:
         user_details: dict[MazmoUserId, MazmoUserEntry],
     ) -> list[Guest]:
         """
-        Step 3: Build Guest model instances from Mazmo data.
+        Build Guest model instances (identity only) from Mazmo data.
         Skips any RSVP whose user details couldn't be fetched.
         """
         guests: list[Guest] = []
-        for user_id, rsvp in rsvps.items():
+        for user_id in rsvps:
             user = user_details.get(user_id)
             if user is None:
                 log.warning("No user detail found for mazmo_user_id=%d - skipping", user_id)
@@ -114,28 +117,42 @@ class GuestSyncer:
                     mazmo_user_id=user_id,
                     username=user.username,
                     displayname=user.displayname,
-                    rsvp_time=rsvp.joinedAt,
                 )
             )
         return guests
 
+    def _build_rsvps(
+        self,
+        rsvps: dict[MazmoUserId, MazmoRsvpEntry],
+        user_details: dict[MazmoUserId, MazmoUserEntry],
+    ) -> list[MeetupRsvp]:
+        """
+        Build MeetupRsvp model instances from Mazmo data.
+        Skips any RSVP whose user details couldn't be fetched.
+        """
+        result: list[MeetupRsvp] = []
+        for user_id, rsvp in rsvps.items():
+            if user_id not in user_details:
+                continue
+            result.append(
+                MeetupRsvp(
+                    meetup_id=self._meetup.id,
+                    guest_id=user_id,
+                    rsvp_time=rsvp.joinedAt,
+                    cancelled_rsvp=False,
+                )
+            )
+        return result
+
     def _upsert_guests(self, guests: list[Guest]) -> int:
         """
-        Step 4: Insert new guests via Postgres ON CONFLICT DO NOTHING.
+        Insert new guests via Postgres ON CONFLICT DO NOTHING.
         Returns the number of rows actually inserted.
         """
-        # Exclude check-in fields so DB server_defaults apply on INSERT.
-        rows = [
-            g.model_dump(
-                exclude={
-                    "has_arrived",
-                    "arrival_time",
-                    "arrival_order",
-                    "cancelled_rsvp",
-                }
-            )
-            for g in guests
-        ]
+        if not guests:
+            return 0
+
+        rows = [g.model_dump(exclude={"rsvps", "meetups"}) for g in guests]
         count_before = self._count_guests()
 
         stmt = (
@@ -146,34 +163,77 @@ class GuestSyncer:
 
         return self._count_guests() - count_before
 
+    def _upsert_rsvps(self, rsvps: list[MeetupRsvp]) -> int:
+        """
+        Upsert RSVPs via Postgres ON CONFLICT DO UPDATE.
+        Updates rsvp_time and reactivates cancelled RSVPs.
+        NEVER touches check-in fields.
+        """
+        if not rsvps:
+            return 0
+
+        rows = [
+            r.model_dump(
+                exclude={"guest", "meetup", "has_arrived", "arrival_time", "arrival_order"}
+            )
+            for r in rsvps
+        ]
+        count_before = self._count_rsvps()
+
+        stmt = pg_insert(MeetupRsvp).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["meetup_id", "guest_id"],
+            set_={
+                "rsvp_time": stmt.excluded.rsvp_time,
+                "cancelled_rsvp": False,  # Re-RSVP reactivates
+            },
+        )
+        self._session.exec(stmt)  # type: ignore[arg-type]
+        self._session.commit()
+
+        return self._count_rsvps() - count_before
+
     def _update_cancelled_rsvps(self, current_ids: set[MazmoUserId]) -> None:
         """
-        Step 5: Flip `cancelled_rsvp` for guests whose status changed.
-        - Guests no longer in Mazmo's list are marked as cancelled.
-        - Guests who re-RSVP'd are reactivated.
+        Flip `cancelled_rsvp` for RSVPs whose status changed FOR THIS MEETUP.
+        - RSVPs no longer in Mazmo's list are marked as cancelled.
         Only writes rows where the status actually changed.
         """
-        all_guests = self._session.exec(select(Guest)).all()
+        all_rsvps = self._session.exec(
+            select(MeetupRsvp).where(MeetupRsvp.meetup_id == self._meetup.id)
+        ).all()
         changed = 0
-        for guest in all_guests:
-            should_be_cancelled = guest.mazmo_user_id not in current_ids
-            if guest.cancelled_rsvp != should_be_cancelled:
-                guest.cancelled_rsvp = should_be_cancelled
-                self._session.add(guest)
+        for rsvp in all_rsvps:
+            should_be_cancelled = rsvp.guest_id not in current_ids
+            if rsvp.cancelled_rsvp != should_be_cancelled:
+                rsvp.cancelled_rsvp = should_be_cancelled
+                self._session.add(rsvp)
                 changed += 1
 
         if changed:
             self._session.commit()
-            log.info("Updated cancelled_rsvp status for %d guest(s)", changed)
+            log.info(
+                "Updated cancelled_rsvp status for %d RSVP(s) in meetup %s",
+                changed,
+                self._meetup.id,
+            )
 
     def _count_guests(self) -> int:
         """Returns the current total number of guests in the database."""
         return self._session.exec(select(func.count()).select_from(Guest)).one()
 
+    def _count_rsvps(self) -> int:
+        """Returns the current total number of RSVPs for this meetup."""
+        return self._session.exec(
+            select(func.count())
+            .select_from(MeetupRsvp)
+            .where(MeetupRsvp.meetup_id == self._meetup.id)
+        ).one()
+
 
 # ── Module-level convenience function ─────────────────────────────────────────
 
 
-async def sync_guests(session: Session, settings: Settings) -> SyncResponse:
+async def sync_guests(session: Session, settings: Settings, meetup: Meetup) -> SyncResponse:
     """Convenience wrapper used by the router."""
-    return await GuestSyncer(session, settings).sync()
+    return await GuestSyncer(session, settings, meetup).sync()

@@ -1,88 +1,223 @@
 """
-Guests router
+Guests router - manages guest identity and ban status.
 
-POST /api/guests/sync          → pull latest RSVP list from Mazmo (approved staff+)
-GET  /api/guests/              → list/search guests (approved staff+)      [NOT YET IMPLEMENTED]
-POST /api/guests/{id}/checkin  → mark a guest as arrived                   [NOT YET IMPLEMENTED]
+GET   /api/guests/                    → list all known guests (identity only)
+GET   /api/guests/banned              → list all banned guests (staff can view)
+GET   /api/guests/{mazmo_user_id}     → get a single guest's identity
+PATCH /api/guests/{mazmo_user_id}/ban   → ban a guest (admin only)
+PATCH /api/guests/{mazmo_user_id}/unban → unban a guest (admin only)
+
+Note: Meetup-specific operations (sync, checkin) are in the meetups router.
 """
 
 import logging
+from datetime import UTC, datetime
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from app.core.config import Settings, get_settings
 from app.core.database import get_session
-from app.core.deps import get_approved_user
-from app.models.models import User
-from app.schemas.schemas import SyncResponse
-from app.services.sync import sync_guests
+from app.core.deps import get_admin_user, get_approved_user
+from app.models.models import EventLog, EventType, Guest, User
+from app.schemas import (
+    BanGuestRequest,
+    BannedGuestListResponse,
+    BannedGuestPublic,
+    GuestListResponse,
+    GuestPublic,
+)
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/guests", tags=["guests"])
 
 
-# ── Sync ──────────────────────────────────────────────────────────────────────
+# ── List guests ──────────────────────────────────────────────────────────────
 
 
-@router.post(
-    "/sync",
-    response_model=SyncResponse,
-    summary="Refresh guest list from Mazmo (never overwrites check-in data)",
+@router.get(
+    "/",
+    response_model=GuestListResponse,
+    summary="List all known guests (identity only)",
 )
-async def sync(
+async def list_guests(
     session: Session = Depends(get_session),
     _staff: User = Depends(get_approved_user),
-    settings: Settings = Depends(get_settings),
-) -> SyncResponse:
-    """
-    Fetches the latest RSVP list from Mazmo and upserts it into the local DB.
-
-    Safe to call at any time:
-      - New guests are inserted.
-      - Already-known guests are silently skipped (DO NOTHING).
-      - `has_arrived`, `arrival_time`, and `arrival_order` are NEVER modified.
-    """
-    try:
-        return await sync_guests(session, settings)
-    except httpx.HTTPStatusError as exc:
-        log.error("Mazmo HTTP error during sync: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Mazmo API returned an error: {exc}",
-        ) from exc
-
-    except httpx.RequestError as exc:
-        log.error("Mazmo network error during sync: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail=f"Could not reach Mazmo API: {exc}",
-        ) from exc
-
-    except ValueError as exc:
-        log.error("Mazmo response parse error: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Received an invalid data format from the Mazmo API:" + str(exc),
-        ) from exc
+) -> GuestListResponse:
+    """List all guests in the system (identity only, no RSVP state)."""
+    guests = session.exec(select(Guest).order_by(Guest.username)).all()
+    return GuestListResponse(
+        total=len(guests),
+        guests=[GuestPublic.model_validate(g) for g in guests],
+    )
 
 
-# ── Guest list + check-in (NOT YET IMPLEMENTED placeholders) ─────────────────────────────
+# ── List banned guests ────────────────────────────────────────────────────────
 
 
-# TODO:
-@router.get("/", summary="List / search guests")
-async def list_guests(
+@router.get(
+    "/banned",
+    response_model=BannedGuestListResponse,
+    summary="List all banned guests",
+)
+async def list_banned_guests(
+    session: Session = Depends(get_session),
     _staff: User = Depends(get_approved_user),
-) -> dict:
-    return {"detail": "NOT YET IMPLEMENTED"}
+) -> BannedGuestListResponse:
+    """List all banned guests with their ban details."""
+    guests = session.exec(
+        select(Guest).where(Guest.is_banned == True).order_by(Guest.username)  # noqa: E712
+    ).all()
+    return BannedGuestListResponse(
+        total=len(guests),
+        guests=[BannedGuestPublic.model_validate(g) for g in guests],
+    )
 
 
-# TODO:
-@router.post("/{mazmo_user_id}/checkin", summary="Check in a guest")
-async def checkin(
+# ── Get single guest ─────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/{mazmo_user_id}",
+    response_model=GuestPublic,
+    summary="Get a single guest's identity",
+)
+async def get_guest(
     mazmo_user_id: int,
+    session: Session = Depends(get_session),
     _staff: User = Depends(get_approved_user),
-) -> dict:
-    return {"detail": "NOT YET IMPLEMENTED"}
+) -> Guest:
+    """Get a single guest by their Mazmo user ID."""
+    guest = session.get(Guest, mazmo_user_id)
+    if not guest:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Guest with mazmo_user_id={mazmo_user_id} does not exist in our database. "
+                f"This guest may not have RSVPed to any meetup yet, or the ID might be incorrect. "
+                f"Guests are only added when they RSVP to a meetup and we sync from Mazmo. "
+                f"Try POST /meetups/{{meetup_id}}/sync first, or verify the mazmo_user_id."
+            ),
+        )
+    return guest
+
+
+# ── Ban guest ─────────────────────────────────────────────────────────────────
+
+
+@router.patch(
+    "/{mazmo_user_id}/ban",
+    response_model=BannedGuestPublic,
+    summary="Ban a guest (admin only)",
+)
+async def ban_guest(
+    mazmo_user_id: int,
+    request: BanGuestRequest,
+    session: Session = Depends(get_session),
+    admin: User = Depends(get_admin_user),
+) -> Guest:
+    """
+    Ban a guest. Records the admin who performed the ban and the reason.
+
+    Returns 404 if the guest doesn't exist.
+    Returns 409 if the guest is already banned.
+    """
+    guest = session.get(Guest, mazmo_user_id)
+    if not guest:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Cannot ban guest: mazmo_user_id={mazmo_user_id} does not exist in our database. "
+                f"Guests are only added when they RSVP to a meetup and we sync from Mazmo. "
+                f"Sync a meetup they've RSVPed to first, then try banning them again."
+            ),
+        )
+    if guest.is_banned:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot ban guest: '{guest.username}' (mazmo_user_id={mazmo_user_id}) "
+                f"is already banned. They were banned on {guest.banned_at} "
+                f"for reason: '{guest.banned_reason}'. To update the ban reason, "
+                f"unban first via PATCH /guests/{mazmo_user_id}/unban, then re-ban."
+            ),
+        )
+
+    guest.is_banned = True
+    guest.banned_at = datetime.now(UTC)
+    guest.banned_by_id = admin.id
+    guest.banned_reason = request.reason
+
+    # Create audit log entry
+    event = EventLog(
+        event_type=EventType.BAN,
+        actor_id=admin.id,
+        guest_id=guest.mazmo_user_id,
+        reason=request.reason,
+    )
+
+    session.add(guest)
+    session.add(event)
+    session.commit()
+    session.refresh(guest)
+
+    log.info(f"Admin {admin.username} banned guest {guest.username}: {request.reason}")
+    return guest
+
+
+# ── Unban guest ───────────────────────────────────────────────────────────────
+
+
+@router.patch(
+    "/{mazmo_user_id}/unban",
+    response_model=GuestPublic,
+    summary="Unban a guest (admin only)",
+)
+async def unban_guest(
+    mazmo_user_id: int,
+    session: Session = Depends(get_session),
+    admin: User = Depends(get_admin_user),
+) -> Guest:
+    """
+    Unban a guest. Clears all ban-related fields.
+
+    Returns 404 if the guest doesn't exist.
+    Returns 409 if the guest is not currently banned.
+    """
+    guest = session.get(Guest, mazmo_user_id)
+    if not guest:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Cannot unban guest: mazmo_user_id={mazmo_user_id} does not exist. "
+                f"Double-check the ID via GET /guests/ or GET /guests/banned."
+            ),
+        )
+    if not guest.is_banned:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot unban guest: '{guest.username}' (mazmo_user_id={mazmo_user_id}) "
+                f"is not currently banned. They may have been unbanned by another admin. "
+                f"Check audit trail at GET /events/guests/{mazmo_user_id}."
+            ),
+        )
+
+    guest.is_banned = False
+    guest.banned_at = None
+    guest.banned_by_id = None
+    guest.banned_reason = None
+
+    # Create audit log entry
+    event = EventLog(
+        event_type=EventType.UNBAN,
+        actor_id=admin.id,
+        guest_id=guest.mazmo_user_id,
+    )
+
+    session.add(guest)
+    session.add(event)
+    session.commit()
+    session.refresh(guest)
+
+    log.info(f"Admin {admin.username} unbanned guest {guest.username}")
+    return guest

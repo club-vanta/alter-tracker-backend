@@ -4,6 +4,13 @@ Mazmo API client.
 Encapsulates all outbound HTTP logic so the router stays thin.
 All methods are async and use a shared httpx.AsyncClient.
 
+URL Transformation
+──────────────────
+Frontend URLs:  https://mazmo.net/{community}/{thread-slug}-{thread_id}
+API URLs:       https://prod.mazmoapi.net/communities/{community}/threads/{thread-slug}-{thread_id}
+
+The transformation is encapsulated in _to_api_url().
+
 Two-step fetch flow
 ───────────────────
 Step 1 - Thread endpoint
@@ -32,14 +39,16 @@ Headers mimic a real browser session to avoid 403s from Mazmo's CDN/WAF.
 
 import asyncio
 import logging
+from datetime import datetime
 from itertools import islice
 from typing import TypedDict
+from urllib.parse import urlparse
 
 import httpx
 
 from app.core.config import Settings
 from app.domain_types import MazmoUserId
-from app.schemas.schemas import MazmoRsvpEntry, MazmoUserEntry
+from app.schemas import MazmoRsvpEntry, MazmoUserEntry
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +88,29 @@ class RawEventField(TypedDict):
     event: RawRsvpsDict
 
 
+class RawEventData(TypedDict):
+    date: str
+
+
+class RawThreadResponse(TypedDict):
+    event: RawEventData
+
+
+# ── Custom exceptions ────────────────────────────────────────────────────────
+
+
+class MazmoNetworkError(Exception):
+    """Raised when Mazmo API is unreachable."""
+
+    pass
+
+
+class MazmoAPIError(Exception):
+    """Raised when Mazmo API returns an error status."""
+
+    pass
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -114,21 +146,35 @@ class MazmoClient:
     async def __aexit__(self, *args: object) -> None:
         await self._client.aclose()
 
+    # ── URL transformation ────────────────────────────────────────────────────
+
+    def _to_api_url(self, frontend_url: str) -> str:
+        """
+        Transform mazmo.net URL to prod.mazmoapi.net URL.
+
+        https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217
+        → https://prod.mazmoapi.net/communities/eventos-reuniones-argentina/threads/alter-cordoba-4217
+        """
+        parsed = urlparse(frontend_url)
+        path_parts = parsed.path.strip("/").split("/")
+        community = path_parts[0]
+        thread = path_parts[1]
+        return f"{self._settings.mazmo_base_url}/communities/{community}/threads/{thread}"
+
     # ── Step 1: RSVPs ─────────────────────────────────────────────────────────
 
-    async def fetch_rsvps(self) -> dict[MazmoUserId, MazmoRsvpEntry]:
+    async def fetch_rsvps(self, mazmo_url: str) -> dict[MazmoUserId, MazmoRsvpEntry]:
         """
         Returns a mapping of  MazmoUserId → MazmoRsvpEntry  for every
         guest who has RSVP'd to the event thread.
-        """
-        s = self._settings
-        url = (
-            f"{s.mazmo_base_url}/communities/{s.mazmo_community_slug}"
-            f"/threads/{s.mazmo_thread_slug}-{s.mazmo_thread_id}"
-        )
-        log.info("Fetching RSVPs from %s", url)
 
-        response = await self._client.get(url)
+        Args:
+            mazmo_url: Frontend URL like https://mazmo.net/{community}/{thread-slug}-{id}
+        """
+        api_url = self._to_api_url(mazmo_url)
+        log.info("Fetching RSVPs from %s", api_url)
+
+        response = await self._client.get(api_url)
         self._raise_for_status(response, "thread endpoint")
 
         try:
@@ -147,6 +193,35 @@ class MazmoClient:
 
         log.info("Fetched %d RSVPs from Mazmo", len(result))
         return result
+
+    # ── Fetch meetup date ─────────────────────────────────────────────────────
+
+    async def fetch_meetup_date(self, mazmo_url: str) -> datetime:
+        """
+        Fetch the event date from a Mazmo thread URL.
+
+        Args:
+            mazmo_url: Frontend URL like https://mazmo.net/{community}/{thread-slug}-{id}
+
+        Returns:
+            The event date as a datetime object.
+
+        Raises:
+            MazmoNetworkError: If Mazmo API is unreachable.
+            MazmoAPIError: If Mazmo API returns an error status.
+        """
+        try:
+            api_url = self._to_api_url(mazmo_url)
+            log.info("Fetching meetup date from %s", api_url)
+            response = await self._client.get(api_url)
+            response.raise_for_status()
+            body: RawThreadResponse = response.json()
+            date_str = body["event"]["date"]
+            return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        except httpx.RequestError as exc:
+            raise MazmoNetworkError(f"Cannot reach Mazmo: {exc}") from exc
+        except httpx.HTTPStatusError as exc:
+            raise MazmoAPIError(f"Mazmo returned {exc.response.status_code}") from exc
 
     # ── Step 2: User details (batched) ────────────────────────────────────────
 

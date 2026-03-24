@@ -17,7 +17,7 @@ from alembic import context
 
 # ── Import all models so Alembic autogenerate sees them ──────────────────────
 # Add new model modules here as the project grows.
-from app.models.models import Guest, User  # noqa: F401
+from app.models.models import Guest, Meetup, MeetupRsvp, User  # noqa: F401
 
 # ── Alembic Config ────────────────────────────────────────────────────────────
 config = context.config

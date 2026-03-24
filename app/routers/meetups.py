@@ -1,0 +1,449 @@
+"""
+Meetups router
+
+POST  /api/meetups/                    → create a new meetup (approved staff+)
+GET   /api/meetups/                    → list all meetups (approved staff+)
+GET   /api/meetups/{id}                → get a single meetup (approved staff+)
+POST  /api/meetups/{id}/sync           → sync guest list from Mazmo (approved staff+)
+GET   /api/meetups/{id}/guests         → list guests at meetup (approved staff+)
+POST  /api/meetups/{id}/guests/.../checkin      → check in a guest (approved staff+)
+PATCH /api/meetups/{id}/guests/.../undo-checkin → undo a check-in (approved staff+)
+"""
+
+import logging
+import uuid
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import selectinload
+from sqlmodel import Session, select
+
+from app.core.config import Settings, get_settings
+from app.core.database import get_session
+from app.core.deps import get_approved_user
+from app.models.models import EventLog, EventType, Guest, Meetup, MeetupRsvp, User
+from app.schemas import (
+    CheckedInByPublic,
+    CheckInResponse,
+    GuestPublic,
+    MeetupCreate,
+    MeetupGuestListResponse,
+    MeetupGuestPublic,
+    MeetupListResponse,
+    MeetupPublic,
+    RsvpPublic,
+    SyncResponse,
+)
+from app.services.mazmo import MazmoAPIError, MazmoClient, MazmoNetworkError
+from app.services.sync import sync_guests
+
+log = logging.getLogger(__name__)
+router = APIRouter(prefix="/meetups", tags=["meetups"])
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _get_meetup_or_404(session: Session, meetup_id: uuid.UUID) -> Meetup:
+    """Fetch a meetup by ID or raise 404."""
+    meetup = session.get(Meetup, meetup_id)
+    if not meetup:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Meetup with id={meetup_id} does not exist. "
+                f"It may have been deleted, or the UUID is incorrect. "
+                f"List all meetups via GET /meetups/ to find the correct ID."
+            ),
+        )
+    return meetup
+
+
+# ── Create meetup ────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/",
+    response_model=MeetupPublic,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new meetup",
+)
+async def create_meetup(
+    payload: MeetupCreate,
+    session: Session = Depends(get_session),
+    _staff: User = Depends(get_approved_user),
+    settings: Settings = Depends(get_settings),
+) -> Meetup:
+    """
+    Create a new meetup linked to a Mazmo event thread.
+
+    The Mazmo URL is validated and the event date is fetched from Mazmo.
+    Returns 422 if URL format is invalid, 502 if Mazmo returns an error,
+    504 if Mazmo is unreachable.
+    """
+    mazmo_url = str(payload.mazmo_meetup_url)
+
+    # Check for duplicate URL
+    existing = session.exec(select(Meetup).where(Meetup.mazmo_meetup_url == mazmo_url)).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot create meetup: a meetup with this Mazmo URL already exists. "
+                f"Existing meetup: id={existing.id}, name='{existing.name}', date={existing.date}. "
+                f"Each Mazmo event can only be tracked once."
+            ),
+        )
+
+    # Fetch the event date from Mazmo to verify URL exists
+    try:
+        async with MazmoClient(settings) as client:
+            event_date = await client.fetch_meetup_date(mazmo_url)
+    except MazmoNetworkError as exc:
+        log.error("Mazmo network error: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=(
+                f"Cannot create meetup: failed to connect to Mazmo API. "
+                f"This is likely a temporary network issue. Error: {exc}. "
+                f"Try again in a few moments, or check if Mazmo is experiencing an outage."
+            ),
+        ) from exc
+    except MazmoAPIError as exc:
+        log.error("Mazmo API error: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                f"Cannot create meetup: Mazmo API returned an error. Error: {exc}. "
+                f"This could mean the Mazmo URL is invalid or the event doesn't exist. "
+                f"Verify the URL is correct and points to a valid Mazmo event page."
+            ),
+        ) from exc
+
+    meetup = Meetup(
+        name=payload.name,
+        mazmo_meetup_url=mazmo_url,
+        date=event_date,
+    )
+    session.add(meetup)
+    session.commit()
+    session.refresh(meetup)
+    return meetup
+
+
+# ── List meetups ─────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/",
+    response_model=MeetupListResponse,
+    summary="List all meetups",
+)
+async def list_meetups(
+    session: Session = Depends(get_session),
+    _staff: User = Depends(get_approved_user),
+) -> MeetupListResponse:
+    """List all meetups ordered by date descending."""
+    meetups = session.exec(select(Meetup).order_by(Meetup.date.desc())).all()  # type: ignore[attr-defined]
+    return MeetupListResponse(
+        total=len(meetups),
+        meetups=[MeetupPublic.model_validate(m) for m in meetups],
+    )
+
+
+# ── Get single meetup ────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/{meetup_id}",
+    response_model=MeetupPublic,
+    summary="Get a single meetup",
+)
+async def get_meetup(
+    meetup_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    _staff: User = Depends(get_approved_user),
+) -> Meetup:
+    """Get a single meetup by ID."""
+    return _get_meetup_or_404(session, meetup_id)
+
+
+# ── Sync guests ──────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/{meetup_id}/sync",
+    response_model=SyncResponse,
+    summary="Sync guest list from Mazmo for this meetup",
+)
+async def sync_meetup_guests(
+    meetup_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    _staff: User = Depends(get_approved_user),
+    settings: Settings = Depends(get_settings),
+) -> SyncResponse:
+    """
+    Fetches the latest RSVP list from Mazmo and upserts it into the local DB.
+
+    Safe to call at any time:
+      - New guests are inserted.
+      - Existing RSVPs have their rsvp_time updated.
+      - `has_arrived`, `arrival_time`, and `arrival_order` are NEVER modified.
+    """
+    meetup = _get_meetup_or_404(session, meetup_id)
+
+    try:
+        return await sync_guests(session, settings, meetup)
+    except httpx.HTTPStatusError as exc:
+        log.error("Mazmo HTTP error during sync: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                f"Sync failed: Mazmo API returned HTTP error {exc.response.status_code}. "
+                f"The event may have been deleted on Mazmo, or their API is having issues. "
+                f"Check if the meetup URL is still valid on Mazmo's website."
+            ),
+        ) from exc
+    except httpx.RequestError as exc:
+        log.error("Mazmo network error during sync: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=(
+                f"Sync failed: could not connect to Mazmo API. Error: {exc}. "
+                f"This is likely a temporary network issue. Try again in a few moments."
+            ),
+        ) from exc
+    except ValueError as exc:
+        log.error("Mazmo response parse error: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                f"Sync failed: Mazmo returned data in an unexpected format. Error: {exc}. "
+                f"This could indicate Mazmo changed their API. Please report this issue."
+            ),
+        ) from exc
+
+
+# ── List guests for meetup ───────────────────────────────────────────────────
+
+
+@router.get(
+    "/{meetup_id}/guests",
+    response_model=MeetupGuestListResponse,
+    summary="List guests RSVPed to this meetup",
+)
+async def list_meetup_guests(
+    meetup_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    _staff: User = Depends(get_approved_user),
+) -> MeetupGuestListResponse:
+    """List all guests who have RSVPed to this meetup with their RSVP state."""
+    _get_meetup_or_404(session, meetup_id)
+
+    rsvps = session.exec(
+        select(MeetupRsvp)
+        .where(MeetupRsvp.meetup_id == meetup_id)
+        .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
+        .order_by(MeetupRsvp.rsvp_time)  # type: ignore[attr-defined]
+    ).all()
+
+    guests = [
+        MeetupGuestPublic(
+            guest=GuestPublic.model_validate(rsvp.guest),
+            rsvp=RsvpPublic.model_validate(rsvp),
+        )
+        for rsvp in rsvps
+    ]
+
+    return MeetupGuestListResponse(total=len(guests), guests=guests)
+
+
+# ── Check in a guest ─────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/{meetup_id}/guests/{mazmo_user_id}/checkin",
+    response_model=CheckInResponse,
+    summary="Check in a guest at this meetup",
+)
+async def checkin_guest(
+    meetup_id: uuid.UUID,
+    mazmo_user_id: int,
+    session: Session = Depends(get_session),
+    staff: User = Depends(get_approved_user),
+) -> CheckInResponse:
+    """
+    Mark a guest as arrived at this meetup.
+
+    The arrival_order and arrival_time are set automatically by a database trigger.
+    The staff member performing the check-in is recorded for audit purposes.
+    Returns 404 if guest not RSVPed, 409 if already checked in.
+    """
+    _get_meetup_or_404(session, meetup_id)
+
+    rsvp = session.exec(
+        select(MeetupRsvp)
+        .where(MeetupRsvp.meetup_id == meetup_id)
+        .where(MeetupRsvp.guest_id == mazmo_user_id)
+        .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
+    ).first()
+
+    if not rsvp:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Cannot check in: guest mazmo_user_id={mazmo_user_id} is not RSVPed. "
+                f"Either: (1) they haven't RSVPed on Mazmo yet, "
+                f"(2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, "
+                f"or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
+            ),
+        )
+
+    if rsvp.has_arrived:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot check in: guest '{rsvp.guest.username}' (mazmo_user_id={mazmo_user_id}) "
+                f"is already checked in. They arrived at {rsvp.arrival_time} "
+                f"(arrival #{rsvp.arrival_order}). "
+                f"To undo this, use PATCH /meetups/{meetup_id}/guests/{mazmo_user_id}/undo-checkin."
+            ),
+        )
+
+    # Flip the flag and record who performed the check-in
+    # The DB trigger handles arrival_order + arrival_time
+    rsvp.has_arrived = True
+    rsvp.checked_in_by_id = staff.id
+
+    # Create audit log entry
+    event = EventLog(
+        event_type=EventType.CHECK_IN,
+        actor_id=staff.id,
+        guest_id=mazmo_user_id,
+        meetup_id=meetup_id,
+    )
+
+    session.add(rsvp)
+    session.add(event)
+    session.commit()
+    session.refresh(rsvp)
+
+    # Fetch guest for response
+    guest = session.get(Guest, mazmo_user_id)
+    if not guest:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                f"Internal error: check-in succeeded but guest record "
+                f"(mazmo_user_id={mazmo_user_id}) could not be fetched. "
+                f"This should never happen - please report this bug. "
+                f"The check-in WAS recorded in the database."
+            ),
+        )
+
+    return CheckInResponse(
+        guest=GuestPublic.model_validate(guest),
+        arrival_order=rsvp.arrival_order,  # type: ignore[arg-type]
+        arrival_time=rsvp.arrival_time,  # type: ignore[arg-type]
+        checked_in_by=CheckedInByPublic.model_validate(staff),
+    )
+
+
+# ── Undo check-in ─────────────────────────────────────────────────────────────
+
+
+class UndoCheckInRequest(BaseModel):
+    """Request body for undoing a check-in."""
+
+    reason: str = Field(min_length=5, max_length=500)
+
+
+@router.patch(
+    "/{meetup_id}/guests/{mazmo_user_id}/undo-checkin",
+    response_model=GuestPublic,
+    summary="Undo a guest check-in at this meetup",
+)
+async def undo_checkin_guest(
+    meetup_id: uuid.UUID,
+    mazmo_user_id: int,
+    request: UndoCheckInRequest,
+    session: Session = Depends(get_session),
+    staff: User = Depends(get_approved_user),
+) -> Guest:
+    """
+    Undo a check-in for a guest at this meetup.
+
+    Use this when a guest was checked in by mistake. Requires a reason
+    for the audit trail. Clears has_arrived, arrival_time, arrival_order,
+    and checked_in_by_id.
+
+    Returns 404 if guest not RSVPed to this meetup.
+    Returns 409 if guest is not currently checked in.
+    """
+    _get_meetup_or_404(session, meetup_id)
+
+    rsvp = session.exec(
+        select(MeetupRsvp)
+        .where(MeetupRsvp.meetup_id == meetup_id)
+        .where(MeetupRsvp.guest_id == mazmo_user_id)
+        .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
+    ).first()
+
+    if not rsvp:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Cannot undo check-in: guest mazmo_user_id={mazmo_user_id} is not RSVPed "
+                f"to this meetup. Verify the guest ID via GET /meetups/{meetup_id}/guests."
+            ),
+        )
+
+    if not rsvp.has_arrived:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot undo check-in: guest '{rsvp.guest.username}' "
+                f"(mazmo_user_id={mazmo_user_id}) is not currently checked in. "
+                f"They may have been un-checked by someone else. "
+                f"See event log: GET /events/meetups/{meetup_id}?type=CHECK_IN,UNDO_CHECK_IN"
+            ),
+        )
+
+    # Clear check-in state
+    rsvp.has_arrived = False
+    rsvp.arrival_time = None
+    rsvp.arrival_order = None
+    rsvp.checked_in_by_id = None
+
+    # Create audit log entry
+    event = EventLog(
+        event_type=EventType.UNDO_CHECK_IN,
+        actor_id=staff.id,
+        guest_id=mazmo_user_id,
+        meetup_id=meetup_id,
+        reason=request.reason,
+    )
+
+    session.add(rsvp)
+    session.add(event)
+    session.commit()
+
+    # Fetch guest for response
+    guest = session.get(Guest, mazmo_user_id)
+    if not guest:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                f"Internal error: undo succeeded but guest record "
+                f"(mazmo_user_id={mazmo_user_id}) could not be fetched. "
+                f"This should never happen - please report this bug. "
+                f"The undo WAS recorded in the database."
+            ),
+        )
+
+    log.info(
+        f"Staff {staff.username} undid check-in for guest {guest.username} "
+        f"at meetup {meetup_id}: {request.reason}"
+    )
+    return guest
