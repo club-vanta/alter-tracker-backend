@@ -177,6 +177,20 @@ async def test_check_mazmo_degraded_on_network_error():
     assert result.message is not None and "ConnectError" in result.message
 
 
+# ── /health endpoint ──────────────────────────────────────────────────────────
+
+
+def test_health_endpoint_supports_head(client):
+    """
+    Verify that GET /health returns 200 and HEAD /health also returns 200.
+
+    WHY: UptimeRobot sends HEAD requests. A 405 Method Not Allowed would
+    cause false downtime alerts.
+    """
+    assert client.get("/health").status_code == 200
+    assert client.head("/health").status_code == 200
+
+
 # ── Aggregated health status ──────────────────────────────────────────────────
 
 
