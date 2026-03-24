@@ -50,3 +50,6 @@ echo "${docker_compose_b64}" | base64 -d > /home/ec2-user/docker-compose.yml
 
 chmod +x /home/ec2-user/deploy.sh
 chown ec2-user:ec2-user /home/ec2-user/deploy.sh /home/ec2-user/docker-compose.yml
+
+# ── Initial deploy ─────────────────────────────────────────────────────────────
+sh /home/ec2-user/deploy.sh

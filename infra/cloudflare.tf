@@ -1,3 +1,9 @@
+resource "cloudflare_zone_setting" "ssl" {
+  zone_id    = data.cloudflare_zone.club_vanta.id
+  setting_id = "ssl"
+  value      = "flexible"
+}
+
 data "cloudflare_zone" "club_vanta" {
   filter = {
     account_id = var.cloudflare_account_id
