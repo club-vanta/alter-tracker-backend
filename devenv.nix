@@ -127,6 +127,7 @@
         echo ""
         echo '  export TF_VAR_cloudflare_api_token="your-api-token-here"'
         echo ""
+        echo "Alternatively, you can set cloudflare_api_token in infra/terraform.tfvars"
         echo "After both steps, tofu plan/apply will work."
         echo ""
       '';
