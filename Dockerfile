@@ -16,6 +16,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY app/ ./app/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
+COPY scripts/ ./scripts/
 RUN uv sync --frozen --no-dev
 
 
@@ -34,6 +35,7 @@ COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/app ./app
 COPY --from=builder /app/alembic ./alembic
 COPY --from=builder /app/alembic.ini .
+COPY --from=builder /app/scripts ./scripts
 
 # Run as a non-root user
 RUN useradd --no-create-home --shell /bin/false appuser \

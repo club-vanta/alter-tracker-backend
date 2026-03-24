@@ -135,27 +135,29 @@ JWT_SIGNING_KEY=your-custom-key
 
 ### Production (AWS Secrets Manager)
 
-Secrets are stored in AWS Secrets Manager and fetched automatically:
+All secrets are stored in a single AWS Secrets Manager entry and fetched by `deploy.sh` at deploy time — the app itself never talks to Secrets Manager:
 
-All secrets are merged into a single AWS Secrets Manager entry:
+| Secret Name                      | Fields                                                                              |
+| -------------------------------- | ----------------------------------------------------------------------------------- |
+| `alter-tracker-backend/secrets`  | `admin_username`, `admin_password`, `jwt_signing_key`, `db_user`, `db_password`     |
 
-| Secret Name                      | Fields                                                          |
-| -------------------------------- | --------------------------------------------------------------- |
-| `alter-tracker-backend/secrets`  | `admin_username`, `admin_password`, `jwt_signing_key`           |
-
-**Create via AWS CLI:**
+Terraform creates the secret container automatically. After `tofu apply`, populate it with your values:
 
 ```bash
-aws secretsmanager create-secret \
-  --name "alter-tracker-backend/secrets" \
+aws secretsmanager put-secret-value \
+  --secret-id "alter-tracker-backend/secrets" \
   --secret-string '{
     "admin_username": "admin",
-    "admin_password": "secure-password-here",
-    "jwt_signing_key": "$(openssl rand -hex 32)"
+    "admin_password": "your-secure-password",
+    "jwt_signing_key": "'"$(openssl rand -hex 32)"'",
+    "db_user": "alter_tracker",
+    "db_password": "'"$(openssl rand -hex 16)"'"
   }'
 ```
 
-**Local override:** Set `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `JWT_SIGNING_KEY` environment variables (devenv.nix does this automatically).
+> Do **not** put secret values in Terraform — they would end up in the state file.
+
+**Local dev:** `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `JWT_SIGNING_KEY`, `DB_USER`, and `DB_PASSWORD` are all set in `devenv.nix` — no AWS access needed.
 
 ---
 
@@ -314,7 +316,7 @@ The `infra/` directory contains OpenTofu/Terraform configuration:
 
 Two alerting mechanisms are in place:
 
-- **Cloudflare Health Check** — pings `/health` every 60 seconds and emails `infra-alerts@club-vanta.com` if the app goes down. Expect one alert email when stopping the instance after a meetup and one when starting it back up — that's normal.
+- **UptimeRobot** — free external uptime monitor. Set it up manually at [uptimerobot.com](https://uptimerobot.com): add an HTTPS monitor for `https://api-alter-tracker.club-vanta.com/health`, 5-minute interval, alert to `infra-alerts@club-vanta.com`. Cloudflare health checks require a paid plan and are not managed by Terraform.
 - **Disk usage alert** — a cron job on the instance publishes an SNS alert to `infra-alerts@club-vanta.com` if disk usage exceeds 80%.
 
 > **Note:** `infra-alerts@club-vanta.com` is not a real mailbox — it is an email routing rule configured manually in the Cloudflare Email Routing dashboard, forwarding to a real address. If the forwarding destination ever changes, update it there, not in Terraform.

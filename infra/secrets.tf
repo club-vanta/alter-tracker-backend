@@ -3,7 +3,7 @@
 
 resource "aws_secretsmanager_secret" "app_secrets" {
   name                    = "${local.project_name}/secrets"
-  description             = "All application secrets: admin credentials and JWT signing key"
+  description             = "All application secrets: admin credentials, JWT signing key, and DB password"
   recovery_window_in_days = 0
 
   tags = {
@@ -17,7 +17,9 @@ resource "aws_secretsmanager_secret" "app_secrets" {
 #     --secret-string '{
 #       "admin_username": "admin",
 #       "admin_password": "your-secure-password",
-#       "jwt_signing_key": "output-of-openssl-rand-hex-32"
+#       "jwt_signing_key": "output-of-openssl-rand-hex-32",
+#       "db_user": "alter_tracker",
+#       "db_password": "output-of-openssl-rand-hex-16"
 #     }'
 #
 # Do NOT put the secret value in terraform - it would be stored in state.

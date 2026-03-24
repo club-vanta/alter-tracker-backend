@@ -4,7 +4,10 @@
   config,
   inputs,
   ...
-}: {
+}: let
+  dbUser = "postgres";
+  dbPassword = "postgres";
+in {
   packages = with pkgs; [
     curl
     jq
@@ -26,12 +29,24 @@
   };
 
   env = {
-    DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:5432/alter_event_tracker";
-    JWT_SIGNING_KEY = "CHANGE_ME_IN_PRODUCTION_USE_openssl_rand_-hex_32";
+    # ── Database ────────────────────────────────────────────────────────────────
+    # In production these come from AWS Secrets Manager (db_user / db_password fields).
+    DB_USER = dbUser;
+    DB_PASSWORD = dbPassword;
+    DATABASE_URL = "postgresql+psycopg://${dbUser}:${dbPassword}@localhost:5432/alter_event_tracker";
+
+    # -- ADMIN SEEDING ------------------------------------
+    ADMIN_USERNAME = "admin";
+    ADMIN_PASSWORD = "insecure-changeme-123";
+
+    # ── Auth ────────────────────────────────────────────────────────────────────
+    # Dummy JWT key for local dev only. In production this comes from AWS Secrets Manager.
+    JWT_SIGNING_KEY = "local-dev-insecure-key-do-not-use-in-production";
+
+    # ── App ─────────────────────────────────────────────────────────────────────
     ALGORITHM = "HS256";
     ACCESS_TOKEN_EXPIRE_MINUTES = "60";
     BACKEND_PORT = "8000";
-    MAZMO_THREAD_ID = "0";
   };
 
   scripts = {
@@ -41,7 +56,8 @@
         docker run -d \
           --name alter-tracker-postgres \
           --restart unless-stopped \
-          -e POSTGRES_PASSWORD=postgres \
+          -e POSTGRES_USER="$DB_USER" \
+          -e POSTGRES_PASSWORD="$DB_PASSWORD" \
           -e POSTGRES_DB=alter_event_tracker \
           -p 5432:5432 \
           -v alter-tracker-pgdata:/var/lib/postgresql \
@@ -110,7 +126,7 @@
 
     seed-admin = {
       exec = "PYTHONPATH=. uv run python scripts/seed_admin.py";
-      description = "Create initial admin user (credentials from AWS Secrets Manager or env vars)";
+      description = "Create initial admin user (reads ADMIN_USERNAME/ADMIN_PASSWORD from env)";
     };
     aws-login = {
       exec = ''

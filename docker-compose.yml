@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: alter_event_tracker
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 5s
+      retries: 5
+
+  migrate:
+    image: ghcr.io/club-vanta/alter-tracker-backend:latest
+    command: alembic upgrade head
+    environment:
+      DATABASE_URL: postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/alter_event_tracker
+      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
+
+  seed:
+    image: ghcr.io/club-vanta/alter-tracker-backend:latest
+    command: python scripts/seed_admin.py
+    environment:
+      DATABASE_URL: postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/alter_event_tracker
+      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: on-failure
+
+  app:
+    image: ghcr.io/club-vanta/alter-tracker-backend:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/alter_event_tracker
+      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
+      JSON_LOGS: "true"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:

@@ -2,24 +2,21 @@
 """
 Seed the initial admin user.
 
+Reads ADMIN_USERNAME and ADMIN_PASSWORD from environment variables.
+In local dev these are set in devenv.nix. In production, deploy.sh
+exports them from AWS Secrets Manager before starting the container.
+
 Usage:
-    # Local dev (uses defaults or env vars):
     uv run python scripts/seed_admin.py
-
-    # Production (fetches from AWS Secrets Manager):
-    uv run python scripts/seed_admin.py
-
-    # Explicit credentials (CI/testing):
-    ADMIN_USERNAME=admin ADMIN_PASSWORD=secret uv run python scripts/seed_admin.py
 """
 
+import os
 import sys
 
 import structlog
 from sqlmodel import Session, create_engine, select
 
 from app.core.config import get_settings
-from app.core.secrets import get_admin_credentials
 from app.core.security import get_password_hash
 from app.models.models import PossibleRoles, Role, User
 
@@ -36,7 +33,8 @@ def seed_admin() -> bool:
     settings = get_settings()
     engine = create_engine(settings.database_url)
 
-    username, password = get_admin_credentials()
+    username = os.environ["ADMIN_USERNAME"]
+    password = os.environ["ADMIN_PASSWORD"]
 
     with Session(engine) as session:
         # Check if admin already exists
