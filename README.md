@@ -329,6 +329,15 @@ Two alerting mechanisms are in place:
 
 ### Cloudflare credentials
 
+The API token must have the following permissions:
+
+| Resource               | Permission |
+|------------------------|------------|
+| Account / Cloudflare Pages | Edit   |
+| Zone / Health Checks   | Edit       |
+| Zone / Zone Settings   | Edit       |
+| Zone / DNS             | Edit       |
+
 The Cloudflare API token can be provided in two ways — use whichever is more convenient:
 
 **Option A — environment variable (per terminal session):**
