@@ -141,8 +141,9 @@ async def root() -> dict:
 
 
 # ── Health check ─────────────────────────────────────────────────────────────
-@app.get(
+@app.api_route(
     "/health",
+    methods=["GET", "HEAD"],
     tags=["meta"],
     response_model=HealthResponse,
     responses={
