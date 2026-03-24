@@ -47,4 +47,4 @@ docker compose -f "$COMPOSE_FILE" pull app
 echo "Starting services..."
 docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
 
-echo "Done. App is running on :8000"
+echo "Done. App is running on :80"
