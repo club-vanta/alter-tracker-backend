@@ -4,7 +4,7 @@
 # Secrets are loaded into shell environment variables only — nothing is written to disk.
 #
 # Usage:
-#   ./scripts/deploy.sh
+#   deploy.sh
 #
 # On first run: pulls the image, runs migrations, seeds the admin user, starts the app.
 # On subsequent runs: pulls the latest image and restarts the app.
@@ -13,7 +13,7 @@ set -euo pipefail
 
 REGION="us-east-1"
 SECRET_ID="alter-tracker-backend/secrets"
-COMPOSE_FILE="$(dirname "$0")/../docker-compose.yml"
+COMPOSE_FILE="/home/ec2-user/docker-compose.yml"
 
 echo "Fetching secrets from AWS Secrets Manager..."
 SECRET_JSON=$(aws secretsmanager get-secret-value \
@@ -26,11 +26,20 @@ extract() {
   echo "$SECRET_JSON" | python3 -c "import sys, json; print(json.load(sys.stdin)['$1'])"
 }
 
-DB_USER=$(extract db_user);         export DB_USER
-DB_PASSWORD=$(extract db_password); export DB_PASSWORD
-JWT_SIGNING_KEY=$(extract jwt_signing_key); export JWT_SIGNING_KEY
-ADMIN_USERNAME=$(extract admin_username);   export ADMIN_USERNAME
-ADMIN_PASSWORD=$(extract admin_password);   export ADMIN_PASSWORD
+DB_USER=$(extract db_user)
+export DB_USER
+
+DB_PASSWORD=$(extract db_password)
+export DB_PASSWORD
+
+JWT_SIGNING_KEY=$(extract jwt_signing_key)
+export JWT_SIGNING_KEY
+
+ADMIN_USERNAME=$(extract admin_username)
+export ADMIN_USERNAME
+
+ADMIN_PASSWORD=$(extract admin_password)
+export ADMIN_PASSWORD
 
 echo "Pulling latest image..."
 docker compose -f "$COMPOSE_FILE" pull app

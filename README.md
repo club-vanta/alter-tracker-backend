@@ -367,6 +367,38 @@ tofu apply
 
 > **Why `eval`?** `aws configure export-credentials` prints `export VAR=value` lines to stdout. Wrapping it in `eval $(...)` makes your shell execute those lines, setting the variables in your current session. Without `eval`, the credentials are printed but never applied — tofu won't see them.
 
+### Deploying the application
+
+After `tofu apply` has created the infrastructure and you have populated the secret in AWS Secrets Manager, deploy the app to the instance.
+
+`deploy.sh` and `docker-compose.yml` are bundled onto the instance by the startup script — no git clone needed.
+
+**Get the SSM login command from tofu:**
+```bash
+tofu output ssm_login_command
+```
+
+**SSM into the instance and deploy:**
+```bash
+# Paste the command from tofu output, then:
+deploy.sh
+```
+
+This will:
+1. Fetch all secrets from AWS Secrets Manager (using the instance IAM role — no credentials needed)
+2. Pull the latest Docker image from GHCR
+3. Run database migrations
+4. Seed the initial admin user (idempotent — safe to run multiple times)
+5. Start the app on port 8000
+
+**To update the app after a new release:**
+```bash
+# SSM in and re-run:
+deploy.sh
+```
+
+---
+
 ### Starting/stopping the instance for meetups
 
 The instance only needs to be running during meetups — stopping it saves ~$7.50/month in compute costs.

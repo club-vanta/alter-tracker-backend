@@ -20,10 +20,12 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "basedpyright",
     "pre-commit>=4.5.1",
     "pytest",
     "pytest-asyncio",
     "pytest-cov>=7.1.0",
+    "ruff",
 ]
 
 

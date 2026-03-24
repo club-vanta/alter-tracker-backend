@@ -5,10 +5,15 @@
 dnf update -y
 
 # ── Docker ────────────────────────────────────────────────────────────────────
-dnf install -y docker docker-compose-plugin git
-
+dnf install -y docker
 systemctl enable --now docker
 usermod -aG docker ec2-user
+
+# Install Docker Compose plugin (not in AL2023 repos)
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-aarch64" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
 docker --version && docker compose version
 
@@ -32,4 +37,16 @@ EOF
 
 chmod +x /usr/local/bin/disk-check.sh
 
+dnf install -y cronie
+systemctl enable --now crond
 echo "*/10 * * * * root /usr/local/bin/disk-check.sh" > /etc/cron.d/disk-check
+
+# ── Application files ─────────────────────────────────────────────────────────
+# Terraform injects the repo's deploy.sh and docker-compose.yml as base64 so
+# they are copied verbatim without any shell or templatefile escaping issues.
+
+echo "${deploy_sh_b64}"      | base64 -d > /home/ec2-user/deploy.sh
+echo "${docker_compose_b64}" | base64 -d > /home/ec2-user/docker-compose.yml
+
+chmod +x /home/ec2-user/deploy.sh
+chown ec2-user:ec2-user /home/ec2-user/deploy.sh /home/ec2-user/docker-compose.yml

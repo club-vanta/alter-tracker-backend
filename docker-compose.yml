@@ -1,20 +1,22 @@
 services:
   db:
     image: postgres:18
+    pull_policy: always
     restart: unless-stopped
     environment:
       POSTGRES_DB: alter_event_tracker
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       retries: 5
 
   migrate:
     image: ghcr.io/club-vanta/alter-tracker-backend:latest
+    pull_policy: always
     command: alembic upgrade head
     environment:
       DATABASE_URL: postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/alter_event_tracker
@@ -26,8 +28,10 @@ services:
 
   seed:
     image: ghcr.io/club-vanta/alter-tracker-backend:latest
+    pull_policy: always
     command: python scripts/seed_admin.py
     environment:
+      PYTHONPATH: /app
       DATABASE_URL: postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/alter_event_tracker
       JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
       ADMIN_USERNAME: ${ADMIN_USERNAME}
@@ -39,7 +43,8 @@ services:
 
   app:
     image: ghcr.io/club-vanta/alter-tracker-backend:latest
-    restart: unless-stopped
+    pull_policy: always
+    restart: always
     ports:
       - "8000:8000"
     environment:

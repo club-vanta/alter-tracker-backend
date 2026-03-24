@@ -41,7 +41,9 @@ resource "aws_instance" "app_server" {
 
   # 2. Source the external bootstrap script
   user_data = templatefile("${path.module}/ec2-startup.sh", {
-    sns_topic_arn = aws_sns_topic.infra_alerts.arn
+    sns_topic_arn      = aws_sns_topic.infra_alerts.arn
+    deploy_sh_b64      = base64encode(file("${path.module}/../scripts/deploy.sh"))
+    docker_compose_b64 = base64encode(file("${path.module}/../docker-compose.yml"))
   })
 
   tags = {
