@@ -40,7 +40,9 @@ resource "aws_instance" "app_server" {
   }
 
   # 2. Source the external bootstrap script
-  user_data = file("${path.module}/ec2-startup.sh")
+  user_data = templatefile("${path.module}/ec2-startup.sh", {
+    sns_topic_arn = aws_sns_topic.infra_alerts.arn
+  })
 
   tags = {
     Name = "${local.project_name}-server"

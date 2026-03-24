@@ -301,13 +301,23 @@ The `infra/` directory contains OpenTofu/Terraform configuration:
 | ---------------- | --------------------------------------------- |
 | `ec2.tf`         | EC2 instance and security group               |
 | `vpc.tf`         | VPC, subnets (IPv4 + IPv6)                    |
-| `cloudflare.tf`  | Cloudflare DNS records (A + AAAA)             |
+| `cloudflare.tf`  | Cloudflare DNS records (A + AAAA) + health check |
+| `monitoring.tf`  | SNS topic + disk usage alert cron job         |
 | `secrets.tf`     | AWS Secrets Manager secret                    |
 | `ssm.tf`         | SSM for instance management                   |
 | `providers.tf`   | AWS and Cloudflare provider config            |
 | `variables.tf`   | All input variable declarations               |
 | `outputs.tf`     | Instance IP outputs                           |
 | `locals.tf`      | Shared locals                                 |
+
+### Monitoring
+
+Two alerting mechanisms are in place:
+
+- **Cloudflare Health Check** — pings `/health` every 60 seconds and emails `infra-alerts@club-vanta.com` if the app goes down. Expect one alert email when stopping the instance after a meetup and one when starting it back up — that's normal.
+- **Disk usage alert** — a cron job on the instance publishes an SNS alert to `infra-alerts@club-vanta.com` if disk usage exceeds 80%.
+
+> **Note:** `infra-alerts@club-vanta.com` is not a real mailbox — it is an email routing rule configured manually in the Cloudflare Email Routing dashboard, forwarding to a real address. If the forwarding destination ever changes, update it there, not in Terraform.
 
 ### Cloudflare credentials
 
