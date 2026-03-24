@@ -111,6 +111,10 @@ Note: "Events" here refers to audit log entries, not Mazmo "eventos" (meetups).
 | ----------------------------- | -------- | --------------------------- | ---------------------------------------------------------------------------------- |
 | `DATABASE_URL`                | Yes      | -                           | PostgreSQL connection string (e.g., `postgresql+psycopg://user:pass@host:5432/db`) |
 | `JWT_SIGNING_KEY`             | Yes      | -                           | JWT signing key. Generate with: `openssl rand -hex 32`                             |
+| `ADMIN_USERNAME`              | Yes*     | -                           | Initial admin username. Used by `seed-admin` only. Set automatically by `deploy.sh` from AWS Secrets Manager (local: `devenv.nix`) |
+| `ADMIN_PASSWORD`              | Yes*     | -                           | Initial admin password. Used by `seed-admin` only. Set automatically by `deploy.sh` from AWS Secrets Manager (local: `devenv.nix`) |
+| `DB_USER`                     | Yes*     | -                           | PostgreSQL username. Used by docker-compose. Set automatically by `deploy.sh` from AWS Secrets Manager (local: `devenv.nix`)        |
+| `DB_PASSWORD`                 | Yes*     | -                           | PostgreSQL password. Used by docker-compose. Set automatically by `deploy.sh` from AWS Secrets Manager (local: `devenv.nix`)        |
 | `ALGORITHM`                   | No       | `HS256`                     | JWT signing algorithm                                                              |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | No       | `720`                       | JWT token lifetime (12 hours)                                                      |
 | `JSON_LOGS`                   | No       | `false`                     | Set `true` for JSON output (CloudWatch)                                            |
@@ -120,6 +124,8 @@ Note: "Events" here refers to audit log entries, not Mazmo "eventos" (meetups).
 | `MAZMO_BASE_URL`              | No       | `https://prod.mazmoapi.net` | Mazmo API base URL                                                                 |
 | `MAZMO_USER_BATCH_SIZE`       | No       | `30`                        | Max user IDs per Mazmo request                                                     |
 | `MAZMO_REQUEST_TIMEOUT`       | No       | `15.0`                      | Mazmo API timeout in seconds                                                       |
+
+> \* Required at deploy time only (`seed-admin` / docker-compose), not by the running API. In production, `deploy.sh` sets these automatically from AWS Secrets Manager — you never need to set them manually.
 
 ### Local Development (devenv.nix)
 
