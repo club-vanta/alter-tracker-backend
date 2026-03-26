@@ -114,6 +114,8 @@ MEETUP_EXAMPLE = {
     "name": "Alter Córdoba - Marzo 2024",
     "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217",
     "date": TIMESTAMP_2024_03_23,
+    "is_finalized": False,
+    "finalized_at": None,
 }
 
 MEETUP_EXAMPLE_2 = {
@@ -121,6 +123,17 @@ MEETUP_EXAMPLE_2 = {
     "name": "Alter Buenos Aires - Abril 2024",
     "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-bsas-4320",
     "date": "2024-04-15T20:00:00Z",
+    "is_finalized": False,
+    "finalized_at": None,
+}
+
+MEETUP_EXAMPLE_FINALIZED = {
+    "id": MEETUP_UUID,
+    "name": "Alter Córdoba - Marzo 2024",
+    "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217",
+    "date": TIMESTAMP_2024_03_23,
+    "is_finalized": True,
+    "finalized_at": "2024-03-23T23:59:00Z",
 }
 
 # ── RSVP Data ─────────────────────────────────────────────────────────────────

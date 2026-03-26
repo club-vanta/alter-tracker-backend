@@ -37,6 +37,8 @@ class EventType(StrEnum):
     UNDO_CHECK_IN = "UNDO_CHECK_IN"
     BAN = "BAN"
     UNBAN = "UNBAN"
+    MEETUP_FINALIZED = "MEETUP_FINALIZED"
+    MEETUP_UNFINALIZED = "MEETUP_UNFINALIZED"
 
 
 # ── Role table ────────────────────────────────────────────────────────────────
@@ -226,6 +228,8 @@ class Meetup(SQLModel, table=True):
 
     Linked to a specific Mazmo URL, which the background sync service uses
     to scrape the current RSVP list.
+
+    Once finalized, no further check-ins or syncs are allowed.
     """
 
     __tablename__ = "meetups"  # type: ignore[assignment]
@@ -238,6 +242,10 @@ class Meetup(SQLModel, table=True):
 
     name: str = Field(index=True)
     date: datetime
+
+    # Finalization — set once the event is over
+    is_finalized: bool = Field(default=False)
+    finalized_at: datetime | None = Field(default=None)
 
     # Same dual-relationship pattern as Guest - see comments there for details.
     # rsvps: for eager loading RSVP data

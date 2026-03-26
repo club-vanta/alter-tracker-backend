@@ -9,6 +9,7 @@ Endpoints:
   GET   /meetups/{id}/guests                          - List guests at meetup
   POST  /meetups/{id}/guests/{mazmo_user_id}/checkin  - Check in a guest
   PATCH /meetups/{id}/guests/{mazmo_user_id}/undo-checkin - Undo check-in
+  PATCH /meetups/{id}/finalize                        - Finalize a meetup
 """
 
 from typing import Any
@@ -19,6 +20,7 @@ from app.openapi_examples._constants import (
     GUEST_NORMAL_2,
     MEETUP_EXAMPLE,
     MEETUP_EXAMPLE_2,
+    MEETUP_EXAMPLE_FINALIZED,
     RSVP_ARRIVED,
     RSVP_NOT_ARRIVED,
     SYNC_RESPONSE_EXAMPLE,
@@ -30,6 +32,8 @@ from app.openapi_examples._error_responses import (
     error_404_rsvp,
     error_409_already_checked_in,
     error_409_duplicate_meetup,
+    error_409_meetup_finalized,
+    error_409_meetup_not_finalized,
     error_409_not_checked_in,
     error_422_validation,
     error_502_mazmo_api,
@@ -151,6 +155,7 @@ SYNC_MEETUP_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_401_invalid_credentials(),
     **error_403_not_approved(),
     **error_404_meetup(),
+    **error_409_meetup_finalized(),
     **error_502_mazmo_api(),
     **error_504_mazmo_timeout(),
 }
@@ -209,6 +214,7 @@ CHECKIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_404_meetup(),
     **error_404_rsvp(),
     **error_409_already_checked_in(),
+    **error_409_meetup_finalized(),
 }
 
 # ── PATCH /meetups/{id}/guests/{mazmo_user_id}/undo-checkin ───────────────────
@@ -244,4 +250,50 @@ UNDO_CHECKIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_404_rsvp(),
     **error_409_not_checked_in(),
     **error_422_validation(),
+}
+
+# ── PATCH /meetups/{id}/finalize ──────────────────────────────────────────────
+
+FINALIZE_MEETUP_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Meetup finalized",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "finalized": {
+                        "summary": "Meetup successfully finalized",
+                        "description": "No more check-ins or syncs allowed after this",
+                        "value": MEETUP_EXAMPLE_FINALIZED,
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_not_approved(),
+    **error_404_meetup(),
+    **error_409_meetup_finalized(),
+}
+
+# ── PATCH /meetups/{id}/unfinalize ────────────────────────────────────────────
+
+UNFINALIZE_MEETUP_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Meetup un-finalized",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "unfinalized": {
+                        "summary": "Meetup successfully un-finalized",
+                        "description": "Check-ins and syncs are allowed again",
+                        "value": MEETUP_EXAMPLE,
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_not_approved(),
+    **error_404_meetup(),
+    **error_409_meetup_not_finalized(),
 }

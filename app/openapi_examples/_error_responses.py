@@ -427,6 +427,55 @@ def error_409_not_checked_in() -> ResponsesDict:
     }
 
 
+def error_409_meetup_finalized() -> ResponsesDict:
+    """409 - Meetup is already finalized."""
+    return {
+        409: {
+            "description": "Meetup already finalized",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "meetup_finalized": {
+                            "summary": "Cannot modify a finalized meetup",
+                            "value": {
+                                "detail": (
+                                    "Cannot perform this action: meetup 'Alter Córdoba - Marzo 2024' "
+                                    "was finalized on 2024-03-23 23:59:00+00:00. "
+                                    "Finalized meetups no longer accept check-ins or syncs."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_meetup_not_finalized() -> ResponsesDict:
+    """409 - Meetup is not currently finalized."""
+    return {
+        409: {
+            "description": "Meetup not finalized",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "meetup_not_finalized": {
+                            "summary": "Cannot un-finalize a non-finalized meetup",
+                            "value": {
+                                "detail": (
+                                    "Cannot un-finalize: meetup 'Alter Córdoba - Marzo 2024' "
+                                    "is not currently finalized."
+                                ),
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
 def error_409_duplicate_meetup() -> ResponsesDict:
     """409 - Meetup with this Mazmo URL already exists."""
     return {

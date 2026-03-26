@@ -8,9 +8,11 @@ POST  /api/meetups/{id}/sync           → sync guest list from Mazmo (approved 
 GET   /api/meetups/{id}/guests         → list guests at meetup (approved staff+)
 POST  /api/meetups/{id}/guests/.../checkin      → check in a guest (approved staff+)
 PATCH /api/meetups/{id}/guests/.../undo-checkin → undo a check-in (approved staff+)
+PATCH /api/meetups/{id}/finalize       → finalize a meetup (approved staff+)
 """
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 import httpx
@@ -28,12 +30,14 @@ from app.openapi_examples.meetups_examples import (
     CHECKIN_RESPONSES,
     CREATE_MEETUP_REQUEST_EXAMPLES,
     CREATE_MEETUP_RESPONSES,
+    FINALIZE_MEETUP_RESPONSES,
     GET_MEETUP_RESPONSES,
     LIST_MEETUP_GUESTS_RESPONSES,
     LIST_MEETUPS_RESPONSES,
     SYNC_MEETUP_RESPONSES,
     UNDO_CHECKIN_REQUEST_EXAMPLES,
     UNDO_CHECKIN_RESPONSES,
+    UNFINALIZE_MEETUP_RESPONSES,
 )
 from app.schemas import (
     CheckedInByPublic,
@@ -70,6 +74,19 @@ def _get_meetup_or_404(session: Session, meetup_id: uuid.UUID) -> Meetup:
             ),
         )
     return meetup
+
+
+def _raise_if_finalized(meetup: Meetup) -> None:
+    """Raise 409 if the meetup has been finalized."""
+    if meetup.is_finalized:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot perform this action: meetup '{meetup.name}' "
+                f"was finalized on {meetup.finalized_at}. "
+                f"Finalized meetups no longer accept check-ins or syncs."
+            ),
+        )
 
 
 # ── Create meetup ────────────────────────────────────────────────────────────
@@ -208,6 +225,7 @@ async def sync_meetup_guests(
       - `has_arrived`, `arrival_time`, and `arrival_order` are NEVER modified.
     """
     meetup = _get_meetup_or_404(session, meetup_id)
+    _raise_if_finalized(meetup)
 
     try:
         return await sync_guests(session, settings, meetup)
@@ -308,9 +326,10 @@ async def checkin_guest(
 
     The arrival_order and arrival_time are set automatically by a database trigger.
     The staff member performing the check-in is recorded for audit purposes.
-    Returns 404 if guest not RSVPed, 409 if already checked in.
+    Returns 404 if guest not RSVPed, 409 if already checked in or meetup finalized.
     """
-    _get_meetup_or_404(session, meetup_id)
+    meetup = _get_meetup_or_404(session, meetup_id)
+    _raise_if_finalized(meetup)
 
     rsvp = session.exec(
         select(MeetupRsvp)
@@ -482,3 +501,105 @@ async def undo_checkin_guest(
         reason=request.reason,
     )
     return guest
+
+
+# ── Finalize meetup ───────────────────────────────────────────────────────────
+
+
+@router.patch(
+    "/{meetup_id}/finalize",
+    response_model=MeetupPublic,
+    summary="Finalize a meetup",
+    responses=FINALIZE_MEETUP_RESPONSES,
+)
+async def finalize_meetup(
+    meetup_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    staff: User = Depends(get_approved_user),
+) -> Meetup:
+    """
+    Mark a meetup as finalized. No further check-ins or syncs will be allowed.
+
+    Returns 409 if the meetup is already finalized.
+    """
+    meetup = _get_meetup_or_404(session, meetup_id)
+
+    if meetup.is_finalized:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot finalize: meetup '{meetup.name}' is already finalized (finalized at {meetup.finalized_at})."
+            ),
+        )
+
+    meetup.is_finalized = True
+    meetup.finalized_at = datetime.now(UTC)
+
+    event = EventLog(
+        event_type=EventType.MEETUP_FINALIZED,
+        actor_id=staff.id,
+        meetup_id=meetup_id,
+    )
+
+    session.add(meetup)
+    session.add(event)
+    session.commit()
+    session.refresh(meetup)
+
+    log.info(
+        "Meetup finalized",
+        staff=staff.username,
+        meetup_id=str(meetup_id),
+        meetup_name=meetup.name,
+    )
+    return meetup
+
+
+# ── Un-finalize meetup ────────────────────────────────────────────────────────
+
+
+@router.patch(
+    "/{meetup_id}/unfinalize",
+    response_model=MeetupPublic,
+    summary="Un-finalize a meetup",
+    responses=UNFINALIZE_MEETUP_RESPONSES,
+)
+async def unfinalize_meetup(
+    meetup_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    staff: User = Depends(get_approved_user),
+) -> Meetup:
+    """
+    Revert a meetup's finalized status (e.g., finalized by accident).
+
+    Returns 409 if the meetup is not finalized.
+    """
+    meetup = _get_meetup_or_404(session, meetup_id)
+
+    if not meetup.is_finalized:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot un-finalize: meetup '{meetup.name}' is not currently finalized.",
+        )
+
+    meetup.is_finalized = False
+    meetup.finalized_at = None
+
+    event = EventLog(
+        event_type=EventType.MEETUP_UNFINALIZED,
+        actor_id=staff.id,
+        meetup_id=meetup_id,
+    )
+
+    session.add(meetup)
+    session.add(event)
+    session.commit()
+    session.refresh(meetup)
+
+    log.info(
+        "Meetup un-finalized",
+        staff=staff.username,
+        meetup_id=str(meetup_id),
+        meetup_name=meetup.name,
+    )
+    return meetup

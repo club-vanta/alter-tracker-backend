@@ -1,6 +1,6 @@
 """Tests for the meetups router.
 
-Covers: create, list, get, list guests, check-in, undo check-in.
+Covers: create, list, get, list guests, check-in, undo check-in, finalize/unfinalize.
 Sync endpoint tests live in test_sync.py.
 """
 
@@ -489,3 +489,232 @@ def test_undo_checkin_returns_404_for_unknown_meetup(client: TestClient, staff_h
     )
 
     assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+# ── Finalize / un-finalize ────────────────────────────────────────────────────
+
+
+def test_finalize_meetup_sets_is_finalized_and_finalized_at(
+    client: TestClient, staff_headers: dict, session: Session, meetup
+):
+    """
+    Verify that finalizing a meetup sets is_finalized=True and records finalized_at.
+
+    WHY: Core requirement - once an event ends we lock it to prevent
+    accidental check-ins or syncs from corrupting the historical record.
+    """
+    resp = client.patch(f"/meetups/{meetup.id}/finalize", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()
+    assert data["is_finalized"] is True
+    assert data["finalized_at"] is not None
+
+    session.refresh(meetup)
+    assert meetup.is_finalized is True
+    assert meetup.finalized_at is not None
+
+
+def test_finalize_meetup_writes_event_log_entry(
+    client: TestClient, staff_headers: dict, session: Session, meetup, staff_user
+):
+    """
+    Verify that finalizing a meetup creates an audit log entry.
+
+    WHY: We need to know who finalized a meetup and when, in case it was done
+    in error and needs to be reversed.
+    """
+    client.patch(f"/meetups/{meetup.id}/finalize", headers=staff_headers)
+
+    event = session.exec(
+        select(EventLog).where(EventLog.meetup_id == meetup.id).where(EventLog.event_type == EventType.MEETUP_FINALIZED)
+    ).first()
+    assert event is not None
+    assert event.actor_id == staff_user.id
+
+
+def test_finalize_meetup_returns_409_when_already_finalized(client: TestClient, staff_headers: dict, session: Session):
+    """
+    Verify that finalizing an already-finalized meetup returns 409.
+
+    WHY: Idempotency guard - calling finalize twice should surface an error
+    rather than silently succeeding, so staff know the state.
+    """
+    finalized = make_meetup(
+        session,
+        name="Already Final",
+        mazmo_meetup_url="https://mazmo.net/test/already-final-1",
+    )
+    finalized.is_finalized = True
+    finalized.finalized_at = datetime.now(UTC)
+    session.add(finalized)
+    session.flush()
+
+    resp = client.patch(f"/meetups/{finalized.id}/finalize", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_finalize_meetup_returns_404_for_unknown_meetup(client: TestClient, staff_headers: dict):
+    """
+    Verify that finalizing a non-existent meetup returns 404.
+    """
+    fake_id = uuid.uuid4()
+    resp = client.patch(f"/meetups/{fake_id}/finalize", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_checkin_returns_409_when_meetup_is_finalized(client: TestClient, staff_headers: dict, session: Session):
+    """
+    Verify that check-in is blocked on a finalized meetup.
+
+    WHY: The whole point of finalization is to freeze the meetup state.
+    No new arrivals should be recorded after the event is over.
+    """
+    finalized = make_meetup(
+        session,
+        name="Closed Meetup",
+        mazmo_meetup_url="https://mazmo.net/test/closed-1",
+    )
+    finalized.is_finalized = True
+    finalized.finalized_at = datetime.now(UTC)
+    session.add(finalized)
+    guest = make_guest(session, mazmo_user_id=501, username="blocked_guest")
+    make_rsvp(session, meetup=finalized, guest=guest)
+    session.flush()
+
+    resp = client.post(
+        f"/meetups/{finalized.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+    assert "finalized" in resp.json()["detail"].lower()
+
+
+def test_sync_returns_409_when_meetup_is_finalized(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    mock_mazmo: AsyncMock,
+):
+    """
+    Verify that sync is blocked on a finalized meetup.
+
+    WHY: Syncing a finalized meetup could overwrite the final attendance
+    record with stale or incorrect data from Mazmo.
+    """
+    finalized = make_meetup(
+        session,
+        name="Synced Closed",
+        mazmo_meetup_url="https://mazmo.net/test/sync-closed-1",
+    )
+    finalized.is_finalized = True
+    finalized.finalized_at = datetime.now(UTC)
+    session.add(finalized)
+    session.flush()
+
+    resp = client.post(f"/meetups/{finalized.id}/sync", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+    assert "finalized" in resp.json()["detail"].lower()
+
+
+def test_unfinalize_meetup_clears_finalization(client: TestClient, staff_headers: dict, session: Session):
+    """
+    Verify that un-finalizing a meetup restores it to active state.
+
+    WHY: Accidents happen. Staff need a way to reverse accidental finalization
+    so check-ins and syncs can resume.
+    """
+    finalized = make_meetup(
+        session,
+        name="Undo Final",
+        mazmo_meetup_url="https://mazmo.net/test/undo-final-1",
+    )
+    finalized.is_finalized = True
+    finalized.finalized_at = datetime.now(UTC)
+    session.add(finalized)
+    session.flush()
+
+    resp = client.patch(f"/meetups/{finalized.id}/unfinalize", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()
+    assert data["is_finalized"] is False
+    assert data["finalized_at"] is None
+
+    session.refresh(finalized)
+    assert finalized.is_finalized is False
+    assert finalized.finalized_at is None
+
+
+def test_unfinalize_meetup_returns_409_when_not_finalized(client: TestClient, staff_headers: dict, meetup):
+    """
+    Verify that un-finalizing a non-finalized meetup returns 409.
+
+    WHY: Prevents confusion - staff should know whether a meetup
+    is actually finalized before attempting to reverse it.
+    """
+    resp = client.patch(f"/meetups/{meetup.id}/unfinalize", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_checkin_works_after_unfinalize(client: TestClient, staff_headers: dict, session: Session):
+    """
+    Verify that check-in works again after un-finalizing a meetup.
+
+    WHY: Un-finalize should fully restore all operations, not just
+    change a flag.
+    """
+    finalized = make_meetup(
+        session,
+        name="Restored Meetup",
+        mazmo_meetup_url="https://mazmo.net/test/restored-1",
+    )
+    finalized.is_finalized = True
+    finalized.finalized_at = datetime.now(UTC)
+    session.add(finalized)
+    guest = make_guest(session, mazmo_user_id=502, username="restored_guest")
+    make_rsvp(session, meetup=finalized, guest=guest)
+    session.flush()
+
+    client.patch(f"/meetups/{finalized.id}/unfinalize", headers=staff_headers)
+
+    resp = client.post(
+        f"/meetups/{finalized.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+    assert resp.status_code == status.HTTP_200_OK
+
+
+def test_unfinalize_meetup_writes_event_log_entry(
+    client: TestClient, staff_headers: dict, session: Session, staff_user
+):
+    """
+    Verify that un-finalizing a meetup creates an audit log entry.
+
+    WHY: We need a full trail of finalize/unfinalize actions so admins
+    can audit who changed the meetup state and when.
+    """
+    finalized = make_meetup(
+        session,
+        name="Log Unfinalize",
+        mazmo_meetup_url="https://mazmo.net/test/log-unfinalize-1",
+    )
+    finalized.is_finalized = True
+    finalized.finalized_at = datetime.now(UTC)
+    session.add(finalized)
+    session.flush()
+
+    client.patch(f"/meetups/{finalized.id}/unfinalize", headers=staff_headers)
+
+    event = session.exec(
+        select(EventLog)
+        .where(EventLog.meetup_id == finalized.id)
+        .where(EventLog.event_type == EventType.MEETUP_UNFINALIZED)
+    ).first()
+    assert event is not None
+    assert event.actor_id == staff_user.id

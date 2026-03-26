@@ -30,6 +30,8 @@ class MeetupPublic(BaseModel):
     name: str
     mazmo_meetup_url: str
     date: datetime
+    is_finalized: bool
+    finalized_at: datetime | None
 
 
 class MeetupListResponse(BaseModel):
