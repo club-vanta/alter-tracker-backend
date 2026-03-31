@@ -306,6 +306,94 @@ async def list_meetup_guests(
     return MeetupGuestListResponse(total=len(guests), guests=guests)
 
 
+# ── Add walk-in guest ────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/{meetup_id}/guests/{mazmo_user_id}/add-walkin",
+    response_model=MeetupGuestPublic,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add a walk-in guest to this meetup",
+)
+async def add_walkin_guest(
+    meetup_id: uuid.UUID,
+    mazmo_user_id: int,
+    session: Session = Depends(get_session),
+    staff: User = Depends(get_approved_user),
+) -> MeetupGuestPublic:
+    """
+    Manually add a guest who has a Mazmo profile but didn't RSVP to this event.
+
+    Creates a MeetupRsvp row with the current time as rsvp_time.
+    The guest must already exist in the system (fetched via a previous sync
+    for any meetup, or visible in GET /guests/).
+
+    Returns 404 if the guest doesn't exist in the system.
+    Returns 409 if the guest already has an RSVP for this meetup.
+    Returns 409 if the meetup is finalized.
+    """
+    meetup = _get_meetup_or_404(session, meetup_id)
+    _raise_if_finalized(meetup)
+
+    guest = session.get(Guest, mazmo_user_id)
+    if not guest:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Cannot add walk-in: guest mazmo_user_id={mazmo_user_id} does not exist in the system. "
+                f"Walk-in guests must have a Mazmo profile that was previously synced. "
+                f"Search known guests via GET /guests/ to find the correct ID."
+            ),
+        )
+
+    existing = session.exec(
+        select(MeetupRsvp)
+        .where(MeetupRsvp.meetup_id == meetup_id)
+        .where(MeetupRsvp.guest_id == mazmo_user_id)
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot add walk-in: guest '{guest.username}' (mazmo_user_id={mazmo_user_id}) "
+                f"already has an RSVP for this meetup. "
+                f"They may have RSVPed on Mazmo or been added as a walk-in previously."
+            ),
+        )
+
+    rsvp = MeetupRsvp(
+        meetup_id=meetup_id,
+        guest_id=mazmo_user_id,
+        rsvp_time=datetime.now(UTC),
+        cancelled_rsvp=False,
+    )
+
+    event = EventLog(
+        event_type=EventType.WALKIN_ADD,
+        actor_id=staff.id,
+        guest_id=mazmo_user_id,
+        meetup_id=meetup_id,
+    )
+
+    session.add(rsvp)
+    session.add(event)
+    session.commit()
+    session.refresh(rsvp)
+
+    log.info(
+        "Walk-in guest added",
+        staff=staff.username,
+        guest=guest.username,
+        guest_id=mazmo_user_id,
+        meetup_id=str(meetup_id),
+    )
+
+    return MeetupGuestPublic(
+        guest=GuestPublic.model_validate(guest),
+        rsvp=RsvpPublic.model_validate(rsvp),
+    )
+
+
 # ── Check in a guest ─────────────────────────────────────────────────────────
 
 
