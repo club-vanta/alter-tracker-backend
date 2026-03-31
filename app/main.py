@@ -141,9 +141,8 @@ async def root() -> dict:
 
 
 # ── Health check ─────────────────────────────────────────────────────────────
-@app.api_route(
+@app.get(
     "/health",
-    methods=["GET", "HEAD"],
     tags=["meta"],
     response_model=HealthResponse,
     responses={
@@ -172,6 +171,16 @@ async def health(
     status_code = 503 if result.status == "unhealthy" else 200
 
     return JSONResponse(content=result.model_dump(), status_code=status_code)
+
+
+@app.head("/health", tags=["meta"], include_in_schema=False)
+async def health_head(
+    session: Session = Depends(get_session),  # noqa: B008
+    settings: Settings = Depends(get_settings),  # noqa: B008
+) -> JSONResponse:
+    result = await get_health_status(session, settings)
+    status_code = 503 if result.status == "unhealthy" else 200
+    return JSONResponse(content=None, status_code=status_code)
 
 
 # ── Ping --------─────────────────────────────────────────────────────────────
