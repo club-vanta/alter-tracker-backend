@@ -6,6 +6,13 @@ Door tracker API for Alter meetups. Integrates with Mazmo to sync guest lists an
 
 **API Documentation:** Once running, visit [`/docs`](http://localhost:8000/docs) (Swagger UI) or [`/redoc`](http://localhost:8000/redoc) (ReDoc). All endpoints are documented there with examples.
 
+**Frontend:** The `velvet` repo consumes this API. After any endpoint change, regenerate the frontend types from the `velvet` directory:
+```bash
+npm run generate:api   # reads from ../alter-tracker-backend/openapi.json
+# or if the server is running:
+npx openapi-typescript http://localhost:8000/openapi.json -o src/api/types.ts
+```
+
 ---
 
 ## Quick Start
