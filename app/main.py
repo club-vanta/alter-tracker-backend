@@ -112,7 +112,8 @@ instrumentator = Instrumentator().instrument(app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",  # Vite dev server
+        "http://localhost:5173",  # Vite dev server (default)
+        "http://localhost:5200",  # Vite dev server (alt — when 5173 is taken)
         "http://localhost:4173",  # Vite preview
     ],
     allow_credentials=True,
