@@ -58,6 +58,7 @@ class RsvpPublic(BaseModel):
     has_arrived: bool
     arrival_time: datetime | None = None
     arrival_order: int | None = None
+    is_walkin: bool = False
 
 
 class MeetupGuestPublic(BaseModel):
