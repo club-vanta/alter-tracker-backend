@@ -369,7 +369,7 @@ async def add_walkin_guest(
     )
 
     event = EventLog(
-        event_type=EventType.WALKIN_ADD,
+        event_type=EventType.WALKIN,
         actor_id=staff.id,
         guest_id=mazmo_user_id,
         meetup_id=meetup_id,

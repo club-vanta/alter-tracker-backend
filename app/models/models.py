@@ -39,7 +39,7 @@ class EventType(StrEnum):
     UNBAN = "UNBAN"
     MEETUP_FINALIZED = "MEETUP_FINALIZED"
     MEETUP_UNFINALIZED = "MEETUP_UNFINALIZED"
-    WALKIN_ADD = "WALKIN_ADD"
+    WALKIN = "WALKIN"
 
 
 # ── Role table ────────────────────────────────────────────────────────────────
