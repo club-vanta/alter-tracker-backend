@@ -366,6 +366,7 @@ async def add_walkin_guest(
         guest_id=mazmo_user_id,
         rsvp_time=datetime.now(UTC),
         cancelled_rsvp=False,
+        is_walkin=True,
     )
 
     event = EventLog(

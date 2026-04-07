@@ -718,3 +718,120 @@ def test_unfinalize_meetup_writes_event_log_entry(
     ).first()
     assert event is not None
     assert event.actor_id == staff_user.id
+
+
+# ── Add walk-in guest ─────────────────────────────────────────────────────────
+
+
+def test_add_walkin_returns_201_with_is_walkin_true(
+    client: TestClient, staff_headers: dict, session: Session, meetup
+):
+    """
+    Verify that adding a walk-in guest returns 201 with is_walkin=True.
+
+    WHY: Core requirement — staff needs to add guests who have a Mazmo profile
+    but didn't RSVP. The is_walkin flag must be set so the frontend can show
+    the badge.
+    """
+    guest = make_guest(session, mazmo_user_id=601, username="walkin_guest")
+
+    resp = client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_201_CREATED
+    data = resp.json()
+    assert data["guest"]["username"] == "walkin_guest"
+    assert data["rsvp"]["is_walkin"] is True
+
+
+def test_add_walkin_writes_event_log_entry(
+    client: TestClient, staff_headers: dict, session: Session, meetup, staff_user
+):
+    """
+    Verify that adding a walk-in creates a WALKIN audit log entry.
+
+    WHY: We need a full audit trail of who added each walk-in and when.
+    """
+    guest = make_guest(session, mazmo_user_id=602, username="walkin_audit")
+
+    client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        headers=staff_headers,
+    )
+
+    event = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.mazmo_user_id)
+        .where(EventLog.event_type == EventType.WALKIN)
+    ).first()
+    assert event is not None
+    assert event.actor_id == staff_user.id
+    assert event.meetup_id == meetup.id
+
+
+def test_add_walkin_returns_404_when_guest_not_in_system(
+    client: TestClient, staff_headers: dict, meetup
+):
+    """
+    Verify that adding a walk-in for an unknown Mazmo user returns 404.
+
+    WHY: Walk-ins must have a Mazmo profile already synced. If the guest_id
+    doesn't exist at all, the request is invalid.
+    """
+    resp = client.post(
+        f"/meetups/{meetup.id}/guests/99999/add-walkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_add_walkin_returns_409_when_rsvp_already_exists(
+    client: TestClient, staff_headers: dict, session: Session, meetup
+):
+    """
+    Verify that adding a walk-in for a guest who already has an RSVP returns 409.
+
+    WHY: Prevents duplicate RSVPs — the guest may have RSVPed on Mazmo or
+    already been added as a walk-in.
+    """
+    guest = make_guest(session, mazmo_user_id=603, username="already_rsvped")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    resp = client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_add_walkin_returns_409_when_meetup_is_finalized(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """
+    Verify that adding a walk-in to a finalized meetup returns 409.
+
+    WHY: Finalization locks the meetup — no new arrivals (including walk-ins)
+    should be added after the event ends.
+    """
+    finalized = make_meetup(
+        session,
+        name="Finalized Walkin",
+        mazmo_meetup_url="https://mazmo.net/test/finalized-walkin-1",
+    )
+    finalized.is_finalized = True
+    finalized.finalized_at = datetime.now(UTC)
+    session.add(finalized)
+    guest = make_guest(session, mazmo_user_id=604, username="walkin_blocked")
+    session.flush()
+
+    resp = client.post(
+        f"/meetups/{finalized.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+    assert "finalized" in resp.json()["detail"].lower()

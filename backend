@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -e
+
+export DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5432/alter_event_tracker"
+export JWT_SIGNING_KEY="local-dev-insecure-key-do-not-use-in-production"
+export ADMIN_USERNAME="admin"
+export ADMIN_PASSWORD="insecure-changeme-123"
+export ALGORITHM="HS256"
+export ACCESS_TOKEN_EXPIRE_MINUTES="60"
+export BACKEND_PORT="8000"
+
+cd "$(dirname "$0")"
+
+echo "→ Starting PostgreSQL..."
+brew services start postgresql@18 2>/dev/null || true
+
+echo "→ Running migrations..."
+uv run alembic upgrade head
+
+echo "→ Seeding admin..."
+PYTHONPATH=. uv run python scripts/seed_admin.py
+
+echo "→ Starting server at http://localhost:8000"
+uv run uvicorn app.main:app --reload --port 8000 --host 0.0.0.0
