@@ -347,9 +347,7 @@ async def add_walkin_guest(
         )
 
     existing = session.exec(
-        select(MeetupRsvp)
-        .where(MeetupRsvp.meetup_id == meetup_id)
-        .where(MeetupRsvp.guest_id == mazmo_user_id)
+        select(MeetupRsvp).where(MeetupRsvp.meetup_id == meetup_id).where(MeetupRsvp.guest_id == mazmo_user_id)
     ).first()
     if existing:
         raise HTTPException(

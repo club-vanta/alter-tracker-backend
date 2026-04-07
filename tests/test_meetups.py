@@ -723,9 +723,7 @@ def test_unfinalize_meetup_writes_event_log_entry(
 # ── Add walk-in guest ─────────────────────────────────────────────────────────
 
 
-def test_add_walkin_returns_201_with_is_walkin_true(
-    client: TestClient, staff_headers: dict, session: Session, meetup
-):
+def test_add_walkin_returns_201_with_is_walkin_true(client: TestClient, staff_headers: dict, session: Session, meetup):
     """
     Verify that adding a walk-in guest returns 201 with is_walkin=True.
 
@@ -762,18 +760,14 @@ def test_add_walkin_writes_event_log_entry(
     )
 
     event = session.exec(
-        select(EventLog)
-        .where(EventLog.guest_id == guest.mazmo_user_id)
-        .where(EventLog.event_type == EventType.WALKIN)
+        select(EventLog).where(EventLog.guest_id == guest.mazmo_user_id).where(EventLog.event_type == EventType.WALKIN)
     ).first()
     assert event is not None
     assert event.actor_id == staff_user.id
     assert event.meetup_id == meetup.id
 
 
-def test_add_walkin_returns_404_when_guest_not_in_system(
-    client: TestClient, staff_headers: dict, meetup
-):
+def test_add_walkin_returns_404_when_guest_not_in_system(client: TestClient, staff_headers: dict, meetup):
     """
     Verify that adding a walk-in for an unknown Mazmo user returns 404.
 
@@ -808,9 +802,7 @@ def test_add_walkin_returns_409_when_rsvp_already_exists(
     assert resp.status_code == status.HTTP_409_CONFLICT
 
 
-def test_add_walkin_returns_409_when_meetup_is_finalized(
-    client: TestClient, staff_headers: dict, session: Session
-):
+def test_add_walkin_returns_409_when_meetup_is_finalized(client: TestClient, staff_headers: dict, session: Session):
     """
     Verify that adding a walk-in to a finalized meetup returns 409.
 
