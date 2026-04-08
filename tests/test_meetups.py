@@ -348,6 +348,112 @@ def test_checkin_returns_404_for_unknown_meetup(client: TestClient, staff_header
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
+# ── Check-in concurrency guarantees ──────────────────────────────────────────
+#
+# True concurrent requests can't be tested with the synchronous TestClient
+# (tests share a single rolled-back transaction). Instead, these tests verify
+# the observable guarantees that SELECT FOR UPDATE provides:
+#
+#   1. A second check-in on an already-checked-in guest returns 409 — which is
+#      exactly what the second concurrent request sees after the first commits.
+#   2. Only one CHECK_IN event log entry is ever created for a given guest+meetup,
+#      regardless of how many attempts were made.
+#
+# The SELECT FOR UPDATE comment in meetups.py explains the mechanism.
+
+
+def test_checkin_second_attempt_after_first_succeeds_returns_409(
+    client: TestClient, staff_headers: dict, session: Session, meetup
+):
+    """
+    Verify that a second check-in attempt after the first succeeded returns 409.
+
+    WHY: This is the state the second concurrent request observes after SELECT
+    FOR UPDATE releases the lock — has_arrived is True, so it gets 409.
+    The first check-in won; the second must not silently succeed or 500.
+    """
+    guest = make_guest(session, mazmo_user_id=350, username="concurrent_checkin")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    # First check-in succeeds
+    resp1 = client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+    assert resp1.status_code == status.HTTP_200_OK
+
+    # Second check-in (what the losing concurrent request sees after lock release)
+    resp2 = client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+    assert resp2.status_code == status.HTTP_409_CONFLICT
+
+
+def test_checkin_produces_exactly_one_event_log_entry_on_duplicate_attempt(
+    client: TestClient, staff_headers: dict, session: Session, meetup, staff_user
+):
+    """
+    Verify that only one CHECK_IN event log entry exists after two attempts.
+
+    WHY: The audit trail must reflect reality — only the staff member who
+    actually performed the first check-in should appear in the log.
+    A second concurrent request must not inject its own event log entry.
+    """
+    guest = make_guest(session, mazmo_user_id=351, username="one_event_guest")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+    client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+
+    events = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.mazmo_user_id)
+        .where(EventLog.event_type == EventType.CHECK_IN)
+    ).all()
+    assert len(events) == 1
+    assert events[0].actor_id == staff_user.id
+
+
+def test_checkin_event_log_records_first_staff_not_second(
+    client: TestClient, session: Session, meetup, staff_user, admin_user, staff_headers, admin_headers
+):
+    """
+    Verify that the event log records the staff member who checked in first,
+    not a subsequent attempt by a different staff member.
+
+    WHY: In a real race, two different staff members at two terminals could
+    both scan the same guest. Only the first one should appear in the audit log.
+    """
+    guest = make_guest(session, mazmo_user_id=352, username="race_guest")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    # Staff checks in first
+    client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+    # Admin tries to check in the same guest (arrives second)
+    client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=admin_headers,
+    )
+
+    event = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.mazmo_user_id)
+        .where(EventLog.event_type == EventType.CHECK_IN)
+    ).first()
+    assert event is not None
+    assert event.actor_id == staff_user.id  # first, not admin
+
+
 # ── Undo check-in ─────────────────────────────────────────────────────────────
 
 

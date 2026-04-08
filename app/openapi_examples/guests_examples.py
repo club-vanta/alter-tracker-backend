@@ -2,6 +2,7 @@
 OpenAPI examples for guests router endpoints.
 
 Endpoints:
+  POST  /guests/                       - Manually create a guest (staff+)
   GET   /guests/                       - List all known guests (staff+)
   GET   /guests/banned                 - List all banned guests (staff+)
   GET   /guests/{mazmo_user_id}        - Get a single guest (staff+)
@@ -22,9 +23,58 @@ from app.openapi_examples._error_responses import (
     error_403_not_approved,
     error_404_guest,
     error_409_already_banned,
+    error_409_guest_already_exists,
     error_409_not_banned,
     error_422_validation,
 )
+
+# ── POST /guests/ ─────────────────────────────────────────────────────────────
+
+CREATE_GUEST_REQUEST_EXAMPLES: dict[str, Any] = {
+    "new_attendee": {
+        "summary": "Someone who never used Mazmo",
+        "description": "Guest shows up at the door with no prior Mazmo history",
+        "value": {
+            "mazmo_user_id": 55555,
+            "username": "recien_llegado",
+            "displayname": "Recién Llegado",
+        },
+    },
+    "privacy_conscious": {
+        "summary": "Guest who prefers not to appear on Mazmo",
+        "description": "Attends the event but doesn't want their RSVP visible on Mazmo publicly",
+        "value": {
+            "mazmo_user_id": 77777,
+            "username": "usuario_discreto",
+            "displayname": "Usuario Discreto",
+        },
+    },
+}
+
+CREATE_GUEST_RESPONSES: dict[int | str, dict[str, Any]] = {
+    201: {
+        "description": "Guest created",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "created": {
+                        "summary": "Guest successfully registered",
+                        "value": {
+                            "mazmo_user_id": 55555,
+                            "username": "recien_llegado",
+                            "displayname": "Recién Llegado",
+                            "is_banned": False,
+                        },
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_not_approved(),
+    **error_409_guest_already_exists(),
+    **error_422_validation(),
+}
 
 # ── GET /guests/ ──────────────────────────────────────────────────────────────
 

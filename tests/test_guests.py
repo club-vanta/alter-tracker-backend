@@ -6,9 +6,266 @@ Staff can view guests and banned list, but only admins can ban/unban.
 
 from fastapi import status
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
+from app.models.models import EventLog, EventType
 from tests.conftest import make_guest
+
+# ── Create guest manually ─────────────────────────────────────────────────────
+
+VALID_GUEST_PAYLOAD = {
+    "mazmo_user_id": 9001,
+    "username": "newcomer",
+    "displayname": "New Comer",
+}
+
+
+def test_create_guest_returns_201_with_guest_data(client: TestClient, staff_headers: dict):
+    """
+    Verify that staff can manually create a guest and get back the full GuestPublic.
+
+    WHY: Core feature — someone shows up at the door with no Mazmo history.
+    Staff needs to register them so they can be added as a walk-in.
+    """
+    resp = client.post("/guests/", json=VALID_GUEST_PAYLOAD, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_201_CREATED
+    data = resp.json()
+    assert data["mazmo_user_id"] == 9001
+    assert data["username"] == "newcomer"
+    assert data["displayname"] == "New Comer"
+
+
+def test_create_guest_defaults_is_banned_to_false(client: TestClient, staff_headers: dict):
+    """
+    Verify that a manually created guest is not banned by default.
+
+    WHY: New guests should never start out as banned. The frontend uses
+    is_banned to render names in red, so a wrong default would be confusing.
+    """
+    resp = client.post("/guests/", json=VALID_GUEST_PAYLOAD, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_201_CREATED
+    assert resp.json()["is_banned"] is False
+
+
+def test_create_guest_response_includes_all_guest_public_fields(client: TestClient, staff_headers: dict):
+    """
+    Verify that the response shape matches GuestPublic exactly.
+
+    WHY: The frontend depends on a stable schema. Any missing field would
+    cause a runtime error on the client side.
+    """
+    resp = client.post("/guests/", json=VALID_GUEST_PAYLOAD, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_201_CREATED
+    data = resp.json()
+    assert "mazmo_user_id" in data
+    assert "username" in data
+    assert "displayname" in data
+    assert "is_banned" in data
+
+
+def test_create_guest_is_persisted_and_fetchable(client: TestClient, staff_headers: dict):
+    """
+    Verify that a created guest can be fetched via GET /guests/{id} afterwards.
+
+    WHY: Checks that the DB write actually committed and the guest is
+    retrievable by other endpoints (e.g., add-walkin).
+    """
+    client.post("/guests/", json=VALID_GUEST_PAYLOAD, headers=staff_headers)
+
+    resp = client.get(f"/guests/{VALID_GUEST_PAYLOAD['mazmo_user_id']}", headers=staff_headers)
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["username"] == "newcomer"
+
+
+def test_create_guest_appears_in_guest_list(client: TestClient, staff_headers: dict):
+    """
+    Verify that a manually created guest shows up in GET /guests/.
+
+    WHY: Staff browsing the guest list should see manually created guests
+    alongside synced ones — they're indistinguishable by design.
+    """
+    client.post("/guests/", json=VALID_GUEST_PAYLOAD, headers=staff_headers)
+
+    resp = client.get("/guests/", headers=staff_headers)
+    assert resp.status_code == status.HTTP_200_OK
+    usernames = [g["username"] for g in resp.json()["guests"]]
+    assert "newcomer" in usernames
+
+
+def test_create_guest_writes_guest_created_event_log(
+    client: TestClient, staff_headers: dict, session: Session, staff_user
+):
+    """
+    Verify that manually creating a guest writes a GUEST_CREATED audit log entry.
+
+    WHY: Every identity creation needs an audit trail so admins know who
+    added a guest that bypassed Mazmo sync.
+    """
+    client.post("/guests/", json=VALID_GUEST_PAYLOAD, headers=staff_headers)
+
+    event = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == VALID_GUEST_PAYLOAD["mazmo_user_id"])
+        .where(EventLog.event_type == EventType.GUEST_CREATED)
+    ).first()
+    assert event is not None
+    assert event.actor_id == staff_user.id
+
+
+def test_create_guest_accessible_by_regular_staff(client: TestClient, staff_headers: dict):
+    """
+    Verify that regular staff (not just admin) can create guests.
+
+    WHY: Staff at the door need to register walk-ins on the spot — requiring
+    admin rights would block the real-world workflow.
+    """
+    resp = client.post("/guests/", json=VALID_GUEST_PAYLOAD, headers=staff_headers)
+    assert resp.status_code == status.HTTP_201_CREATED
+
+
+def test_create_guest_accessible_by_admin(client: TestClient, admin_headers: dict):
+    """Verify that admins can also create guests."""
+    resp = client.post("/guests/", json=VALID_GUEST_PAYLOAD, headers=admin_headers)
+    assert resp.status_code == status.HTTP_201_CREATED
+
+
+def test_create_guest_returns_409_when_mazmo_user_id_already_exists(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """
+    Verify that creating a guest with a duplicate mazmo_user_id returns 409.
+
+    WHY: mazmo_user_id is the PK — duplicates must be rejected. This covers
+    both synced guests and previously manually created ones.
+    """
+    make_guest(session, mazmo_user_id=9001, username="existing")
+
+    resp = client.post("/guests/", json=VALID_GUEST_PAYLOAD, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_create_guest_409_detail_mentions_existing_username(client: TestClient, staff_headers: dict, session: Session):
+    """
+    Verify that the 409 detail message includes the existing guest's username.
+
+    WHY: Staff may accidentally try to register someone already in the system.
+    The error should help them identify the duplicate quickly.
+    """
+    make_guest(session, mazmo_user_id=9001, username="already_here")
+
+    resp = client.post("/guests/", json=VALID_GUEST_PAYLOAD, headers=staff_headers)
+
+    assert "already_here" in resp.json()["detail"]
+
+
+def test_create_guest_returns_409_even_for_synced_guest(client: TestClient, staff_headers: dict, session: Session):
+    """
+    Verify that the 409 applies to guests created via sync, not just manual ones.
+
+    WHY: The system shouldn't let staff overwrite a synced guest's identity
+    data by creating a duplicate with a different username/displayname.
+    """
+    make_guest(session, mazmo_user_id=9001, username="synced_guest")
+
+    resp = client.post(
+        "/guests/",
+        json={**VALID_GUEST_PAYLOAD, "username": "different_username"},
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_create_guest_without_token_returns_401(client: TestClient):
+    """Verify that unauthenticated requests are rejected."""
+    resp = client.post("/guests/", json=VALID_GUEST_PAYLOAD)
+    assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_create_guest_missing_mazmo_user_id_returns_422(client: TestClient, staff_headers: dict):
+    """
+    Verify that omitting mazmo_user_id returns 422.
+
+    WHY: All three fields are required — mazmo_user_id is the PK and must
+    come from the real Mazmo profile.
+    """
+    resp = client.post(
+        "/guests/",
+        json={"username": "nomazmo", "displayname": "No Mazmo"},
+        headers=staff_headers,
+    )
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_create_guest_missing_username_returns_422(client: TestClient, staff_headers: dict):
+    """Verify that omitting username returns 422."""
+    resp = client.post(
+        "/guests/",
+        json={"mazmo_user_id": 9001, "displayname": "No Username"},
+        headers=staff_headers,
+    )
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_create_guest_missing_displayname_returns_422(client: TestClient, staff_headers: dict):
+    """Verify that omitting displayname returns 422."""
+    resp = client.post(
+        "/guests/",
+        json={"mazmo_user_id": 9001, "username": "nodisplay"},
+        headers=staff_headers,
+    )
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_create_guest_empty_username_returns_422(client: TestClient, staff_headers: dict):
+    """
+    Verify that an empty string username is rejected.
+
+    WHY: min_length=1 on username — a blank username is meaningless
+    and would render badly in the frontend.
+    """
+    resp = client.post(
+        "/guests/",
+        json={**VALID_GUEST_PAYLOAD, "username": ""},
+        headers=staff_headers,
+    )
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_create_guest_empty_displayname_returns_422(client: TestClient, staff_headers: dict):
+    """Verify that an empty string displayname is rejected."""
+    resp = client.post(
+        "/guests/",
+        json={**VALID_GUEST_PAYLOAD, "displayname": ""},
+        headers=staff_headers,
+    )
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_create_guest_non_integer_mazmo_user_id_returns_422(client: TestClient, staff_headers: dict):
+    """
+    Verify that a non-integer mazmo_user_id is rejected.
+
+    WHY: mazmo_user_id must be an int matching Mazmo's internal ID.
+    Sending a string like "abc" should be rejected at validation.
+    """
+    resp = client.post(
+        "/guests/",
+        json={**VALID_GUEST_PAYLOAD, "mazmo_user_id": "not-an-int"},
+        headers=staff_headers,
+    )
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_create_guest_empty_body_returns_422(client: TestClient, staff_headers: dict):
+    """Verify that sending an empty body returns 422."""
+    resp = client.post("/guests/", json={}, headers=staff_headers)
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
 
 # ── List guests ───────────────────────────────────────────────────────────────
 

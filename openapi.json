@@ -1403,6 +1403,198 @@
             "OAuth2PasswordBearer": []
           }
         ]
+      },
+      "post": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "Manually create a guest (no Mazmo sync required)",
+        "description": "Manually register a guest who has no prior Mazmo sync history.\n\nUse this when someone shows up at the door and has never RSVPed to any\nprevious meetup \u2014 so they don't exist in our system yet. After creating\nthem here, they can be added to a meetup via `POST /meetups/{id}/guests/{mazmo_user_id}/add-walkin`.\n\nThe `mazmo_user_id` must match the guest's actual Mazmo profile ID.\nIf the guest already exists in the system (synced from a previous meetup),\nthis returns 409 \u2014 no need to create them manually.",
+        "operationId": "create_guest_guests__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGuestRequest"
+              },
+              "examples": {
+                "new_attendee": {
+                  "summary": "Someone who never used Mazmo",
+                  "description": "Guest shows up at the door with no prior Mazmo history",
+                  "value": {
+                    "mazmo_user_id": 55555,
+                    "username": "recien_llegado",
+                    "displayname": "Reci\u00e9n Llegado"
+                  }
+                },
+                "privacy_conscious": {
+                  "summary": "Guest who prefers not to appear on Mazmo",
+                  "description": "Attends the event but doesn't want their RSVP visible on Mazmo publicly",
+                  "value": {
+                    "mazmo_user_id": 77777,
+                    "username": "usuario_discreto",
+                    "displayname": "Usuario Discreto"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Guest created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestPublic"
+                },
+                "examples": {
+                  "created": {
+                    "summary": "Guest successfully registered",
+                    "value": {
+                      "mazmo_user_id": 55555,
+                      "username": "recien_llegado",
+                      "displayname": "Reci\u00e9n Llegado",
+                      "is_banned": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  },
+                  "wrong_password": {
+                    "summary": "Wrong username or password",
+                    "value": {
+                      "detail": "Incorrect username or password."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Guest already exists",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "guest_exists": {
+                    "summary": "mazmo_user_id already in system",
+                    "value": {
+                      "detail": "Cannot create guest: mazmo_user_id=12345 already exists in the system as 'fiestero_feliz'. If you want to add them to a meetup, use POST /meetups/{meetup_id}/guests/12345/add-walkin."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "password_too_short": {
+                    "summary": "Password validation failed",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "string_too_short",
+                          "loc": [
+                            "body",
+                            "password"
+                          ],
+                          "msg": "String should have at least 15 characters",
+                          "input": "short",
+                          "ctx": {
+                            "min_length": 15
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "invalid_url": {
+                    "summary": "Invalid Mazmo URL format",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "value_error",
+                          "loc": [
+                            "body",
+                            "mazmo_meetup_url"
+                          ],
+                          "msg": "Value error, URL must match pattern: https://mazmo.net/{community}/{thread-slug}-{id}",
+                          "input": "https://invalid-url.com/meetup"
+                        }
+                      ]
+                    }
+                  },
+                  "reason_too_short": {
+                    "summary": "Reason too short",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "string_too_short",
+                          "loc": [
+                            "body",
+                            "reason"
+                          ],
+                          "msg": "String should have at least 5 characters",
+                          "input": "bad",
+                          "ctx": {
+                            "min_length": 5
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/guests/banned": {
@@ -2813,11 +3005,109 @@
         ],
         "responses": {
           "201": {
-            "description": "Successful Response",
+            "description": "Walk-in guest added",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MeetupGuestPublic"
+                },
+                "examples": {
+                  "walkin_added": {
+                    "summary": "Guest added as walk-in",
+                    "description": "is_walkin=true distinguishes this RSVP from a Mazmo-synced one",
+                    "value": {
+                      "guest": {
+                        "mazmo_user_id": 55555,
+                        "username": "recien_llegado",
+                        "displayname": "Reci\u00e9n Llegado",
+                        "is_banned": false
+                      },
+                      "rsvp": {
+                        "rsvp_time": "2024-03-23T20:05:32Z",
+                        "cancelled_rsvp": false,
+                        "has_arrived": false,
+                        "is_walkin": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  },
+                  "wrong_password": {
+                    "summary": "Wrong username or password",
+                    "value": {
+                      "detail": "Incorrect username or password."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Guest not found in system",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "guest_not_in_system": {
+                    "summary": "Guest has no record in the system",
+                    "value": {
+                      "detail": "Cannot add walk-in: guest mazmo_user_id=55555 does not exist in the system. Walk-in guests must have a Mazmo profile that was previously synced. Search known guests via GET /guests/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Meetup already finalized",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_finalized": {
+                    "summary": "Cannot modify a finalized meetup",
+                    "value": {
+                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins or syncs."
+                    }
+                  }
                 }
               }
             }
@@ -4695,13 +4985,13 @@
         }
       }
     },
-    "/": {
+    "/ping": {
       "get": {
         "tags": [
           "meta"
         ],
-        "summary": "Root",
-        "operationId": "root__get",
+        "summary": "Ping",
+        "operationId": "ping_ping_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -4710,7 +5000,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Root  Get"
+                  "title": "Response Ping Ping Get"
                 }
               }
             }
@@ -4760,29 +5050,6 @@
           },
           "503": {
             "description": "One or more critical services unhealthy"
-          }
-        }
-      }
-    },
-    "/ping": {
-      "get": {
-        "tags": [
-          "meta"
-        ],
-        "summary": "Ping",
-        "operationId": "ping_ping_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Ping Ping Get"
-                }
-              }
-            }
           }
         }
       }
@@ -5013,6 +5280,37 @@
         ],
         "title": "CheckedInByPublic",
         "description": "Minimal staff representation for check-in attribution.\n\nOnly includes the essential fields needed to identify who performed\na check-in, without exposing sensitive fields like approval status."
+      },
+      "CreateGuestRequest": {
+        "properties": {
+          "mazmo_user_id": {
+            "type": "integer",
+            "title": "Mazmo User Id",
+            "description": "The guest's Mazmo user ID"
+          },
+          "username": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Username",
+            "description": "Mazmo username (e.g. @handle)"
+          },
+          "displayname": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Displayname",
+            "description": "Display name shown on Mazmo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mazmo_user_id",
+          "username",
+          "displayname"
+        ],
+        "title": "CreateGuestRequest",
+        "description": "Request body for manually creating a guest without a Mazmo sync.\n\nUse this when someone shows up at the door without prior Mazmo history.\nAll three fields mirror what the sync service populates from Mazmo,\nso a manually created guest is indistinguishable from a synced one.\n\nAlso useful for guests who prefer not to have their attendance visible on\nMazmo \u2014 they can attend the event without RSVPing publicly, and staff can\nregister them here so their presence is recorded internally without being\nexposed to other Mazmo users outside the organization."
       },
       "DisableUserRequest": {
         "properties": {

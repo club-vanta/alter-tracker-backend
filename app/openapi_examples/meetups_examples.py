@@ -2,14 +2,15 @@
 OpenAPI examples for meetups router endpoints.
 
 Endpoints:
-  POST  /meetups/                                     - Create a new meetup
-  GET   /meetups/                                     - List all meetups
-  GET   /meetups/{id}                                 - Get a single meetup
-  POST  /meetups/{id}/sync                            - Sync guests from Mazmo
-  GET   /meetups/{id}/guests                          - List guests at meetup
-  POST  /meetups/{id}/guests/{mazmo_user_id}/checkin  - Check in a guest
-  PATCH /meetups/{id}/guests/{mazmo_user_id}/undo-checkin - Undo check-in
-  PATCH /meetups/{id}/finalize                        - Finalize a meetup
+  POST  /meetups/                                             - Create a new meetup
+  GET   /meetups/                                             - List all meetups
+  GET   /meetups/{id}                                         - Get a single meetup
+  POST  /meetups/{id}/sync                                    - Sync guests from Mazmo
+  GET   /meetups/{id}/guests                                  - List guests at meetup
+  POST  /meetups/{id}/guests/{mazmo_user_id}/add-walkin       - Add a walk-in guest
+  POST  /meetups/{id}/guests/{mazmo_user_id}/checkin          - Check in a guest
+  PATCH /meetups/{id}/guests/{mazmo_user_id}/undo-checkin     - Undo check-in
+  PATCH /meetups/{id}/finalize                                - Finalize a meetup
 """
 
 from typing import Any
@@ -21,6 +22,7 @@ from app.openapi_examples._constants import (
     MEETUP_EXAMPLE,
     MEETUP_EXAMPLE_2,
     MEETUP_EXAMPLE_FINALIZED,
+    MEETUP_GUEST_WALKIN,
     RSVP_ARRIVED,
     RSVP_NOT_ARRIVED,
     SYNC_RESPONSE_EXAMPLE,
@@ -30,11 +32,13 @@ from app.openapi_examples._error_responses import (
     error_403_not_approved,
     error_404_meetup,
     error_404_rsvp,
+    error_404_walkin_guest_not_in_system,
     error_409_already_checked_in,
     error_409_duplicate_meetup,
     error_409_meetup_finalized,
     error_409_meetup_not_finalized,
     error_409_not_checked_in,
+    error_409_walkin_already_rsvped,
     error_422_validation,
     error_502_mazmo_api,
     error_504_mazmo_timeout,
@@ -190,6 +194,31 @@ LIST_MEETUP_GUESTS_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_401_invalid_credentials(),
     **error_403_not_approved(),
     **error_404_meetup(),
+}
+
+# ── POST /meetups/{id}/guests/{mazmo_user_id}/add-walkin ──────────────────────
+
+ADD_WALKIN_RESPONSES: dict[int | str, dict[str, Any]] = {
+    201: {
+        "description": "Walk-in guest added",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "walkin_added": {
+                        "summary": "Guest added as walk-in",
+                        "description": "is_walkin=true distinguishes this RSVP from a Mazmo-synced one",
+                        "value": MEETUP_GUEST_WALKIN,
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_not_approved(),
+    **error_404_meetup(),
+    **error_404_walkin_guest_not_in_system(),
+    **error_409_walkin_already_rsvped(),
+    **error_409_meetup_finalized(),
 }
 
 # ── POST /meetups/{id}/guests/{mazmo_user_id}/checkin ─────────────────────────

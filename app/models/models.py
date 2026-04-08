@@ -40,6 +40,7 @@ class EventType(StrEnum):
     MEETUP_FINALIZED = "MEETUP_FINALIZED"
     MEETUP_UNFINALIZED = "MEETUP_UNFINALIZED"
     WALKIN = "WALKIN"
+    GUEST_CREATED = "GUEST_CREATED"
 
 
 # ── Role table ────────────────────────────────────────────────────────────────

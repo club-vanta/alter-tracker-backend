@@ -19,10 +19,13 @@ from sqlmodel import Session, select
 
 from app.core.database import get_session
 from app.core.deps import get_admin_user, get_approved_user
+from app.domain_types import MazmoUserId
 from app.models.models import EventLog, EventType, Guest, User
 from app.openapi_examples.guests_examples import (
     BAN_REQUEST_EXAMPLES,
     BAN_RESPONSES,
+    CREATE_GUEST_REQUEST_EXAMPLES,
+    CREATE_GUEST_RESPONSES,
     GET_GUEST_RESPONSES,
     LIST_BANNED_RESPONSES,
     LIST_GUESTS_RESPONSES,
@@ -32,12 +35,78 @@ from app.schemas import (
     BanGuestRequest,
     BannedGuestListResponse,
     BannedGuestPublic,
+    CreateGuestRequest,
     GuestListResponse,
     GuestPublic,
 )
 
 log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/guests", tags=["guests"])
+
+
+# ── Create guest manually ────────────────────────────────────────────────────
+
+
+@router.post(
+    "/",
+    response_model=GuestPublic,
+    status_code=status.HTTP_201_CREATED,
+    summary="Manually create a guest (no Mazmo sync required)",
+    responses=CREATE_GUEST_RESPONSES,
+)
+async def create_guest(
+    request: Annotated[CreateGuestRequest, Body(openapi_examples=CREATE_GUEST_REQUEST_EXAMPLES)],
+    session: Session = Depends(get_session),
+    staff: User = Depends(get_approved_user),
+) -> Guest:
+    """
+    Manually register a guest who has no prior Mazmo sync history.
+
+    Use this when someone shows up at the door and has never RSVPed to any
+    previous meetup — so they don't exist in our system yet. After creating
+    them here, they can be added to a meetup via `POST /meetups/{id}/guests/{mazmo_user_id}/add-walkin`.
+
+    The `mazmo_user_id` must match the guest's actual Mazmo profile ID.
+    If the guest already exists in the system (synced from a previous meetup),
+    this returns 409 — no need to create them manually.
+    """
+    existing = session.get(Guest, request.mazmo_user_id)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot create guest: mazmo_user_id={request.mazmo_user_id} already exists "
+                f"in the system as '{existing.username}'. "
+                f"If you want to add them to a meetup, use "
+                f"POST /meetups/{{meetup_id}}/guests/{request.mazmo_user_id}/add-walkin."
+            ),
+        )
+
+    guest = Guest(
+        mazmo_user_id=MazmoUserId(request.mazmo_user_id),
+        username=request.username,
+        displayname=request.displayname,
+    )
+
+    event = EventLog(
+        event_type=EventType.GUEST_CREATED,
+        actor_id=staff.id,
+        guest_id=MazmoUserId(request.mazmo_user_id),
+    )
+
+    session.add(guest)
+    session.add(event)
+    session.commit()
+    session.refresh(guest)
+
+    log.info(
+        "Guest created manually",
+        staff=staff.username,
+        guest=guest.username,
+        guest_id=guest.mazmo_user_id,
+    )
+
+    return guest
 
 
 # ── List guests ──────────────────────────────────────────────────────────────

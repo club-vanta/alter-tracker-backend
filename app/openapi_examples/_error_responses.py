@@ -476,6 +476,82 @@ def error_409_meetup_not_finalized() -> ResponsesDict:
     }
 
 
+def error_409_guest_already_exists() -> ResponsesDict:
+    """409 - Guest with this mazmo_user_id already exists."""
+    return {
+        409: {
+            "description": "Guest already exists",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "guest_exists": {
+                            "summary": "mazmo_user_id already in system",
+                            "value": {
+                                "detail": (
+                                    "Cannot create guest: mazmo_user_id=12345 already exists "
+                                    "in the system as 'fiestero_feliz'. "
+                                    "If you want to add them to a meetup, use "
+                                    "POST /meetups/{meetup_id}/guests/12345/add-walkin."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_walkin_already_rsvped() -> ResponsesDict:
+    """409 - Guest already has an RSVP for this meetup."""
+    return {
+        409: {
+            "description": "Guest already RSVPed",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "already_rsvped": {
+                            "summary": "Guest already has an RSVP (Mazmo sync or previous walk-in)",
+                            "value": {
+                                "detail": (
+                                    "Cannot add walk-in: guest 'fiestero_feliz' (mazmo_user_id=12345) "
+                                    "already has an RSVP for this meetup. "
+                                    "They may have RSVPed on Mazmo or been added as a walk-in previously."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_404_walkin_guest_not_in_system() -> ResponsesDict:
+    """404 - Walk-in guest not found in system (never synced or manually created)."""
+    return {
+        404: {
+            "description": "Guest not found in system",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "guest_not_in_system": {
+                            "summary": "Guest has no record in the system",
+                            "value": {
+                                "detail": (
+                                    "Cannot add walk-in: guest mazmo_user_id=55555 does not exist in the system. "
+                                    "Walk-in guests must have a Mazmo profile that was previously synced. "
+                                    "Search known guests via GET /guests/ to find the correct ID."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
 def error_409_duplicate_meetup() -> ResponsesDict:
     """409 - Meetup with this Mazmo URL already exists."""
     return {
