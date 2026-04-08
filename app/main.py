@@ -116,6 +116,8 @@ app.add_middleware(
         "http://localhost:5200",  # Vite dev server (alt — when 5173 is taken)
         "http://localhost:4173",  # Vite preview
     ],
+    # Covers club-vanta.com and any subdomain (e.g. app.club-vanta.com)
+    allow_origin_regex=r"https://(.*\.)?club-vanta\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

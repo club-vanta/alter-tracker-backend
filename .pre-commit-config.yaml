@@ -28,6 +28,13 @@ repos:
         types: [python]
         pass_filenames: false
 
+      - id: generate-openapi
+        name: generate openapi.json
+        entry: bash -c 'PYTHONPATH=. uv run python scripts/generate_openapi.py && git add openapi.json'
+        language: system
+        pass_filenames: false
+        always_run: true
+
         # pytest runs on every push instead of every commit
       - id: pytest
         name: pytest
