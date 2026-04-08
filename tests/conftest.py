@@ -359,6 +359,29 @@ def mock_mazmo():
 
 
 @pytest.fixture
+def mock_mazmo_for_guests():
+    """
+    Patches MazmoClient for guests router tests (app.routers.guests).
+    Defaults to returning a successful Mazmo user lookup.
+    """
+    with patch("app.routers.guests.MazmoClient") as MockClientClass:
+        mock_instance = AsyncMock()
+
+        # Default happy-path: cindydark found on Mazmo
+        mock_instance.fetch_user_by_username.return_value = SimpleNamespace(
+            mazmo_user_id=39119,
+            username="cindydark",
+            displayname="⚜️Lissandra⚜️",
+        )
+
+        mock_instance.__aenter__.return_value = mock_instance
+        mock_instance.__aexit__.return_value = None
+        MockClientClass.return_value = mock_instance
+
+        yield mock_instance
+
+
+@pytest.fixture
 def mock_mazmo_for_meetups():
     """
     Patches MazmoClient for meetup router tests (also patches in routers.meetups).

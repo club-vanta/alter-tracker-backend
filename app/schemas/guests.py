@@ -117,6 +117,21 @@ class CheckInResponse(BaseModel):
 # ── Manual guest creation ─────────────────────────────────────────────────────
 
 
+class CreateGuestByUsernameRequest(BaseModel):
+    """
+    Request body for creating a guest by Mazmo username.
+
+    Staff only need to know the handle (e.g. "cindydark"). The endpoint looks
+    up the canonical ID and profile data from Mazmo automatically.
+    """
+
+    username: str = Field(
+        min_length=1,
+        max_length=255,
+        description="Mazmo username to look up (e.g. 'cindydark')",
+    )
+
+
 class CreateGuestRequest(BaseModel):
     """
     Request body for manually creating a guest without a Mazmo sync.

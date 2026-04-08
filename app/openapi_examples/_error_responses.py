@@ -213,6 +213,29 @@ def error_404_guest() -> ResponsesDict:
     }
 
 
+def error_404_mazmo_username_not_found() -> ResponsesDict:
+    """404 - Username not found on Mazmo."""
+    return {
+        404: {
+            "description": "Username not found on Mazmo",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "username_not_found": {
+                            "summary": "Mazmo doesn't know this username",
+                            "value": {
+                                "detail": (
+                                    "Username 'unknownuser' was not found on Mazmo. Check the spelling and try again."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
 def error_404_meetup() -> ResponsesDict:
     """404 - Meetup not found."""
     return {

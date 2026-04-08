@@ -40,7 +40,7 @@ Headers mimic a real browser session to avoid 403s from Mazmo's CDN/WAF.
 import asyncio
 from datetime import datetime
 from itertools import islice
-from typing import TypedDict
+from typing import NamedTuple, TypedDict
 from urllib.parse import urlparse
 
 import httpx
@@ -109,6 +109,17 @@ class MazmoAPIError(Exception):
     """Raised when Mazmo API returns an error status."""
 
     pass
+
+
+# ── Return types ──────────────────────────────────────────────────────────────
+
+
+class MazmoUserWithId(NamedTuple):
+    """Combined result from the single-user lookup endpoint."""
+
+    mazmo_user_id: MazmoUserId
+    username: str
+    displayname: str
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -222,6 +233,38 @@ class MazmoClient:
             raise MazmoNetworkError(f"Cannot reach Mazmo: {exc}") from exc
         except httpx.HTTPStatusError as exc:
             raise MazmoAPIError(f"Mazmo returned {exc.response.status_code}") from exc
+
+    # ── Single user by username ───────────────────────────────────────────────
+
+    async def fetch_user_by_username(self, username: str) -> MazmoUserWithId:
+        """
+        Looks up a Mazmo user by their username handle.
+
+        Args:
+            username: Mazmo username, e.g. "cindydark"
+
+        Returns:
+            MazmoUserWithId with mazmo_user_id, username, and displayname.
+
+        Raises:
+            MazmoNetworkError: If Mazmo API is unreachable.
+            MazmoAPIError: If Mazmo API returns an error status (including 404).
+        """
+        url = f"{self._settings.mazmo_base_url}/users/{username}"
+        try:
+            resp = await self._client.get(url)
+            self._raise_for_status(resp, context=f"fetch user by username '{username}'")
+        except httpx.HTTPStatusError as exc:
+            raise MazmoAPIError(f"Mazmo returned {exc.response.status_code} for username '{username}'") from exc
+        except httpx.RequestError as exc:
+            raise MazmoNetworkError(f"Cannot reach Mazmo: {exc}") from exc
+
+        data = resp.json()
+        return MazmoUserWithId(
+            mazmo_user_id=MazmoUserId(int(data["id"])),
+            username=data["username"],
+            displayname=data["displayname"],
+        )
 
     # ── Step 2: User details (batched) ────────────────────────────────────────
 

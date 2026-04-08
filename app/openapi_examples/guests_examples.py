@@ -3,6 +3,7 @@ OpenAPI examples for guests router endpoints.
 
 Endpoints:
   POST  /guests/                       - Manually create a guest (staff+)
+  POST  /guests/by-username            - Create a guest by Mazmo username (staff+)
   GET   /guests/                       - List all known guests (staff+)
   GET   /guests/banned                 - List all banned guests (staff+)
   GET   /guests/{mazmo_user_id}        - Get a single guest (staff+)
@@ -22,10 +23,12 @@ from app.openapi_examples._error_responses import (
     error_403_admin_required,
     error_403_not_approved,
     error_404_guest,
+    error_404_mazmo_username_not_found,
     error_409_already_banned,
     error_409_guest_already_exists,
     error_409_not_banned,
     error_422_validation,
+    error_504_mazmo_timeout,
 )
 
 # ── POST /guests/ ─────────────────────────────────────────────────────────────
@@ -74,6 +77,43 @@ CREATE_GUEST_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_403_not_approved(),
     **error_409_guest_already_exists(),
     **error_422_validation(),
+}
+
+# ── POST /guests/by-username ──────────────────────────────────────────────────
+
+CREATE_GUEST_BY_USERNAME_REQUEST_EXAMPLES: dict[str, Any] = {
+    "by_username": {
+        "summary": "Look up by Mazmo handle",
+        "description": "Staff knows the handle but not the numeric ID",
+        "value": {"username": "cindydark"},
+    },
+}
+
+CREATE_GUEST_BY_USERNAME_RESPONSES: dict[int | str, dict[str, Any]] = {
+    201: {
+        "description": "Guest created from Mazmo profile",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "created": {
+                        "summary": "Guest successfully registered from Mazmo lookup",
+                        "value": {
+                            "mazmo_user_id": 39119,
+                            "username": "cindydark",
+                            "displayname": "⚜️Lissandra⚜️",
+                            "is_banned": False,
+                        },
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_not_approved(),
+    **error_404_mazmo_username_not_found(),
+    **error_409_guest_already_exists(),
+    **error_422_validation(),
+    **error_504_mazmo_timeout(),
 }
 
 # ── GET /guests/ ──────────────────────────────────────────────────────────────

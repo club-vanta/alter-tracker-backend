@@ -1597,6 +1597,219 @@
         ]
       }
     },
+    "/guests/by-username": {
+      "post": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "Create a guest by Mazmo username (no numeric ID needed)",
+        "description": "Register a guest using only their Mazmo username handle.\n\nLooks up the canonical Mazmo user ID and profile data automatically,\nso staff at the door only need to know the handle (e.g. \"cindydark\").\n\nReturns 404 if the username doesn't exist on Mazmo.\nReturns 409 if the guest is already registered in the system.\nReturns 504 if Mazmo is unreachable.",
+        "operationId": "create_guest_by_username_guests_by_username_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGuestByUsernameRequest"
+              },
+              "examples": {
+                "by_username": {
+                  "summary": "Look up by Mazmo handle",
+                  "description": "Staff knows the handle but not the numeric ID",
+                  "value": {
+                    "username": "cindydark"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Guest created from Mazmo profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestPublic"
+                },
+                "examples": {
+                  "created": {
+                    "summary": "Guest successfully registered from Mazmo lookup",
+                    "value": {
+                      "mazmo_user_id": 39119,
+                      "username": "cindydark",
+                      "displayname": "\u269c\ufe0fLissandra\u269c\ufe0f",
+                      "is_banned": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  },
+                  "wrong_password": {
+                    "summary": "Wrong username or password",
+                    "value": {
+                      "detail": "Incorrect username or password."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Username not found on Mazmo",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "username_not_found": {
+                    "summary": "Mazmo doesn't know this username",
+                    "value": {
+                      "detail": "Username 'unknownuser' was not found on Mazmo. Check the spelling and try again."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Guest already exists",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "guest_exists": {
+                    "summary": "mazmo_user_id already in system",
+                    "value": {
+                      "detail": "Cannot create guest: mazmo_user_id=12345 already exists in the system as 'fiestero_feliz'. If you want to add them to a meetup, use POST /meetups/{meetup_id}/guests/12345/add-walkin."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "password_too_short": {
+                    "summary": "Password validation failed",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "string_too_short",
+                          "loc": [
+                            "body",
+                            "password"
+                          ],
+                          "msg": "String should have at least 15 characters",
+                          "input": "short",
+                          "ctx": {
+                            "min_length": 15
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "invalid_url": {
+                    "summary": "Invalid Mazmo URL format",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "value_error",
+                          "loc": [
+                            "body",
+                            "mazmo_meetup_url"
+                          ],
+                          "msg": "Value error, URL must match pattern: https://mazmo.net/{community}/{thread-slug}-{id}",
+                          "input": "https://invalid-url.com/meetup"
+                        }
+                      ]
+                    }
+                  },
+                  "reason_too_short": {
+                    "summary": "Reason too short",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "string_too_short",
+                          "loc": [
+                            "body",
+                            "reason"
+                          ],
+                          "msg": "String should have at least 5 characters",
+                          "input": "bad",
+                          "ctx": {
+                            "min_length": 5
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Mazmo API timeout",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "mazmo_timeout": {
+                    "summary": "Could not connect to Mazmo",
+                    "value": {
+                      "detail": "Cannot create meetup: failed to connect to Mazmo API. This is likely a temporary network issue. Error: Connection timed out. Try again in a few moments, or check if Mazmo is experiencing an outage."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/guests/banned": {
       "get": {
         "tags": [
@@ -5280,6 +5493,23 @@
         ],
         "title": "CheckedInByPublic",
         "description": "Minimal staff representation for check-in attribution.\n\nOnly includes the essential fields needed to identify who performed\na check-in, without exposing sensitive fields like approval status."
+      },
+      "CreateGuestByUsernameRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Username",
+            "description": "Mazmo username to look up (e.g. 'cindydark')"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username"
+        ],
+        "title": "CreateGuestByUsernameRequest",
+        "description": "Request body for creating a guest by Mazmo username.\n\nStaff only need to know the handle (e.g. \"cindydark\"). The endpoint looks\nup the canonical ID and profile data from Mazmo automatically."
       },
       "CreateGuestRequest": {
         "properties": {
