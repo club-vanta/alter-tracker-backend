@@ -25,6 +25,7 @@ from sqlmodel import Session, select
 from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.deps import get_approved_user
+from app.domain_types import MazmoUserId
 from app.models.models import EventLog, EventType, Guest, Meetup, MeetupRsvp, User
 from app.openapi_examples.meetups_examples import (
     CHECKIN_RESPONSES,
@@ -361,7 +362,7 @@ async def add_walkin_guest(
 
     rsvp = MeetupRsvp(
         meetup_id=meetup_id,
-        guest_id=mazmo_user_id,
+        guest_id=MazmoUserId(mazmo_user_id),
         rsvp_time=datetime.now(UTC),
         cancelled_rsvp=False,
         is_walkin=True,
@@ -370,7 +371,7 @@ async def add_walkin_guest(
     event = EventLog(
         event_type=EventType.WALKIN,
         actor_id=staff.id,
-        guest_id=mazmo_user_id,
+        guest_id=MazmoUserId(mazmo_user_id),
         meetup_id=meetup_id,
     )
 
