@@ -81,7 +81,7 @@ class RawUserEntry(TypedDict):
 
 
 class RawRsvpsDict(TypedDict):
-    rsvps: dict[str, RawRsvpEntry]
+    rsvps: list[RawRsvpEntry]
 
 
 class RawEventField(TypedDict):
@@ -203,7 +203,7 @@ class MazmoClient:
 
         try:
             body: RawEventField = response.json()
-            raw_rsvps: dict[str, RawRsvpEntry] = body["event"]["rsvps"]
+            raw_rsvps: list[RawRsvpEntry] = body["event"]["rsvps"]
         except (KeyError, TypeError) as exc:
             raise ValueError(
                 f"Unexpected Mazmo thread response shape - could not find "
@@ -211,7 +211,7 @@ class MazmoClient:
             ) from exc
 
         result: dict[MazmoUserId, MazmoRsvpEntry] = {}
-        for _index, entry in raw_rsvps.items():
+        for entry in raw_rsvps:
             parsed = MazmoRsvpEntry.model_validate(entry)
             result[MazmoUserId(parsed.userId)] = parsed
 

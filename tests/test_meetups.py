@@ -1006,3 +1006,53 @@ def test_add_walkin_returns_409_when_meetup_is_finalized(client: TestClient, sta
 
     assert resp.status_code == status.HTTP_409_CONFLICT
     assert "finalized" in resp.json()["detail"].lower()
+
+
+# ── mazmo_user_id range validation ───────────────────────────────────────────
+
+
+def test_checkin_rejects_out_of_range_mazmo_user_id(client: TestClient, staff_headers: dict, meetup):
+    """
+    Verify that a mazmo_user_id larger than Postgres INTEGER max returns 422.
+
+    WHY: The guests table uses a Postgres INTEGER column for mazmo_user_id, which
+    caps at 2,147,483,647. Without this validation the DB raises a NumericValueOutOfRange
+    error, which surfaces as an unhandled 500. We validate at the API boundary instead.
+    """
+    resp = client.post(
+        f"/meetups/{meetup.id}/guests/123123123123/checkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_undo_checkin_rejects_out_of_range_mazmo_user_id(client: TestClient, staff_headers: dict, meetup):
+    """
+    Verify that a mazmo_user_id larger than Postgres INTEGER max returns 422.
+
+    WHY: Same reason as test_checkin_rejects_out_of_range_mazmo_user_id — all
+    endpoints that accept mazmo_user_id as a path parameter must enforce this limit.
+    """
+    resp = client.patch(
+        f"/meetups/{meetup.id}/guests/123123123123/undo-checkin",
+        headers=staff_headers,
+        json={"reason": "test reason here"},
+    )
+
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_add_walkin_rejects_out_of_range_mazmo_user_id(client: TestClient, staff_headers: dict, meetup):
+    """
+    Verify that a mazmo_user_id larger than Postgres INTEGER max returns 422.
+
+    WHY: Same reason as test_checkin_rejects_out_of_range_mazmo_user_id — all
+    endpoints that accept mazmo_user_id as a path parameter must enforce this limit.
+    """
+    resp = client.post(
+        f"/meetups/{meetup.id}/guests/123123123123/add-walkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

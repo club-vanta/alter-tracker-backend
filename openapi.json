@@ -2804,6 +2804,8 @@
             "required": true,
             "schema": {
               "type": "integer",
+              "maximum": 2147483647,
+              "exclusiveMinimum": 0,
               "title": "Mazmo User Id"
             }
           }
@@ -2954,6 +2956,8 @@
             "required": true,
             "schema": {
               "type": "integer",
+              "maximum": 2147483647,
+              "exclusiveMinimum": 0,
               "title": "Mazmo User Id"
             }
           }
@@ -3104,6 +3108,8 @@
             "required": true,
             "schema": {
               "type": "integer",
+              "maximum": 2147483647,
+              "exclusiveMinimum": 0,
               "title": "Mazmo User Id"
             }
           }

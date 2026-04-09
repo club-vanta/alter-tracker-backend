@@ -89,10 +89,10 @@ async def test_fetch_rsvps_returns_parsed_rsvp_entries():
 
     mock_response = {
         "event": {
-            "rsvps": {
-                "0": {"userId": 111, "joinedAt": "2026-03-17T00:25:32.744Z"},
-                "1": {"userId": 222, "joinedAt": "2026-03-17T01:30:00.000Z"},
-            }
+            "rsvps": [
+                {"userId": 111, "joinedAt": "2026-03-17T00:25:32.744Z"},
+                {"userId": 222, "joinedAt": "2026-03-17T01:30:00.000Z"},
+            ]
         }
     }
 

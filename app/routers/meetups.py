@@ -322,7 +322,7 @@ async def list_meetup_guests(
 )
 async def add_walkin_guest(
     meetup_id: uuid.UUID,
-    mazmo_user_id: int,
+    mazmo_user_id: Annotated[int, Field(gt=0, le=2_147_483_647)],
     session: Session = Depends(get_session),
     staff: User = Depends(get_approved_user),
 ) -> MeetupGuestPublic:
@@ -419,7 +419,7 @@ async def add_walkin_guest(
 )
 async def checkin_guest(
     meetup_id: uuid.UUID,
-    mazmo_user_id: int,
+    mazmo_user_id: Annotated[int, Field(gt=0, le=2_147_483_647)],
     session: Session = Depends(get_session),
     staff: User = Depends(get_approved_user),
 ) -> CheckInResponse:
@@ -524,7 +524,7 @@ class UndoCheckInRequest(BaseModel):
 )
 async def undo_checkin_guest(
     meetup_id: uuid.UUID,
-    mazmo_user_id: int,
+    mazmo_user_id: Annotated[int, Field(gt=0, le=2_147_483_647)],
     request: Annotated[UndoCheckInRequest, Body(openapi_examples=UNDO_CHECKIN_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
     staff: User = Depends(get_approved_user),
