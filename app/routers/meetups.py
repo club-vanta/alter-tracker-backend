@@ -346,7 +346,7 @@ async def add_walkin_guest(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
                 f"Cannot add walk-in: guest mazmo_user_id={mazmo_user_id} does not exist in the system. "
-                f"Walk-in guests must have a Mazmo profile that was previously synced. "
+                f"Register them first via POST /guests/ (username lookup) or sync a meetup they've RSVPed to. "
                 f"Search known guests via GET /guests/ to find the correct ID."
             ),
         )

@@ -633,7 +633,7 @@ def error_404_walkin_guest_not_in_system() -> ResponsesDict:
                             "value": {
                                 "detail": (
                                     "Cannot add walk-in: guest mazmo_user_id=55555 does not exist in the system. "
-                                    "Walk-in guests must have a Mazmo profile that was previously synced. "
+                                    "Register them first via POST /guests/ (username lookup) or sync a meetup they've RSVPed to. "  # noqa: E501
                                     "Search known guests via GET /guests/ to find the correct ID."
                                 )
                             },

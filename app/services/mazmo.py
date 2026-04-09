@@ -115,7 +115,15 @@ class MazmoAPIError(Exception):
 
 
 class MazmoUserWithId(NamedTuple):
-    """Combined result from the single-user lookup endpoint."""
+    """
+    Combined result from the single-user lookup endpoint.
+
+    NamedTuple is a tuple subclass with named fields — fields are accessible
+    by name (user.username) or by index (user[1]). Immutable: you cannot
+    reassign fields after construction. Used here as a lightweight internal
+    struct; no Pydantic validation needed since the data comes from the API
+    already parsed.
+    """
 
     mazmo_user_id: MazmoUserId
     username: str

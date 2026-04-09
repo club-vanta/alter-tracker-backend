@@ -2889,7 +2889,7 @@
                   "guest_not_in_system": {
                     "summary": "Guest has no record in the system",
                     "value": {
-                      "detail": "Cannot add walk-in: guest mazmo_user_id=55555 does not exist in the system. Walk-in guests must have a Mazmo profile that was previously synced. Search known guests via GET /guests/ to find the correct ID."
+                      "detail": "Cannot add walk-in: guest mazmo_user_id=55555 does not exist in the system. Register them first via POST /guests/ (username lookup) or sync a meetup they've RSVPed to. Search known guests via GET /guests/ to find the correct ID."
                     }
                   }
                 }
