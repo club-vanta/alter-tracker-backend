@@ -19,13 +19,15 @@ from app.openapi_examples._constants import (
     STAFF_USER_PENDING,
 )
 from app.openapi_examples._error_responses import (
-    error_400_self_operation,
+    error_400_self_approve_revoke,
+    error_400_self_disable,
+    error_400_self_role,
     error_401_invalid_credentials,
     error_403_admin_required,
     error_404_staff,
     error_409_already_disabled,
     error_409_not_disabled,
-    error_422_validation,
+    error_422_validation_reason,
 )
 
 # ── GET /staff/ ───────────────────────────────────────────────────────────────
@@ -110,7 +112,7 @@ APPROVE_RESPONSES: dict[int | str, dict[str, Any]] = {
             }
         },
     },
-    **error_400_self_operation(),
+    **error_400_self_approve_revoke(),
     **error_401_invalid_credentials(),
     **error_403_admin_required(),
     **error_404_staff(),
@@ -152,7 +154,7 @@ ROLE_RESPONSES: dict[int | str, dict[str, Any]] = {
             }
         },
     },
-    **error_400_self_operation(),
+    **error_400_self_role(),
     **error_401_invalid_credentials(),
     **error_403_admin_required(),
     **error_404_staff(),
@@ -182,12 +184,12 @@ DISABLE_RESPONSES: dict[int | str, dict[str, Any]] = {
             }
         },
     },
-    **error_400_self_operation(),
+    **error_400_self_disable(),
     **error_401_invalid_credentials(),
     **error_403_admin_required(),
     **error_404_staff(),
     **error_409_already_disabled(),
-    **error_422_validation(),
+    **error_422_validation_reason(),
 }
 
 # ── PATCH /staff/{id}/enable ──────────────────────────────────────────────────

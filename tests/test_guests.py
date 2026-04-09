@@ -4,10 +4,13 @@ These tests verify guest listing and ban management functionality.
 Staff can view guests and banned list, but only admins can ban/unban.
 """
 
+import httpx
 from fastapi import status
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
+from app.models.models import EventLog, EventType
+from app.services.mazmo import MazmoAPIError, MazmoNetworkError
 from tests.conftest import make_guest
 
 # ── List guests ───────────────────────────────────────────────────────────────
@@ -47,6 +50,67 @@ def test_get_nonexistent_guest_returns_404_not_found(client: TestClient, staff_h
     """Verify that getting a nonexistent guest returns 404."""
     resp = client.get("/guests/99999", headers=staff_headers)
     assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+# ── Get guest by username ─────────────────────────────────────────────────────
+
+
+def test_get_guest_by_username_returns_200_with_guest_data(client: TestClient, staff_headers: dict, session: Session):
+    """
+    Verify that staff can look up a guest by their Mazmo username.
+
+    WHY: Staff at the door may know the handle but not the numeric ID.
+    This endpoint avoids having to list all guests and search manually.
+    """
+    make_guest(session, mazmo_user_id=39119, username="cindydark")
+    resp = client.get("/guests/by-username/cindydark", headers=staff_headers)
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()
+    assert data["username"] == "cindydark"
+    assert data["mazmo_user_id"] == 39119
+
+
+def test_get_guest_by_username_returns_all_guest_public_fields(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """Verify the response shape matches GuestPublic."""
+    make_guest(session, mazmo_user_id=1, username="someuser")
+    resp = client.get("/guests/by-username/someuser", headers=staff_headers)
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()
+    assert "mazmo_user_id" in data
+    assert "username" in data
+    assert "displayname" in data
+    assert "is_banned" in data
+
+
+def test_get_guest_by_username_returns_404_when_not_in_system(client: TestClient, staff_headers: dict):
+    """
+    Verify that a 404 is returned when the username doesn't exist in our system.
+
+    WHY: The guest may exist on Mazmo but not have RSVPed to any tracked meetup.
+    The error should tell staff to use POST /guests/ to register them.
+    """
+    resp = client.get("/guests/by-username/nobody", headers=staff_headers)
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+    assert "nobody" in resp.json()["detail"]
+
+
+def test_get_guest_by_username_404_detail_mentions_post_guests(client: TestClient, staff_headers: dict):
+    """
+    Verify the 404 message points staff to POST /guests/ as the next step.
+
+    WHY: Staff need actionable guidance — if they can't find a guest by username
+    it's likely they need to register them first.
+    """
+    resp = client.get("/guests/by-username/nobody", headers=staff_headers)
+    assert "POST /guests/" in resp.json()["detail"]
+
+
+def test_get_guest_by_username_without_token_returns_401(client: TestClient):
+    """Verify that unauthenticated requests are rejected."""
+    resp = client.get("/guests/by-username/someuser")
+    assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 # ── Guest public includes is_banned field ─────────────────────────────────────
@@ -384,3 +448,135 @@ def test_list_banned_guests_without_token_returns_401_unauthorized(client: TestC
     """Verify that unauthenticated requests are rejected."""
     resp = client.get("/guests/banned")
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# ── Create guest ──────────────────────────────────────────────────────────────
+
+
+def test_create_guest_by_username_returns_201_with_mazmo_profile_data(
+    client: TestClient, staff_headers: dict, mock_mazmo_for_guests
+):
+    """
+    Verify that the endpoint looks up Mazmo and returns the profile data.
+
+    WHY: The whole point is that staff don't need to know the numeric ID —
+    the endpoint fetches it from Mazmo and registers the guest automatically.
+    """
+    resp = client.post("/guests/", json={"username": "cindydark"}, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_201_CREATED
+    data = resp.json()
+    assert data["mazmo_user_id"] == 39119
+    assert data["username"] == "cindydark"
+    assert data["displayname"] == "⚜️Lissandra⚜️"
+    assert data["is_banned"] is False
+
+
+def test_create_guest_by_username_persists_correct_mazmo_user_id(
+    client: TestClient, staff_headers: dict, session: Session, mock_mazmo_for_guests
+):
+    """
+    Verify that the mazmo_user_id from the Mazmo response is stored, not the username.
+
+    WHY: The guest PK is the numeric ID. If we stored the wrong ID, add-walkin
+    and other operations would break.
+    """
+    client.post("/guests/", json={"username": "cindydark"}, headers=staff_headers)
+
+    resp = client.get("/guests/39119", headers=staff_headers)
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["username"] == "cindydark"
+
+
+def test_create_guest_by_username_writes_guest_created_event_log(
+    client: TestClient, staff_headers: dict, session: Session, staff_user, mock_mazmo_for_guests
+):
+    """
+    Verify that a GUEST_CREATED audit log entry is written with the correct actor.
+
+    WHY: Audit trail - admins need to know who registered this guest and
+    that the registration came from a Mazmo username lookup.
+    """
+    client.post("/guests/", json={"username": "cindydark"}, headers=staff_headers)
+
+    event = session.exec(
+        select(EventLog).where(EventLog.guest_id == 39119).where(EventLog.event_type == EventType.GUEST_CREATED)
+    ).first()
+    assert event is not None
+    assert event.actor_id == staff_user.id
+
+
+def test_create_guest_by_username_returns_404_when_mazmo_says_user_not_found(
+    client: TestClient, staff_headers: dict, mock_mazmo_for_guests
+):
+    """
+    Verify that a 404 from Mazmo surfaces as a 404 to the caller.
+
+    WHY: If staff typo the username, they should get a clear "not found"
+    error, not a confusing 500 or 502.
+    """
+    fake_request = httpx.Request("GET", "https://prod.mazmoapi.net/users/nobody")
+    fake_response = httpx.Response(404, request=fake_request)
+    mock_mazmo_for_guests.fetch_user_by_username.side_effect = MazmoAPIError(
+        "Mazmo returned 404 for username 'nobody'"
+    ).__class__("Mazmo returned 404 for username 'nobody'")
+    # Use __cause__ so the router can inspect it
+    exc = MazmoAPIError("Mazmo returned 404")
+    exc.__cause__ = httpx.HTTPStatusError("404", request=fake_request, response=fake_response)
+    mock_mazmo_for_guests.fetch_user_by_username.side_effect = exc
+
+    resp = client.post("/guests/", json={"username": "nobody"}, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+    assert "nobody" in resp.json()["detail"]
+
+
+def test_create_guest_by_username_returns_409_when_guest_already_exists(
+    client: TestClient, staff_headers: dict, session: Session, mock_mazmo_for_guests
+):
+    """
+    Verify that creating a duplicate returns 409.
+
+    WHY: If Mazmo says the user ID is 39119 and we already have that ID,
+    we must reject rather than silently overwrite.
+    """
+    make_guest(session, mazmo_user_id=39119, username="cindydark")
+
+    resp = client.post("/guests/", json={"username": "cindydark"}, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_create_guest_by_username_returns_504_when_mazmo_unreachable(
+    client: TestClient, staff_headers: dict, mock_mazmo_for_guests
+):
+    """
+    Verify that a network failure surfaces as 504.
+
+    WHY: If Mazmo is down, staff should get a clear "try again" response,
+    not a 500 that would suggest a bug.
+    """
+    mock_mazmo_for_guests.fetch_user_by_username.side_effect = MazmoNetworkError("Connection timed out")
+
+    resp = client.post("/guests/", json={"username": "cindydark"}, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_504_GATEWAY_TIMEOUT
+
+
+def test_create_guest_by_username_returns_401_without_token(client: TestClient, mock_mazmo_for_guests):
+    """Verify that unauthenticated requests are rejected."""
+    resp = client.post("/guests/", json={"username": "cindydark"})
+    assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_create_guest_by_username_returns_422_when_username_is_empty(
+    client: TestClient, staff_headers: dict, mock_mazmo_for_guests
+):
+    """
+    Verify that an empty username string is rejected before hitting Mazmo.
+
+    WHY: min_length=1 on username — the request shouldn't even reach the
+    Mazmo API if the username is blank.
+    """
+    resp = client.post("/guests/", json={"username": ""}, headers=staff_headers)
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

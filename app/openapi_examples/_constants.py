@@ -184,6 +184,27 @@ EVENT_BAN = {
     "reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03",
 }
 
+# ── Walk-in RSVP ──────────────────────────────────────────────────────────────
+
+RSVP_WALKIN = {
+    "rsvp_time": TIMESTAMP_2024_03_23_CHECKIN,
+    "cancelled_rsvp": False,
+    "has_arrived": False,
+    "arrival_time": None,
+    "arrival_order": None,
+    "is_walkin": True,
+}
+
+MEETUP_GUEST_WALKIN = {
+    "guest": {
+        **GUEST_NORMAL,
+        "mazmo_user_id": 55555,
+        "username": "recien_llegado",
+        "displayname": "Recién Llegado",
+    },
+    "rsvp": RSVP_WALKIN,
+}
+
 # ── Sync Response ─────────────────────────────────────────────────────────────
 
 SYNC_RESPONSE_EXAMPLE = {

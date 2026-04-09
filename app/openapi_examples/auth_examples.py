@@ -16,9 +16,10 @@ from app.openapi_examples._constants import (
 )
 from app.openapi_examples._error_responses import (
     error_401_invalid_credentials,
+    error_401_wrong_password,
     error_403_not_approved,
     error_409_username_taken,
-    error_422_validation,
+    error_422_validation_password,
 )
 
 # ── POST /auth/register ───────────────────────────────────────────────────────
@@ -49,7 +50,7 @@ REGISTER_RESPONSES: dict[int | str, dict[str, Any]] = {
         },
     },
     **error_409_username_taken(),
-    **error_422_validation(),
+    **error_422_validation_password(),
 }
 
 # ── POST /auth/token ──────────────────────────────────────────────────────────
@@ -75,6 +76,7 @@ TOKEN_RESPONSES: dict[int | str, dict[str, Any]] = {
         },
     },
     **error_401_invalid_credentials(),
+    **error_401_wrong_password(),
     **error_403_not_approved(),
 }
 

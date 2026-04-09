@@ -129,6 +129,79 @@ def test_create_meetup_requires_auth(client: TestClient, mock_mazmo_for_meetups:
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
 
+def test_create_meetup_accepts_community_with_plus_prefix(
+    client: TestClient, admin_headers: dict, mock_mazmo_for_meetups: AsyncMock
+):
+    """
+    Verify that URLs with a '+' prefix in the community segment are accepted.
+
+    WHY: Some Mazmo communities use '+' as a prefix (e.g. +eventos-reuniones-argentina).
+    The old regex only allowed [\\w-] and rejected these URLs with a 422.
+    """
+    resp = client.post(
+        "/meetups/",
+        json={
+            "name": "Alter Tan Selmo Secret Face",
+            "mazmo_meetup_url": "https://mazmo.net/+eventos-reuniones-argentina/alter-tal-selmo-secret-face-opgnjcy4d0u",
+        },
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_201_CREATED
+
+
+def test_create_meetup_accepts_alphanumeric_slug_suffix(
+    client: TestClient, admin_headers: dict, mock_mazmo_for_meetups: AsyncMock
+):
+    """
+    Verify that thread slugs ending in an alphanumeric ID (not just numeric) are accepted.
+
+    WHY: Newer Mazmo events use alphanumeric IDs like 'opgnjcy4d0u' instead of
+    plain integers. The old regex required \\d+ at the end and rejected these.
+    """
+    resp = client.post(
+        "/meetups/",
+        json={
+            "name": "Test Alphanumeric ID",
+            "mazmo_meetup_url": "https://mazmo.net/some-community/some-event-abc123xyz",
+        },
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_201_CREATED
+
+
+def test_create_meetup_rejects_url_without_thread_segment(
+    client: TestClient, admin_headers: dict, mock_mazmo_for_meetups: AsyncMock
+):
+    """
+    Verify that URLs missing the thread path segment are still rejected.
+
+    WHY: A URL like https://mazmo.net/community (no thread) would be a community
+    page, not a meetup — it should never pass validation.
+    """
+    resp = client.post(
+        "/meetups/",
+        json={"name": "Bad URL", "mazmo_meetup_url": "https://mazmo.net/just-community"},
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_create_meetup_rejects_non_mazmo_url(
+    client: TestClient, admin_headers: dict, mock_mazmo_for_meetups: AsyncMock
+):
+    """Verify that URLs from other domains are rejected."""
+    resp = client.post(
+        "/meetups/",
+        json={"name": "Bad URL", "mazmo_meetup_url": "https://example.com/community/event-123"},
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
 # ── List meetups ──────────────────────────────────────────────────────────────
 
 
@@ -346,6 +419,112 @@ def test_checkin_returns_404_for_unknown_meetup(client: TestClient, staff_header
     resp = client.post(f"/meetups/{fake_id}/guests/123/checkin", headers=staff_headers)
 
     assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+# ── Check-in concurrency guarantees ──────────────────────────────────────────
+#
+# True concurrent requests can't be tested with the synchronous TestClient
+# (tests share a single rolled-back transaction). Instead, these tests verify
+# the observable guarantees that SELECT FOR UPDATE provides:
+#
+#   1. A second check-in on an already-checked-in guest returns 409 — which is
+#      exactly what the second concurrent request sees after the first commits.
+#   2. Only one CHECK_IN event log entry is ever created for a given guest+meetup,
+#      regardless of how many attempts were made.
+#
+# The SELECT FOR UPDATE comment in meetups.py explains the mechanism.
+
+
+def test_checkin_second_attempt_after_first_succeeds_returns_409(
+    client: TestClient, staff_headers: dict, session: Session, meetup
+):
+    """
+    Verify that a second check-in attempt after the first succeeded returns 409.
+
+    WHY: This is the state the second concurrent request observes after SELECT
+    FOR UPDATE releases the lock — has_arrived is True, so it gets 409.
+    The first check-in won; the second must not silently succeed or 500.
+    """
+    guest = make_guest(session, mazmo_user_id=350, username="concurrent_checkin")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    # First check-in succeeds
+    resp1 = client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+    assert resp1.status_code == status.HTTP_200_OK
+
+    # Second check-in (what the losing concurrent request sees after lock release)
+    resp2 = client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+    assert resp2.status_code == status.HTTP_409_CONFLICT
+
+
+def test_checkin_produces_exactly_one_event_log_entry_on_duplicate_attempt(
+    client: TestClient, staff_headers: dict, session: Session, meetup, staff_user
+):
+    """
+    Verify that only one CHECK_IN event log entry exists after two attempts.
+
+    WHY: The audit trail must reflect reality — only the staff member who
+    actually performed the first check-in should appear in the log.
+    A second concurrent request must not inject its own event log entry.
+    """
+    guest = make_guest(session, mazmo_user_id=351, username="one_event_guest")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+    client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+
+    events = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.mazmo_user_id)
+        .where(EventLog.event_type == EventType.CHECK_IN)
+    ).all()
+    assert len(events) == 1
+    assert events[0].actor_id == staff_user.id
+
+
+def test_checkin_event_log_records_first_staff_not_second(
+    client: TestClient, session: Session, meetup, staff_user, admin_user, staff_headers, admin_headers
+):
+    """
+    Verify that the event log records the staff member who checked in first,
+    not a subsequent attempt by a different staff member.
+
+    WHY: In a real race, two different staff members at two terminals could
+    both scan the same guest. Only the first one should appear in the audit log.
+    """
+    guest = make_guest(session, mazmo_user_id=352, username="race_guest")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    # Staff checks in first
+    client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+    # Admin tries to check in the same guest (arrives second)
+    client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=admin_headers,
+    )
+
+    event = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.mazmo_user_id)
+        .where(EventLog.event_type == EventType.CHECK_IN)
+    ).first()
+    assert event is not None
+    assert event.actor_id == staff_user.id  # first, not admin
 
 
 # ── Undo check-in ─────────────────────────────────────────────────────────────
@@ -718,3 +897,112 @@ def test_unfinalize_meetup_writes_event_log_entry(
     ).first()
     assert event is not None
     assert event.actor_id == staff_user.id
+
+
+# ── Add walk-in guest ─────────────────────────────────────────────────────────
+
+
+def test_add_walkin_returns_201_with_is_walkin_true(client: TestClient, staff_headers: dict, session: Session, meetup):
+    """
+    Verify that adding a walk-in guest returns 201 with is_walkin=True.
+
+    WHY: Core requirement — staff needs to add guests who have a Mazmo profile
+    but didn't RSVP. The is_walkin flag must be set so the frontend can show
+    the badge.
+    """
+    guest = make_guest(session, mazmo_user_id=601, username="walkin_guest")
+
+    resp = client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_201_CREATED
+    data = resp.json()
+    assert data["guest"]["username"] == "walkin_guest"
+    assert data["rsvp"]["is_walkin"] is True
+
+
+def test_add_walkin_writes_event_log_entry(
+    client: TestClient, staff_headers: dict, session: Session, meetup, staff_user
+):
+    """
+    Verify that adding a walk-in creates a WALKIN audit log entry.
+
+    WHY: We need a full audit trail of who added each walk-in and when.
+    """
+    guest = make_guest(session, mazmo_user_id=602, username="walkin_audit")
+
+    client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        headers=staff_headers,
+    )
+
+    event = session.exec(
+        select(EventLog).where(EventLog.guest_id == guest.mazmo_user_id).where(EventLog.event_type == EventType.WALKIN)
+    ).first()
+    assert event is not None
+    assert event.actor_id == staff_user.id
+    assert event.meetup_id == meetup.id
+
+
+def test_add_walkin_returns_404_when_guest_not_in_system(client: TestClient, staff_headers: dict, meetup):
+    """
+    Verify that adding a walk-in for an unknown Mazmo user returns 404.
+
+    WHY: Walk-ins must have a Mazmo profile already synced. If the guest_id
+    doesn't exist at all, the request is invalid.
+    """
+    resp = client.post(
+        f"/meetups/{meetup.id}/guests/99999/add-walkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_add_walkin_returns_409_when_rsvp_already_exists(
+    client: TestClient, staff_headers: dict, session: Session, meetup
+):
+    """
+    Verify that adding a walk-in for a guest who already has an RSVP returns 409.
+
+    WHY: Prevents duplicate RSVPs — the guest may have RSVPed on Mazmo or
+    already been added as a walk-in.
+    """
+    guest = make_guest(session, mazmo_user_id=603, username="already_rsvped")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    resp = client.post(
+        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_add_walkin_returns_409_when_meetup_is_finalized(client: TestClient, staff_headers: dict, session: Session):
+    """
+    Verify that adding a walk-in to a finalized meetup returns 409.
+
+    WHY: Finalization locks the meetup — no new arrivals (including walk-ins)
+    should be added after the event ends.
+    """
+    finalized = make_meetup(
+        session,
+        name="Finalized Walkin",
+        mazmo_meetup_url="https://mazmo.net/test/finalized-walkin-1",
+    )
+    finalized.is_finalized = True
+    finalized.finalized_at = datetime.now(UTC)
+    session.add(finalized)
+    guest = make_guest(session, mazmo_user_id=604, username="walkin_blocked")
+    session.flush()
+
+    resp = client.post(
+        f"/meetups/{finalized.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+    assert "finalized" in resp.json()["detail"].lower()

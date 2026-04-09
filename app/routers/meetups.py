@@ -19,14 +19,17 @@ import httpx
 import structlog
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.deps import get_approved_user
+from app.domain_types import MazmoUserId
 from app.models.models import EventLog, EventType, Guest, Meetup, MeetupRsvp, User
 from app.openapi_examples.meetups_examples import (
+    ADD_WALKIN_RESPONSES,
     CHECKIN_RESPONSES,
     CREATE_MEETUP_REQUEST_EXAMPLES,
     CREATE_MEETUP_RESPONSES,
@@ -145,7 +148,8 @@ async def create_meetup(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=(
-                f"Cannot create meetup: Mazmo API returned an error. Error: {exc}. "
+                f"Cannot create meetup: Mazmo API returned an error. "
+                f"Frontend URL: {mazmo_url}. {exc}. "
                 f"This could mean the Mazmo URL is invalid or the event doesn't exist. "
                 f"Verify the URL is correct and points to a valid Mazmo event page."
             ),
@@ -306,6 +310,104 @@ async def list_meetup_guests(
     return MeetupGuestListResponse(total=len(guests), guests=guests)
 
 
+# ── Add walk-in guest ────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/{meetup_id}/guests/{mazmo_user_id}/add-walkin",
+    response_model=MeetupGuestPublic,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add a walk-in guest to this meetup",
+    responses=ADD_WALKIN_RESPONSES,
+)
+async def add_walkin_guest(
+    meetup_id: uuid.UUID,
+    mazmo_user_id: int,
+    session: Session = Depends(get_session),
+    staff: User = Depends(get_approved_user),
+) -> MeetupGuestPublic:
+    """
+    Manually add a guest who has a Mazmo profile but didn't RSVP to this event.
+
+    Creates a MeetupRsvp row with the current time as rsvp_time.
+    The guest must already exist in the system (fetched via a previous sync
+    for any meetup, or visible in GET /guests/).
+
+    Returns 404 if the guest doesn't exist in the system.
+    Returns 409 if the guest already has an RSVP for this meetup.
+    Returns 409 if the meetup is finalized.
+    """
+    meetup = _get_meetup_or_404(session, meetup_id)
+    _raise_if_finalized(meetup)
+
+    guest = session.get(Guest, mazmo_user_id)
+    if not guest:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Cannot add walk-in: guest mazmo_user_id={mazmo_user_id} does not exist in the system. "
+                f"Register them first via POST /guests/ (username lookup) or sync a meetup they've RSVPed to. "
+                f"Search known guests via GET /guests/ to find the correct ID."
+            ),
+        )
+
+    existing = session.exec(
+        select(MeetupRsvp).where(MeetupRsvp.meetup_id == meetup_id).where(MeetupRsvp.guest_id == mazmo_user_id)
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot add walk-in: guest '{guest.username}' (mazmo_user_id={mazmo_user_id}) "
+                f"already has an RSVP for this meetup. "
+                f"They may have RSVPed on Mazmo or been added as a walk-in previously."
+            ),
+        )
+
+    rsvp = MeetupRsvp(
+        meetup_id=meetup_id,
+        guest_id=MazmoUserId(mazmo_user_id),
+        rsvp_time=datetime.now(UTC),
+        cancelled_rsvp=False,
+        is_walkin=True,
+    )
+
+    event = EventLog(
+        event_type=EventType.WALKIN,
+        actor_id=staff.id,
+        guest_id=MazmoUserId(mazmo_user_id),
+        meetup_id=meetup_id,
+    )
+
+    session.add(rsvp)
+    session.add(event)
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot add walk-in: guest '{guest.username}' (mazmo_user_id={mazmo_user_id}) "
+                f"already has an RSVP for this meetup (concurrent request)."
+            ),
+        ) from None
+    session.refresh(rsvp)
+
+    log.info(
+        "Walk-in guest added",
+        staff=staff.username,
+        guest=guest.username,
+        guest_id=mazmo_user_id,
+        meetup_id=str(meetup_id),
+    )
+
+    return MeetupGuestPublic(
+        guest=GuestPublic.model_validate(guest),
+        rsvp=RsvpPublic.model_validate(rsvp),
+    )
+
+
 # ── Check in a guest ─────────────────────────────────────────────────────────
 
 
@@ -331,10 +433,16 @@ async def checkin_guest(
     meetup = _get_meetup_or_404(session, meetup_id)
     _raise_if_finalized(meetup)
 
+    # SELECT FOR UPDATE locks the row for the duration of this transaction.
+    # Without it, two concurrent check-in requests could both read has_arrived=False,
+    # both pass the check below, and both commit — producing two CHECK_IN event log
+    # entries and an ambiguous audit trail. The lock ensures the second request
+    # reads the already-committed state (has_arrived=True) and correctly gets a 409.
     rsvp = session.exec(
         select(MeetupRsvp)
         .where(MeetupRsvp.meetup_id == meetup_id)
         .where(MeetupRsvp.guest_id == mazmo_user_id)
+        .with_for_update()
         .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
     ).first()
 

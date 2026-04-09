@@ -1,0 +1,5756 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Alter Event Tracker",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Register a new staff account (pending admin approval)",
+        "operationId": "register_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffRegisterRequest"
+              },
+              "examples": {
+                "new_volunteer": {
+                  "summary": "New volunteer registration",
+                  "description": "Register a new staff account. Account will be pending admin approval.",
+                  "value": {
+                    "username": "nuevo_voluntario",
+                    "password": "contrase\u00f1a_segura_123!"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Account created (pending approval)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPublic"
+                },
+                "examples": {
+                  "success": {
+                    "summary": "Registration successful",
+                    "value": {
+                      "id": 3,
+                      "username": "nuevo_voluntario",
+                      "is_approved": false,
+                      "role": {
+                        "id": 1,
+                        "name": "STAFF"
+                      },
+                      "created_at": "2024-03-22T21:15:00Z",
+                      "is_disabled": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Username already taken",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "username_taken": {
+                    "summary": "Username already registered",
+                    "value": {
+                      "detail": "Username 'maria_admin' is already taken."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "password_too_short": {
+                    "summary": "Password too short",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "string_too_short",
+                          "loc": [
+                            "body",
+                            "password"
+                          ],
+                          "msg": "String should have at least 15 characters",
+                          "input": "short",
+                          "ctx": {
+                            "min_length": 15
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/token": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Login - returns a JWT bearer token",
+        "operationId": "login_auth_token_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_login_auth_token_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                },
+                "examples": {
+                  "success": {
+                    "summary": "JWT token returned",
+                    "value": {
+                      "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJtYXJpYV9hZG1pbiIsInJvbGUiOiJBRE1JTiIsImV4cCI6MTcxMTIzNDU2N30.fake_signature_for_documentation_purposes_only",
+                      "token_type": "bearer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Wrong username or password",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "wrong_password": {
+                    "summary": "Wrong username or password",
+                    "value": {
+                      "detail": "Incorrect username or password."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/userinfo": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Return the currently authenticated user's profile",
+        "operationId": "get_me_auth_userinfo_get",
+        "responses": {
+          "200": {
+            "description": "Current user profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPublic"
+                },
+                "examples": {
+                  "admin_user": {
+                    "summary": "Admin viewing their profile",
+                    "value": {
+                      "id": 1,
+                      "username": "maria_admin",
+                      "is_approved": true,
+                      "role": {
+                        "id": 2,
+                        "name": "ADMIN"
+                      },
+                      "created_at": "2024-03-15T20:00:00Z",
+                      "is_disabled": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/staff/": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "summary": "List all staff accounts (admin only)",
+        "operationId": "list_staff_staff__get",
+        "responses": {
+          "200": {
+            "description": "All staff accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserPublic"
+                  },
+                  "type": "array",
+                  "title": "Response List Staff Staff  Get"
+                },
+                "examples": {
+                  "all_staff": {
+                    "summary": "Mix of approved, pending, and disabled",
+                    "value": [
+                      {
+                        "id": 1,
+                        "username": "maria_admin",
+                        "is_approved": true,
+                        "role": {
+                          "id": 2,
+                          "name": "ADMIN"
+                        },
+                        "created_at": "2024-03-15T20:00:00Z",
+                        "is_disabled": false
+                      },
+                      {
+                        "id": 2,
+                        "username": "carlos_staff",
+                        "is_approved": true,
+                        "role": {
+                          "id": 1,
+                          "name": "STAFF"
+                        },
+                        "created_at": "2024-03-20T18:30:00Z",
+                        "is_disabled": false
+                      },
+                      {
+                        "id": 3,
+                        "username": "nuevo_voluntario",
+                        "is_approved": false,
+                        "role": {
+                          "id": 1,
+                          "name": "STAFF"
+                        },
+                        "created_at": "2024-03-22T21:15:00Z",
+                        "is_disabled": false
+                      },
+                      {
+                        "id": 4,
+                        "username": "ex_voluntario",
+                        "is_approved": true,
+                        "role": {
+                          "id": 1,
+                          "name": "STAFF"
+                        },
+                        "created_at": "2024-03-15T20:00:00Z",
+                        "is_disabled": true,
+                        "disabled_at": "2024-03-22T21:15:00Z",
+                        "disabled_reason": "Left the organization"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Admin privileges needed",
+                    "value": {
+                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/staff/pending": {
+      "get": {
+        "tags": [
+          "staff"
+        ],
+        "summary": "List unapproved staff accounts (admin only)",
+        "operationId": "list_pending_staff_pending_get",
+        "responses": {
+          "200": {
+            "description": "Unapproved staff accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserPublic"
+                  },
+                  "type": "array",
+                  "title": "Response List Pending Staff Pending Get"
+                },
+                "examples": {
+                  "pending_users": {
+                    "summary": "Staff awaiting approval",
+                    "value": [
+                      {
+                        "id": 3,
+                        "username": "nuevo_voluntario",
+                        "is_approved": false,
+                        "role": {
+                          "id": 1,
+                          "name": "STAFF"
+                        },
+                        "created_at": "2024-03-22T21:15:00Z",
+                        "is_disabled": false
+                      }
+                    ]
+                  },
+                  "no_pending": {
+                    "summary": "No pending approvals",
+                    "value": []
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Admin privileges needed",
+                    "value": {
+                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/staff/{user_id}/approve": {
+      "patch": {
+        "tags": [
+          "staff"
+        ],
+        "summary": "Approve or revoke a staff account (admin only)",
+        "operationId": "set_approval_staff__user_id__approve_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveUserRequest"
+              },
+              "examples": {
+                "approve": {
+                  "summary": "Approve a staff account",
+                  "description": "Set is_approved to true so the user can log in",
+                  "value": {
+                    "is_approved": true
+                  }
+                },
+                "revoke": {
+                  "summary": "Revoke approval",
+                  "description": "Set is_approved to false to lock out the user",
+                  "value": {
+                    "is_approved": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Approval status updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPublic"
+                },
+                "examples": {
+                  "approved": {
+                    "summary": "User now approved",
+                    "value": {
+                      "id": 3,
+                      "username": "nuevo_voluntario",
+                      "is_approved": true,
+                      "role": {
+                        "id": 1,
+                        "name": "STAFF"
+                      },
+                      "created_at": "2024-03-22T21:15:00Z",
+                      "is_disabled": false
+                    }
+                  },
+                  "revoked": {
+                    "summary": "User approval revoked",
+                    "value": {
+                      "id": 2,
+                      "username": "carlos_staff",
+                      "is_approved": false,
+                      "role": {
+                        "id": 1,
+                        "name": "STAFF"
+                      },
+                      "created_at": "2024-03-20T18:30:00Z",
+                      "is_disabled": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid self-operation",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "self_revoke": {
+                    "summary": "Cannot revoke own approval",
+                    "value": {
+                      "detail": "Admins cannot revoke their own approval."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Admin privileges needed",
+                    "value": {
+                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Staff user not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "staff_not_found": {
+                    "summary": "Staff ID does not exist",
+                    "value": {
+                      "detail": "Staff user not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/staff/{user_id}/role": {
+      "patch": {
+        "tags": [
+          "staff"
+        ],
+        "summary": "Promote or demote a staff member's role (admin only)",
+        "operationId": "set_role_staff__user_id__role_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleRequest"
+              },
+              "examples": {
+                "promote_to_admin": {
+                  "summary": "Promote to admin",
+                  "description": "Give a staff member admin privileges",
+                  "value": {
+                    "role": "ADMIN"
+                  }
+                },
+                "demote_to_staff": {
+                  "summary": "Demote to staff",
+                  "description": "Remove admin privileges from a user",
+                  "value": {
+                    "role": "STAFF"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Role updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPublic"
+                },
+                "examples": {
+                  "promoted": {
+                    "summary": "User promoted to admin",
+                    "value": {
+                      "id": 2,
+                      "username": "carlos_staff",
+                      "is_approved": true,
+                      "role": {
+                        "id": 2,
+                        "name": "ADMIN"
+                      },
+                      "created_at": "2024-03-20T18:30:00Z",
+                      "is_disabled": false
+                    }
+                  },
+                  "demoted": {
+                    "summary": "User demoted to staff",
+                    "value": {
+                      "id": 2,
+                      "username": "carlos_staff",
+                      "is_approved": true,
+                      "role": {
+                        "id": 1,
+                        "name": "STAFF"
+                      },
+                      "created_at": "2024-03-20T18:30:00Z",
+                      "is_disabled": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid self-operation",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "self_demote": {
+                    "summary": "Cannot demote yourself",
+                    "value": {
+                      "detail": "Admins cannot demote themselves."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Admin privileges needed",
+                    "value": {
+                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Staff user not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "staff_not_found": {
+                    "summary": "Staff ID does not exist",
+                    "value": {
+                      "detail": "Staff user not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/staff/{user_id}/disable": {
+      "patch": {
+        "tags": [
+          "staff"
+        ],
+        "summary": "Disable a staff account (admin only)",
+        "description": "Disable a staff account (soft-delete).\n\nDisabled accounts cannot log in but their data is preserved for\naudit trails. Records who disabled the account, when, and why.",
+        "operationId": "disable_staff_staff__user_id__disable_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisableUserRequest"
+              },
+              "examples": {
+                "disable": {
+                  "summary": "Disable with reason",
+                  "description": "Disable a staff account. A reason is required for audit purposes.",
+                  "value": {
+                    "reason": "Left the organization and no longer volunteers"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Account disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPublic"
+                },
+                "examples": {
+                  "disabled": {
+                    "summary": "Account now disabled",
+                    "value": {
+                      "id": 4,
+                      "username": "ex_voluntario",
+                      "is_approved": true,
+                      "role": {
+                        "id": 1,
+                        "name": "STAFF"
+                      },
+                      "created_at": "2024-03-15T20:00:00Z",
+                      "is_disabled": true,
+                      "disabled_at": "2024-03-22T21:15:00Z",
+                      "disabled_reason": "Left the organization"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid self-operation",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "self_disable": {
+                    "summary": "Cannot disable own account",
+                    "value": {
+                      "detail": "Admins cannot disable their own account."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Admin privileges needed",
+                    "value": {
+                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Staff user not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "staff_not_found": {
+                    "summary": "Staff ID does not exist",
+                    "value": {
+                      "detail": "Staff user not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Account already disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "already_disabled": {
+                    "summary": "Cannot disable twice",
+                    "value": {
+                      "detail": "This account is already disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "reason_too_short": {
+                    "summary": "Reason too short",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "string_too_short",
+                          "loc": [
+                            "body",
+                            "reason"
+                          ],
+                          "msg": "String should have at least 5 characters",
+                          "input": "bad",
+                          "ctx": {
+                            "min_length": 5
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/staff/{user_id}/enable": {
+      "patch": {
+        "tags": [
+          "staff"
+        ],
+        "summary": "Re-enable a disabled staff account (admin only)",
+        "description": "Re-enable a previously disabled staff account.\n\nClears the disable fields, allowing the user to log in again.",
+        "operationId": "enable_staff_staff__user_id__enable_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account re-enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPublic"
+                },
+                "examples": {
+                  "enabled": {
+                    "summary": "Account now active again",
+                    "value": {
+                      "id": 4,
+                      "username": "ex_voluntario",
+                      "is_approved": true,
+                      "role": {
+                        "id": 1,
+                        "name": "STAFF"
+                      },
+                      "created_at": "2024-03-15T20:00:00Z",
+                      "is_disabled": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Admin privileges needed",
+                    "value": {
+                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Staff user not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "staff_not_found": {
+                    "summary": "Staff ID does not exist",
+                    "value": {
+                      "detail": "Staff user not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Account not disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "not_disabled": {
+                    "summary": "Cannot enable an active account",
+                    "value": {
+                      "detail": "This account is not disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guests/": {
+      "get": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "List all known guests (identity only)",
+        "description": "List all guests in the system (identity only, no RSVP state).",
+        "operationId": "list_guests_guests__get",
+        "responses": {
+          "200": {
+            "description": "All known guests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestListResponse"
+                },
+                "examples": {
+                  "guests_list": {
+                    "summary": "Mix of normal and banned guests",
+                    "value": {
+                      "total": 3,
+                      "guests": [
+                        {
+                          "mazmo_user_id": 12346,
+                          "username": "bailarina_nocturna",
+                          "displayname": "Ana Bailarina",
+                          "is_banned": false
+                        },
+                        {
+                          "mazmo_user_id": 12345,
+                          "username": "fiestero_feliz",
+                          "displayname": "Juan El Fiestero",
+                          "is_banned": false
+                        },
+                        {
+                          "mazmo_user_id": 99999,
+                          "username": "usuario_problematico",
+                          "displayname": "Persona Conflictiva",
+                          "is_banned": true
+                        }
+                      ]
+                    }
+                  },
+                  "empty": {
+                    "summary": "No guests yet",
+                    "description": "No guests in the system until a meetup is synced",
+                    "value": {
+                      "total": 0,
+                      "guests": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "Create a guest by Mazmo username",
+        "description": "Register a guest using their Mazmo username handle.\n\nLooks up the canonical Mazmo user ID and profile data automatically,\nso staff at the door only need to know the handle (e.g. \"cindydark\").\n\nReturns 404 if the username doesn't exist on Mazmo.\nReturns 409 if the guest is already registered in the system.\nReturns 504 if Mazmo is unreachable.",
+        "operationId": "create_guest_guests__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGuestRequest"
+              },
+              "examples": {
+                "by_username": {
+                  "summary": "Look up by Mazmo handle",
+                  "description": "Staff knows the handle but not the numeric ID",
+                  "value": {
+                    "username": "cindydark"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Guest created from Mazmo profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestPublic"
+                },
+                "examples": {
+                  "created": {
+                    "summary": "Guest successfully registered from Mazmo lookup",
+                    "value": {
+                      "mazmo_user_id": 39119,
+                      "username": "cindydark",
+                      "displayname": "\u269c\ufe0fLissandra\u269c\ufe0f",
+                      "is_banned": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Username not found on Mazmo",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "username_not_found": {
+                    "summary": "Mazmo doesn't know this username",
+                    "value": {
+                      "detail": "Username 'unknownuser' was not found on Mazmo. Check the spelling and try again."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Guest already exists",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "guest_exists": {
+                    "summary": "mazmo_user_id already in system",
+                    "value": {
+                      "detail": "Cannot create guest: mazmo_user_id=12345 already exists in the system as 'fiestero_feliz'. If you want to add them to a meetup, use POST /meetups/{meetup_id}/guests/12345/add-walkin."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "username_empty": {
+                    "summary": "Username cannot be empty",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "string_too_short",
+                          "loc": [
+                            "body",
+                            "username"
+                          ],
+                          "msg": "String should have at least 1 character",
+                          "input": "",
+                          "ctx": {
+                            "min_length": 1
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Mazmo API timeout",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "mazmo_timeout": {
+                    "summary": "Could not connect to Mazmo",
+                    "value": {
+                      "detail": "Cannot create guest: failed to connect to Mazmo API. Error: Connection timed out. Try again in a few moments."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/guests/banned": {
+      "get": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "List all banned guests",
+        "description": "List all banned guests with their ban details.",
+        "operationId": "list_banned_guests_guests_banned_get",
+        "responses": {
+          "200": {
+            "description": "All banned guests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BannedGuestListResponse"
+                },
+                "examples": {
+                  "banned_list": {
+                    "summary": "Banned guests with details",
+                    "value": {
+                      "total": 1,
+                      "guests": [
+                        {
+                          "mazmo_user_id": 99999,
+                          "username": "usuario_problematico",
+                          "displayname": "Persona Conflictiva",
+                          "is_banned": true,
+                          "banned_at": "2024-03-20T18:30:00Z",
+                          "banned_reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03",
+                          "banned_by_id": 1
+                        }
+                      ]
+                    }
+                  },
+                  "no_bans": {
+                    "summary": "No banned guests",
+                    "value": {
+                      "total": 0,
+                      "guests": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/guests/{mazmo_user_id}": {
+      "get": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "Get a single guest's identity",
+        "description": "Get a single guest by their Mazmo user ID.",
+        "operationId": "get_guest_guests__mazmo_user_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mazmo_user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Mazmo User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guest found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestPublic"
+                },
+                "examples": {
+                  "normal_guest": {
+                    "summary": "Regular guest",
+                    "value": {
+                      "mazmo_user_id": 12345,
+                      "username": "fiestero_feliz",
+                      "displayname": "Juan El Fiestero",
+                      "is_banned": false
+                    }
+                  },
+                  "banned_guest": {
+                    "summary": "Banned guest",
+                    "description": "is_banned=true indicates this guest is banned",
+                    "value": {
+                      "mazmo_user_id": 99999,
+                      "username": "usuario_problematico",
+                      "displayname": "Persona Conflictiva",
+                      "is_banned": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Guest not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "guest_not_found": {
+                    "summary": "Guest not in system",
+                    "value": {
+                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/. Try POST /meetups/{meetup_id}/sync, POST /guests/, or verify the mazmo_user_id."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guests/by-username/{username}": {
+      "get": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "Get a single guest by Mazmo username",
+        "description": "Get a single guest by their Mazmo username handle.",
+        "operationId": "get_guest_by_username_guests_by_username__username__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Username"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guest found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestPublic"
+                },
+                "examples": {
+                  "normal_guest": {
+                    "summary": "Regular guest",
+                    "value": {
+                      "mazmo_user_id": 12345,
+                      "username": "fiestero_feliz",
+                      "displayname": "Juan El Fiestero",
+                      "is_banned": false
+                    }
+                  },
+                  "banned_guest": {
+                    "summary": "Banned guest",
+                    "description": "is_banned=true indicates this guest is banned",
+                    "value": {
+                      "mazmo_user_id": 99999,
+                      "username": "usuario_problematico",
+                      "displayname": "Persona Conflictiva",
+                      "is_banned": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Guest not found by username",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "guest_username_not_found": {
+                    "summary": "Username not registered in this system",
+                    "value": {
+                      "detail": "No guest with username 'unknownuser' found in the system. They may not have RSVPed to any meetup yet. Use POST /guests/ to register them if they're at the door."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guests/{mazmo_user_id}/ban": {
+      "patch": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "Ban a guest (admin only)",
+        "description": "Ban a guest. Records the admin who performed the ban and the reason.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is already banned.",
+        "operationId": "ban_guest_guests__mazmo_user_id__ban_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mazmo_user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Mazmo User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BanGuestRequest"
+              },
+              "examples": {
+                "ban_guest": {
+                  "summary": "Ban a problematic guest",
+                  "description": "Ban requires a reason for audit purposes (5-500 chars)",
+                  "value": {
+                    "reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Guest banned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BannedGuestPublic"
+                },
+                "examples": {
+                  "banned": {
+                    "summary": "Guest now banned",
+                    "value": {
+                      "mazmo_user_id": 99999,
+                      "username": "usuario_problematico",
+                      "displayname": "Persona Conflictiva",
+                      "is_banned": true,
+                      "banned_at": "2024-03-20T18:30:00Z",
+                      "banned_reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03",
+                      "banned_by_id": 1
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Admin privileges needed",
+                    "value": {
+                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Guest not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "guest_not_found": {
+                    "summary": "Guest not in system",
+                    "value": {
+                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/. Try POST /meetups/{meetup_id}/sync, POST /guests/, or verify the mazmo_user_id."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Guest already banned",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "already_banned": {
+                    "summary": "Cannot ban twice",
+                    "value": {
+                      "detail": "Cannot ban guest: 'usuario_problematico' (mazmo_user_id=99999) is already banned. They were banned on 2024-03-20 18:30:00+00:00 for reason: 'Comportamiento agresivo'. To update the ban reason, unban first via PATCH /guests/99999/unban, then re-ban."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "reason_too_short": {
+                    "summary": "Reason too short",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "string_too_short",
+                          "loc": [
+                            "body",
+                            "reason"
+                          ],
+                          "msg": "String should have at least 5 characters",
+                          "input": "bad",
+                          "ctx": {
+                            "min_length": 5
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guests/{mazmo_user_id}/unban": {
+      "patch": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "Unban a guest (admin only)",
+        "description": "Unban a guest. Clears all ban-related fields.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is not currently banned.",
+        "operationId": "unban_guest_guests__mazmo_user_id__unban_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mazmo_user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Mazmo User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guest unbanned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestPublic"
+                },
+                "examples": {
+                  "unbanned": {
+                    "summary": "Guest now unbanned",
+                    "description": "All ban fields are cleared",
+                    "value": {
+                      "mazmo_user_id": 99999,
+                      "username": "usuario_problematico",
+                      "displayname": "Persona Conflictiva",
+                      "is_banned": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Admin privileges needed",
+                    "value": {
+                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Guest not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "guest_not_found": {
+                    "summary": "Guest not in system",
+                    "value": {
+                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/. Try POST /meetups/{meetup_id}/sync, POST /guests/, or verify the mazmo_user_id."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Guest not banned",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "not_banned": {
+                    "summary": "Cannot unban a non-banned guest",
+                    "value": {
+                      "detail": "Cannot unban guest: 'fiestero_feliz' (mazmo_user_id=12345) is not currently banned. They may have been unbanned by another admin. Check audit trail at GET /events/guests/12345."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/meetups/": {
+      "get": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "List all meetups",
+        "description": "List all meetups ordered by date descending.",
+        "operationId": "list_meetups_meetups__get",
+        "responses": {
+          "200": {
+            "description": "All meetups",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetupListResponse"
+                },
+                "examples": {
+                  "meetups_list": {
+                    "summary": "Multiple meetups",
+                    "description": "Ordered by date descending (newest first)",
+                    "value": {
+                      "total": 2,
+                      "meetups": [
+                        {
+                          "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+                          "name": "Alter Buenos Aires - Abril 2024",
+                          "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-bsas-4320",
+                          "date": "2024-04-15T20:00:00Z",
+                          "is_finalized": false
+                        },
+                        {
+                          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                          "name": "Alter C\u00f3rdoba - Marzo 2024",
+                          "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217",
+                          "date": "2024-03-23T19:00:00Z",
+                          "is_finalized": false
+                        }
+                      ]
+                    }
+                  },
+                  "empty": {
+                    "summary": "No meetups yet",
+                    "value": {
+                      "total": 0,
+                      "meetups": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Create a new meetup",
+        "description": "Create a new meetup linked to a Mazmo event thread.\n\nThe Mazmo URL is validated and the event date is fetched from Mazmo.\nReturns 422 if URL format is invalid, 502 if Mazmo returns an error,\n504 if Mazmo is unreachable.",
+        "operationId": "create_meetup_meetups__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetupCreate"
+              },
+              "examples": {
+                "new_meetup": {
+                  "summary": "Create a new meetup",
+                  "description": "Link a Mazmo event to track attendance",
+                  "value": {
+                    "name": "Alter C\u00f3rdoba - Marzo 2024",
+                    "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Meetup created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetupPublic"
+                },
+                "examples": {
+                  "created": {
+                    "summary": "Meetup created successfully",
+                    "description": "The date is fetched from Mazmo automatically",
+                    "value": {
+                      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                      "name": "Alter C\u00f3rdoba - Marzo 2024",
+                      "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217",
+                      "date": "2024-03-23T19:00:00Z",
+                      "is_finalized": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate meetup URL",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "duplicate_url": {
+                    "summary": "Mazmo URL already tracked",
+                    "value": {
+                      "detail": "Cannot create meetup: a meetup with this Mazmo URL already exists. Existing meetup: id=a1b2c3d4-e5f6-7890-abcd-ef1234567890, name='Alter C\u00f3rdoba - Marzo 2024', date=2024-03-23 19:00:00+00:00. Each Mazmo event can only be tracked once."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_url": {
+                    "summary": "Invalid Mazmo URL format",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "value_error",
+                          "loc": [
+                            "body",
+                            "mazmo_meetup_url"
+                          ],
+                          "msg": "Value error, URL must match pattern: https://mazmo.net/{community}/{thread-slug}",
+                          "input": "https://invalid-url.com/meetup"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Mazmo API error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "mazmo_error": {
+                    "summary": "Mazmo returned an error",
+                    "value": {
+                      "detail": "Cannot create meetup: Mazmo API returned an error. Error: HTTP 404 - Event not found. This could mean the Mazmo URL is invalid or the event doesn't exist. Verify the URL is correct and points to a valid Mazmo event page."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Mazmo API timeout",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "mazmo_timeout": {
+                    "summary": "Could not connect to Mazmo",
+                    "value": {
+                      "detail": "Cannot create meetup: failed to connect to Mazmo API. This is likely a temporary network issue. Error: Connection timed out. Try again in a few moments, or check if Mazmo is experiencing an outage."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/meetups/{meetup_id}": {
+      "get": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Get a single meetup",
+        "description": "Get a single meetup by ID.",
+        "operationId": "get_meetup_meetups__meetup_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meetup found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetupPublic"
+                },
+                "examples": {
+                  "meetup": {
+                    "summary": "Single meetup",
+                    "value": {
+                      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                      "name": "Alter C\u00f3rdoba - Marzo 2024",
+                      "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217",
+                      "date": "2024-03-23T19:00:00Z",
+                      "is_finalized": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/meetups/{meetup_id}/sync": {
+      "post": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Sync guest list from Mazmo for this meetup",
+        "description": "Fetches the latest RSVP list from Mazmo and upserts it into the local DB.\n\nSafe to call at any time:\n  - New guests are inserted.\n  - Existing RSVPs have their rsvp_time updated.\n  - `has_arrived`, `arrival_time`, and `arrival_order` are NEVER modified.",
+        "operationId": "sync_meetup_guests_meetups__meetup_id__sync_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sync completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResponse"
+                },
+                "examples": {
+                  "sync_result": {
+                    "summary": "Typical sync result",
+                    "description": "5 new RSVPs, 12 already in DB",
+                    "value": {
+                      "inserted": 5,
+                      "skipped": 12,
+                      "total_in_db": 17
+                    }
+                  },
+                  "no_new": {
+                    "summary": "No new RSVPs",
+                    "description": "All RSVPs already synced",
+                    "value": {
+                      "inserted": 0,
+                      "skipped": 17,
+                      "total_in_db": 17
+                    }
+                  },
+                  "first_sync": {
+                    "summary": "First sync of a meetup",
+                    "description": "All RSVPs are new",
+                    "value": {
+                      "inserted": 25,
+                      "skipped": 0,
+                      "total_in_db": 25
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Meetup already finalized",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_finalized": {
+                    "summary": "Cannot modify a finalized meetup",
+                    "value": {
+                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins or syncs."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Mazmo API error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "mazmo_api_error": {
+                    "summary": "Mazmo returned an HTTP error",
+                    "value": {
+                      "detail": "Sync failed: Mazmo API returned HTTP error 404. The event may have been deleted on Mazmo, or their API is having issues. Check if the meetup URL is still valid on Mazmo's website."
+                    }
+                  },
+                  "mazmo_parse_error": {
+                    "summary": "Mazmo response parse failed",
+                    "value": {
+                      "detail": "Sync failed: Mazmo returned data in an unexpected format. Error: Missing 'date' field in response. This could indicate Mazmo changed their API. Please report this issue."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Mazmo API timeout",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "mazmo_timeout": {
+                    "summary": "Could not connect to Mazmo",
+                    "value": {
+                      "detail": "Sync failed: could not connect to Mazmo API. This is likely a temporary network issue. Error: Connection timed out. Try again in a few moments."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/meetups/{meetup_id}/guests": {
+      "get": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "List guests RSVPed to this meetup",
+        "description": "List all guests who have RSVPed to this meetup with their RSVP state.",
+        "operationId": "list_meetup_guests_meetups__meetup_id__guests_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guests at this meetup",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetupGuestListResponse"
+                },
+                "examples": {
+                  "guests_list": {
+                    "summary": "Mix of arrived and not arrived",
+                    "value": {
+                      "total": 2,
+                      "guests": [
+                        {
+                          "guest": {
+                            "mazmo_user_id": 12345,
+                            "username": "fiestero_feliz",
+                            "displayname": "Juan El Fiestero",
+                            "is_banned": false
+                          },
+                          "rsvp": {
+                            "rsvp_time": "2024-03-20T18:30:00Z",
+                            "cancelled_rsvp": false,
+                            "has_arrived": true,
+                            "arrival_time": "2024-03-23T20:05:32Z",
+                            "arrival_order": 1
+                          }
+                        },
+                        {
+                          "guest": {
+                            "mazmo_user_id": 12346,
+                            "username": "bailarina_nocturna",
+                            "displayname": "Ana Bailarina",
+                            "is_banned": false
+                          },
+                          "rsvp": {
+                            "rsvp_time": "2024-03-20T18:30:00Z",
+                            "cancelled_rsvp": false,
+                            "has_arrived": false
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "empty": {
+                    "summary": "No RSVPs yet",
+                    "description": "Sync the meetup to fetch RSVPs from Mazmo",
+                    "value": {
+                      "total": 0,
+                      "guests": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/meetups/{meetup_id}/guests/{mazmo_user_id}/add-walkin": {
+      "post": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Add a walk-in guest to this meetup",
+        "description": "Manually add a guest who has a Mazmo profile but didn't RSVP to this event.\n\nCreates a MeetupRsvp row with the current time as rsvp_time.\nThe guest must already exist in the system (fetched via a previous sync\nfor any meetup, or visible in GET /guests/).\n\nReturns 404 if the guest doesn't exist in the system.\nReturns 409 if the guest already has an RSVP for this meetup.\nReturns 409 if the meetup is finalized.",
+        "operationId": "add_walkin_guest_meetups__meetup_id__guests__mazmo_user_id__add_walkin_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          },
+          {
+            "name": "mazmo_user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Mazmo User Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Walk-in guest added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetupGuestPublic"
+                },
+                "examples": {
+                  "walkin_added": {
+                    "summary": "Guest added as walk-in",
+                    "description": "is_walkin=true distinguishes this RSVP from a Mazmo-synced one",
+                    "value": {
+                      "guest": {
+                        "mazmo_user_id": 55555,
+                        "username": "recien_llegado",
+                        "displayname": "Reci\u00e9n Llegado",
+                        "is_banned": false
+                      },
+                      "rsvp": {
+                        "rsvp_time": "2024-03-23T20:05:32Z",
+                        "cancelled_rsvp": false,
+                        "has_arrived": false,
+                        "is_walkin": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Guest not found in system",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "guest_not_in_system": {
+                    "summary": "Guest has no record in the system",
+                    "value": {
+                      "detail": "Cannot add walk-in: guest mazmo_user_id=55555 does not exist in the system. Register them first via POST /guests/ (username lookup) or sync a meetup they've RSVPed to. Search known guests via GET /guests/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Meetup already finalized",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_finalized": {
+                    "summary": "Cannot modify a finalized meetup",
+                    "value": {
+                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins or syncs."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/meetups/{meetup_id}/guests/{mazmo_user_id}/checkin": {
+      "post": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Check in a guest at this meetup",
+        "description": "Mark a guest as arrived at this meetup.\n\nThe arrival_order and arrival_time are set automatically by a database trigger.\nThe staff member performing the check-in is recorded for audit purposes.\nReturns 404 if guest not RSVPed, 409 if already checked in or meetup finalized.",
+        "operationId": "checkin_guest_meetups__meetup_id__guests__mazmo_user_id__checkin_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          },
+          {
+            "name": "mazmo_user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Mazmo User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guest checked in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckInResponse"
+                },
+                "examples": {
+                  "checked_in": {
+                    "summary": "Successful check-in",
+                    "description": "Returns arrival order and who performed the check-in",
+                    "value": {
+                      "guest": {
+                        "mazmo_user_id": 12345,
+                        "username": "fiestero_feliz",
+                        "displayname": "Juan El Fiestero",
+                        "is_banned": false
+                      },
+                      "arrival_order": 1,
+                      "arrival_time": "2024-03-23T20:05:32Z",
+                      "checked_in_by": {
+                        "id": 2,
+                        "username": "carlos_staff"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Guest not RSVPed to meetup",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "not_rsvped": {
+                    "summary": "Guest didn't RSVP to this meetup",
+                    "value": {
+                      "detail": "Cannot check in: guest mazmo_user_id=12345 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Meetup already finalized",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_finalized": {
+                    "summary": "Cannot modify a finalized meetup",
+                    "value": {
+                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins or syncs."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/meetups/{meetup_id}/guests/{mazmo_user_id}/undo-checkin": {
+      "patch": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Undo a guest check-in at this meetup",
+        "description": "Undo a check-in for a guest at this meetup.\n\nUse this when a guest was checked in by mistake. Requires a reason\nfor the audit trail. Clears has_arrived, arrival_time, arrival_order,\nand checked_in_by_id.\n\nReturns 404 if guest not RSVPed to this meetup.\nReturns 409 if guest is not currently checked in.",
+        "operationId": "undo_checkin_guest_meetups__meetup_id__guests__mazmo_user_id__undo_checkin_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          },
+          {
+            "name": "mazmo_user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Mazmo User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UndoCheckInRequest"
+              },
+              "examples": {
+                "undo_mistake": {
+                  "summary": "Undo accidental check-in",
+                  "description": "A reason is required for the audit trail",
+                  "value": {
+                    "reason": "Checked in the wrong person by mistake"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Check-in undone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestPublic"
+                },
+                "examples": {
+                  "undone": {
+                    "summary": "Check-in reversed",
+                    "description": "Guest is back to not-arrived state",
+                    "value": {
+                      "mazmo_user_id": 12345,
+                      "username": "fiestero_feliz",
+                      "displayname": "Juan El Fiestero",
+                      "is_banned": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Guest not RSVPed to meetup",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "not_rsvped": {
+                    "summary": "Guest didn't RSVP to this meetup",
+                    "value": {
+                      "detail": "Cannot check in: guest mazmo_user_id=12345 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Guest not checked in",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "not_checked_in": {
+                    "summary": "Cannot undo non-existent check-in",
+                    "value": {
+                      "detail": "Cannot undo check-in: guest 'fiestero_feliz' (mazmo_user_id=12345) is not currently checked in. They may have been un-checked by someone else. See event log: GET /events/meetups/{meetup_id}?type=CHECK_IN,UNDO_CHECK_IN"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "reason_too_short": {
+                    "summary": "Reason too short",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "string_too_short",
+                          "loc": [
+                            "body",
+                            "reason"
+                          ],
+                          "msg": "String should have at least 5 characters",
+                          "input": "bad",
+                          "ctx": {
+                            "min_length": 5
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/meetups/{meetup_id}/finalize": {
+      "patch": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Finalize a meetup",
+        "description": "Mark a meetup as finalized. No further check-ins or syncs will be allowed.\n\nReturns 409 if the meetup is already finalized.",
+        "operationId": "finalize_meetup_meetups__meetup_id__finalize_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meetup finalized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetupPublic"
+                },
+                "examples": {
+                  "finalized": {
+                    "summary": "Meetup successfully finalized",
+                    "description": "No more check-ins or syncs allowed after this",
+                    "value": {
+                      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                      "name": "Alter C\u00f3rdoba - Marzo 2024",
+                      "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217",
+                      "date": "2024-03-23T19:00:00Z",
+                      "is_finalized": true,
+                      "finalized_at": "2024-03-23T23:59:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Meetup already finalized",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_finalized": {
+                    "summary": "Cannot modify a finalized meetup",
+                    "value": {
+                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins or syncs."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/meetups/{meetup_id}/unfinalize": {
+      "patch": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Un-finalize a meetup",
+        "description": "Revert a meetup's finalized status (e.g., finalized by accident).\n\nReturns 409 if the meetup is not finalized.",
+        "operationId": "unfinalize_meetup_meetups__meetup_id__unfinalize_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meetup un-finalized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetupPublic"
+                },
+                "examples": {
+                  "unfinalized": {
+                    "summary": "Meetup successfully un-finalized",
+                    "description": "Check-ins and syncs are allowed again",
+                    "value": {
+                      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                      "name": "Alter C\u00f3rdoba - Marzo 2024",
+                      "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217",
+                      "date": "2024-03-23T19:00:00Z",
+                      "is_finalized": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Meetup not finalized",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_finalized": {
+                    "summary": "Cannot un-finalize a non-finalized meetup",
+                    "value": {
+                      "detail": "Cannot un-finalize: meetup 'Alter C\u00f3rdoba - Marzo 2024' is not currently finalized."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "List all events (admin only)",
+        "description": "List all events in the system with optional filtering.\n\nAdmin-only endpoint for full audit trail access. Supports filtering\nby event type, timestamp range, guest, meetup, and actor.\n\nReturns paginated results ordered by timestamp descending (newest first).",
+        "operationId": "list_all_events_events__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN",
+              "title": "Type"
+            },
+            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Events after this timestamp",
+              "title": "Since"
+            },
+            "description": "Events after this timestamp"
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Events before this timestamp",
+              "title": "Until"
+            },
+            "description": "Events before this timestamp"
+          },
+          {
+            "name": "guest_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by guest mazmo_user_id",
+              "title": "Guest Id"
+            },
+            "description": "Filter by guest mazmo_user_id"
+          },
+          {
+            "name": "meetup_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by meetup UUID",
+              "title": "Meetup Id"
+            },
+            "description": "Filter by meetup UUID"
+          },
+          {
+            "name": "actor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by staff member ID",
+              "title": "Actor Id"
+            },
+            "description": "Filter by staff member ID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Events per page (max 100)",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Events per page (max 100)"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Skip N events",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Skip N events"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "All events (paginated)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventLogListResponse"
+                },
+                "examples": {
+                  "all_events": {
+                    "summary": "Mix of event types",
+                    "value": {
+                      "total": 2,
+                      "limit": 50,
+                      "offset": 0,
+                      "events": [
+                        {
+                          "id": 2,
+                          "event_type": "BAN",
+                          "timestamp": "2024-03-20T18:30:00Z",
+                          "actor": {
+                            "id": 1,
+                            "username": "maria_admin"
+                          },
+                          "guest": {
+                            "mazmo_user_id": 99999,
+                            "username": "usuario_problematico",
+                            "displayname": "Persona Conflictiva"
+                          },
+                          "reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03"
+                        },
+                        {
+                          "id": 1,
+                          "event_type": "CHECK_IN",
+                          "timestamp": "2024-03-23T20:05:32Z",
+                          "actor": {
+                            "id": 2,
+                            "username": "carlos_staff"
+                          },
+                          "guest": {
+                            "mazmo_user_id": 12345,
+                            "username": "fiestero_feliz",
+                            "displayname": "Juan El Fiestero"
+                          },
+                          "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                        }
+                      ]
+                    }
+                  },
+                  "filtered_by_type": {
+                    "summary": "Filtered to CHECK_IN only",
+                    "description": "Using ?type=CHECK_IN",
+                    "value": {
+                      "total": 1,
+                      "limit": 50,
+                      "offset": 0,
+                      "events": [
+                        {
+                          "id": 1,
+                          "event_type": "CHECK_IN",
+                          "timestamp": "2024-03-23T20:05:32Z",
+                          "actor": {
+                            "id": 2,
+                            "username": "carlos_staff"
+                          },
+                          "guest": {
+                            "mazmo_user_id": 12345,
+                            "username": "fiestero_feliz",
+                            "displayname": "Juan El Fiestero"
+                          },
+                          "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                        }
+                      ]
+                    }
+                  },
+                  "paginated": {
+                    "summary": "Page 2 of results",
+                    "description": "Using ?offset=50&limit=50",
+                    "value": {
+                      "total": 150,
+                      "limit": 50,
+                      "offset": 50,
+                      "events": [
+                        {
+                          "id": 1,
+                          "event_type": "CHECK_IN",
+                          "timestamp": "2024-03-23T20:05:32Z",
+                          "actor": {
+                            "id": 2,
+                            "username": "carlos_staff"
+                          },
+                          "guest": {
+                            "mazmo_user_id": 12345,
+                            "username": "fiestero_feliz",
+                            "displayname": "Juan El Fiestero"
+                          },
+                          "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                        }
+                      ]
+                    }
+                  },
+                  "empty": {
+                    "summary": "No events match filter",
+                    "value": {
+                      "total": 0,
+                      "limit": 50,
+                      "offset": 0,
+                      "events": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid event type filter",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_type": {
+                    "summary": "Unknown event type",
+                    "value": {
+                      "detail": "Invalid event type 'INVALID' in filter. Valid types are: BAN, CHECK_IN, UNBAN, UNDO_CHECK_IN. You can combine multiple types with commas, e.g. ?type=CHECK_IN,UNDO_CHECK_IN"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Admin privileges needed",
+                    "value": {
+                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/meetups/{meetup_id}": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "List events at a specific meetup",
+        "description": "List events at a specific meetup.\n\nAll staff can view meetup events to see check-in activity,\nwho checked in guests, and any undone check-ins.\n\nCommonly used filters:\n  - ?type=CHECK_IN,UNDO_CHECK_IN \u2192 check-in activity only",
+        "operationId": "list_meetup_events_events_meetups__meetup_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN",
+              "title": "Type"
+            },
+            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Events after this timestamp",
+              "title": "Since"
+            },
+            "description": "Events after this timestamp"
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Events before this timestamp",
+              "title": "Until"
+            },
+            "description": "Events before this timestamp"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Events per page (max 100)",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Events per page (max 100)"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Skip N events",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Skip N events"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events at this meetup",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventLogListResponse"
+                },
+                "examples": {
+                  "meetup_events": {
+                    "summary": "Check-in activity at meetup",
+                    "value": {
+                      "total": 1,
+                      "limit": 50,
+                      "offset": 0,
+                      "events": [
+                        {
+                          "id": 1,
+                          "event_type": "CHECK_IN",
+                          "timestamp": "2024-03-23T20:05:32Z",
+                          "actor": {
+                            "id": 2,
+                            "username": "carlos_staff"
+                          },
+                          "guest": {
+                            "mazmo_user_id": 12345,
+                            "username": "fiestero_feliz",
+                            "displayname": "Juan El Fiestero"
+                          },
+                          "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                        }
+                      ]
+                    }
+                  },
+                  "no_activity": {
+                    "summary": "No events at this meetup yet",
+                    "value": {
+                      "total": 0,
+                      "limit": 50,
+                      "offset": 0,
+                      "events": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid event type filter",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_type": {
+                    "summary": "Unknown event type",
+                    "value": {
+                      "detail": "Invalid event type 'INVALID' in filter. Valid types are: BAN, CHECK_IN, UNBAN, UNDO_CHECK_IN. You can combine multiple types with commas, e.g. ?type=CHECK_IN,UNDO_CHECK_IN"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/guests/{guest_id}": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "List events for a specific guest",
+        "description": "List events for a specific guest.\n\nAuthorization:\n  - Staff: Can only see BAN/UNBAN events (need to know who's banned)\n  - Admin: Can see all events for this guest\n\nCommon use case: Staff checking why a guest is on the banned list.",
+        "operationId": "list_guest_events_events_guests__guest_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "guest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Guest Id"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN",
+              "title": "Type"
+            },
+            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Events after this timestamp",
+              "title": "Since"
+            },
+            "description": "Events after this timestamp"
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Events before this timestamp",
+              "title": "Until"
+            },
+            "description": "Events before this timestamp"
+          },
+          {
+            "name": "meetup_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by meetup UUID",
+              "title": "Meetup Id"
+            },
+            "description": "Filter by meetup UUID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Events per page (max 100)",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Events per page (max 100)"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Skip N events",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Skip N events"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events for this guest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventLogListResponse"
+                },
+                "examples": {
+                  "guest_events_staff": {
+                    "summary": "Staff view (bans only)",
+                    "description": "Staff can only see BAN/UNBAN events for guests",
+                    "value": {
+                      "total": 1,
+                      "limit": 50,
+                      "offset": 0,
+                      "events": [
+                        {
+                          "id": 2,
+                          "event_type": "BAN",
+                          "timestamp": "2024-03-20T18:30:00Z",
+                          "actor": {
+                            "id": 1,
+                            "username": "maria_admin"
+                          },
+                          "guest": {
+                            "mazmo_user_id": 99999,
+                            "username": "usuario_problematico",
+                            "displayname": "Persona Conflictiva"
+                          },
+                          "reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03"
+                        }
+                      ]
+                    }
+                  },
+                  "guest_events_admin": {
+                    "summary": "Admin view (all events)",
+                    "description": "Admins see all events including check-ins",
+                    "value": {
+                      "total": 2,
+                      "limit": 50,
+                      "offset": 0,
+                      "events": [
+                        {
+                          "id": 2,
+                          "event_type": "BAN",
+                          "timestamp": "2024-03-20T18:30:00Z",
+                          "actor": {
+                            "id": 1,
+                            "username": "maria_admin"
+                          },
+                          "guest": {
+                            "mazmo_user_id": 99999,
+                            "username": "usuario_problematico",
+                            "displayname": "Persona Conflictiva"
+                          },
+                          "reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03"
+                        },
+                        {
+                          "id": 1,
+                          "event_type": "CHECK_IN",
+                          "timestamp": "2024-03-23T20:05:32Z",
+                          "actor": {
+                            "id": 2,
+                            "username": "carlos_staff"
+                          },
+                          "guest": {
+                            "mazmo_user_id": 12345,
+                            "username": "fiestero_feliz",
+                            "displayname": "Juan El Fiestero"
+                          },
+                          "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                        }
+                      ]
+                    }
+                  },
+                  "no_events": {
+                    "summary": "Guest has no recorded events",
+                    "value": {
+                      "total": 0,
+                      "limit": 50,
+                      "offset": 0,
+                      "events": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid event type filter",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_type": {
+                    "summary": "Unknown event type",
+                    "value": {
+                      "detail": "Invalid event type 'INVALID' in filter. Valid types are: BAN, CHECK_IN, UNBAN, UNDO_CHECK_IN. You can combine multiple types with commas, e.g. ?type=CHECK_IN,UNDO_CHECK_IN"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Guest not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "guest_not_found": {
+                    "summary": "Guest not in system",
+                    "value": {
+                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/. Try POST /meetups/{meetup_id}/sync, POST /guests/, or verify the mazmo_user_id."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/staff/{staff_id}": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "List events by a specific staff member",
+        "description": "List events performed by a specific staff member.\n\nAuthorization:\n  - Staff: Can only view their own events (staff_id must match current user)\n  - Admin: Can view any staff member's events\n\nUse case: Staff reviewing their own activity, or admin auditing staff actions.",
+        "operationId": "list_staff_events_events_staff__staff_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "staff_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Staff Id"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN",
+              "title": "Type"
+            },
+            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Events after this timestamp",
+              "title": "Since"
+            },
+            "description": "Events after this timestamp"
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Events before this timestamp",
+              "title": "Until"
+            },
+            "description": "Events before this timestamp"
+          },
+          {
+            "name": "guest_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by guest mazmo_user_id",
+              "title": "Guest Id"
+            },
+            "description": "Filter by guest mazmo_user_id"
+          },
+          {
+            "name": "meetup_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by meetup UUID",
+              "title": "Meetup Id"
+            },
+            "description": "Filter by meetup UUID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Events per page (max 100)",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Events per page (max 100)"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Skip N events",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Skip N events"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events by this staff member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventLogListResponse"
+                },
+                "examples": {
+                  "own_events": {
+                    "summary": "Staff viewing own actions",
+                    "value": {
+                      "total": 1,
+                      "limit": 50,
+                      "offset": 0,
+                      "events": [
+                        {
+                          "id": 1,
+                          "event_type": "CHECK_IN",
+                          "timestamp": "2024-03-23T20:05:32Z",
+                          "actor": {
+                            "id": 2,
+                            "username": "carlos_staff"
+                          },
+                          "guest": {
+                            "mazmo_user_id": 12345,
+                            "username": "fiestero_feliz",
+                            "displayname": "Juan El Fiestero"
+                          },
+                          "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                        }
+                      ]
+                    }
+                  },
+                  "admin_viewing_staff": {
+                    "summary": "Admin viewing another staff's actions",
+                    "description": "Admins can view any staff member's events",
+                    "value": {
+                      "total": 2,
+                      "limit": 50,
+                      "offset": 0,
+                      "events": [
+                        {
+                          "id": 2,
+                          "event_type": "BAN",
+                          "timestamp": "2024-03-20T18:30:00Z",
+                          "actor": {
+                            "id": 1,
+                            "username": "maria_admin"
+                          },
+                          "guest": {
+                            "mazmo_user_id": 99999,
+                            "username": "usuario_problematico",
+                            "displayname": "Persona Conflictiva"
+                          },
+                          "reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03"
+                        },
+                        {
+                          "id": 1,
+                          "event_type": "CHECK_IN",
+                          "timestamp": "2024-03-23T20:05:32Z",
+                          "actor": {
+                            "id": 2,
+                            "username": "carlos_staff"
+                          },
+                          "guest": {
+                            "mazmo_user_id": 12345,
+                            "username": "fiestero_feliz",
+                            "displayname": "Juan El Fiestero"
+                          },
+                          "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                        }
+                      ]
+                    }
+                  },
+                  "no_actions": {
+                    "summary": "Staff has no recorded actions",
+                    "value": {
+                      "total": 0,
+                      "limit": 50,
+                      "offset": 0,
+                      "events": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid event type filter",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_type": {
+                    "summary": "Unknown event type",
+                    "value": {
+                      "detail": "Invalid event type 'INVALID' in filter. Valid types are: BAN, CHECK_IN, UNBAN, UNDO_CHECK_IN. You can combine multiple types with commas, e.g. ?type=CHECK_IN,UNDO_CHECK_IN"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Staff can only view their own events",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "not_own_events": {
+                    "summary": "Cannot view another staff member's events",
+                    "value": {
+                      "detail": "You can only view your own events. You are user id=2, but requested events for user id=5. Admins can view any staff member's events."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Staff user not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "staff_not_found": {
+                    "summary": "Staff ID does not exist",
+                    "value": {
+                      "detail": "Staff user not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ping": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Ping",
+        "operationId": "ping_ping_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Ping Ping Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Check health of all dependencies",
+        "description": "Comprehensive health check that verifies connectivity to:\n- **Database**: Critical - app cannot function without it\n- **Mazmo API**: Non-critical - app works but can't sync new guests\n\nReturns HTTP 200 if all critical services are healthy.\nReturns HTTP 503 if any critical service is unhealthy.\n\nThe response body includes individual service status and latency.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "All services healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "One or more critical services unhealthy"
+          }
+        }
+      },
+      "head": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Health check (no body) \u2014 used by UptimeRobot",
+        "description": "Same health logic as `GET /health` but returns no response body, as required\nby RFC 9110 for HEAD requests.\n\n**Used by UptimeRobot** for uptime monitoring. UptimeRobot sends HEAD\nrequests to avoid downloading the response body on every check. Returns\n200 if healthy, 503 if any critical service is down.",
+        "operationId": "health_head_health_head",
+        "responses": {
+          "200": {
+            "description": "All services healthy",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "503": {
+            "description": "One or more critical services unhealthy"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApproveUserRequest": {
+        "properties": {
+          "is_approved": {
+            "type": "boolean",
+            "title": "Is Approved"
+          }
+        },
+        "type": "object",
+        "required": [
+          "is_approved"
+        ],
+        "title": "ApproveUserRequest",
+        "description": "Request body for approving or revoking a user's access.\n\nAdmins use this to flip the is_approved flag on staff accounts.\nNew registrations start unapproved and require admin action."
+      },
+      "BanGuestRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 5,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "BanGuestRequest",
+        "description": "Request body for banning a guest."
+      },
+      "BannedGuestListResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "guests": {
+            "items": {
+              "$ref": "#/components/schemas/BannedGuestPublic"
+            },
+            "type": "array",
+            "title": "Guests"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "guests"
+        ],
+        "title": "BannedGuestListResponse",
+        "description": "Response for listing all banned guests."
+      },
+      "BannedGuestPublic": {
+        "properties": {
+          "mazmo_user_id": {
+            "type": "integer",
+            "title": "Mazmo User Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "displayname": {
+            "type": "string",
+            "title": "Displayname"
+          },
+          "is_banned": {
+            "type": "boolean",
+            "title": "Is Banned"
+          },
+          "banned_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Banned At"
+          },
+          "banned_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Banned Reason"
+          },
+          "banned_by_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Banned By Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mazmo_user_id",
+          "username",
+          "displayname",
+          "is_banned",
+          "banned_at",
+          "banned_reason",
+          "banned_by_id"
+        ],
+        "title": "BannedGuestPublic",
+        "description": "Extended guest info including ban details for the banned list.\n\nUsed in the banned guests list endpoint where admins need to see\nthe full audit trail (when banned, why, by whom)."
+      },
+      "Body_login_auth_token_post": {
+        "properties": {
+          "grant_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^password$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant Type"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "title": "Password"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope",
+            "default": ""
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "format": "password",
+            "title": "Client Secret"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "Body_login_auth_token_post"
+      },
+      "CheckInResponse": {
+        "properties": {
+          "guest": {
+            "$ref": "#/components/schemas/GuestPublic"
+          },
+          "arrival_order": {
+            "type": "integer",
+            "title": "Arrival Order"
+          },
+          "arrival_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Arrival Time"
+          },
+          "checked_in_by": {
+            "$ref": "#/components/schemas/CheckedInByPublic"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guest",
+          "arrival_order",
+          "arrival_time",
+          "checked_in_by"
+        ],
+        "title": "CheckInResponse",
+        "description": "Response after successfully checking in a guest.\n\nConfirms the check-in with the guest's identity and their assigned\narrival order for this meetup. arrival_order is gap-free per meetup.\nIncludes the staff member who performed the check-in for audit purposes."
+      },
+      "CheckedInByPublic": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "username"
+        ],
+        "title": "CheckedInByPublic",
+        "description": "Minimal staff representation for check-in attribution.\n\nOnly includes the essential fields needed to identify who performed\na check-in, without exposing sensitive fields like approval status."
+      },
+      "CreateGuestRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Username",
+            "description": "Mazmo username to look up (e.g. 'cindydark')"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username"
+        ],
+        "title": "CreateGuestRequest",
+        "description": "Request body for creating a guest by Mazmo username.\n\nStaff only need to know the handle (e.g. \"cindydark\"). The endpoint looks\nup the canonical ID and profile data from Mazmo automatically."
+      },
+      "DisableUserRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 5,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "DisableUserRequest",
+        "description": "Request body for disabling a staff account.\n\nA reason is required for audit trail purposes. Disabled accounts\ncannot log in but their data is preserved for historical reference."
+      },
+      "EventActorPublic": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "username"
+        ],
+        "title": "EventActorPublic",
+        "description": "Minimal staff representation in event logs.\n\nShows who performed an action without exposing sensitive account details."
+      },
+      "EventGuestPublic": {
+        "properties": {
+          "mazmo_user_id": {
+            "type": "integer",
+            "title": "Mazmo User Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "displayname": {
+            "type": "string",
+            "title": "Displayname"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mazmo_user_id",
+          "username",
+          "displayname"
+        ],
+        "title": "EventGuestPublic",
+        "description": "Minimal guest representation in event logs.\n\nProvides enough info to identify the guest without full profile data."
+      },
+      "EventLogListResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EventLogPublic"
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "limit",
+          "offset",
+          "events"
+        ],
+        "title": "EventLogListResponse",
+        "description": "Paginated list of event log entries.\n\nPagination fields:\n  - total: Total number of events matching the filter (for UI pagination)\n  - limit: Maximum events per page (default 50, max 100)\n  - offset: Number of events skipped (for page calculation)\n\nExample: Page 2 with 50 per page \u2192 offset=50, limit=50"
+      },
+      "EventLogPublic": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventActorPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "guest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventGuestPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meetup_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meetup Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "event_type",
+          "timestamp"
+        ],
+        "title": "EventLogPublic",
+        "description": "Single event log entry for API responses.\n\nContains the full context of what happened: who did what to whom,\nwhen, and why. Relationships are expanded for convenience.\n\nFields:\n  - id: Unique event identifier\n  - event_type: What happened (CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN)\n  - timestamp: When it happened (UTC)\n  - actor: Staff member who performed the action\n  - guest: Guest who was affected (if applicable)\n  - meetup_id: Related meetup UUID (for check-in events)\n  - reason: Why the action was taken (required for bans, optional for undos)"
+      },
+      "GuestListResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "guests": {
+            "items": {
+              "$ref": "#/components/schemas/GuestPublic"
+            },
+            "type": "array",
+            "title": "Guests"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "guests"
+        ],
+        "title": "GuestListResponse",
+        "description": "Response for listing all known guests.\n\nReturns identity-only data. For RSVP state at a specific meetup,\nuse the /meetups/{id}/guests endpoint instead."
+      },
+      "GuestPublic": {
+        "properties": {
+          "mazmo_user_id": {
+            "type": "integer",
+            "title": "Mazmo User Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "displayname": {
+            "type": "string",
+            "title": "Displayname"
+          },
+          "is_banned": {
+            "type": "boolean",
+            "title": "Is Banned",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "mazmo_user_id",
+          "username",
+          "displayname"
+        ],
+        "title": "GuestPublic",
+        "description": "A Mazmo user's identity (cached locally).\n\nThis is identity-only data - no RSVP or check-in state.\nThe same guest can appear at multiple meetups with different RSVP states.\nMaps directly to the Guest model via from_attributes.\n\nIncludes is_banned so the frontend can render banned guests differently\n(e.g., name in red)."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "unhealthy",
+              "degraded"
+            ],
+            "title": "Status"
+          },
+          "services": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ServiceCheck"
+            },
+            "type": "object",
+            "title": "Services"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "services"
+        ],
+        "title": "HealthResponse",
+        "description": "Full health check response.\n\nThe overall status is \"healthy\" only if all critical services are healthy.\nNon-critical services being down results in \"degraded\" status."
+      },
+      "MeetupCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "mazmo_meetup_url": {
+            "type": "string",
+            "maxLength": 2083,
+            "minLength": 1,
+            "format": "uri",
+            "title": "Mazmo Meetup Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "mazmo_meetup_url"
+        ],
+        "title": "MeetupCreate",
+        "description": "Request body for creating a new meetup.\n\nThe mazmo_meetup_url is validated to match the expected Mazmo format.\nDuring creation, the API calls Mazmo to fetch the event date, which\nalso verifies the URL points to a real event."
+      },
+      "MeetupGuestListResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "guests": {
+            "items": {
+              "$ref": "#/components/schemas/MeetupGuestPublic"
+            },
+            "type": "array",
+            "title": "Guests"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "guests"
+        ],
+        "title": "MeetupGuestListResponse",
+        "description": "Response for listing guests at a specific meetup.\n\nEach entry includes both the guest's identity and their RSVP state\nfor this particular meetup."
+      },
+      "MeetupGuestPublic": {
+        "properties": {
+          "guest": {
+            "$ref": "#/components/schemas/GuestPublic"
+          },
+          "rsvp": {
+            "$ref": "#/components/schemas/RsvpPublic"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guest",
+          "rsvp"
+        ],
+        "title": "MeetupGuestPublic",
+        "description": "Combined view of a guest at a specific meetup.\n\nNests the guest identity and their RSVP state separately for clarity.\nFrontend can access guest.displayname vs rsvp.has_arrived."
+      },
+      "MeetupListResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "meetups": {
+            "items": {
+              "$ref": "#/components/schemas/MeetupPublic"
+            },
+            "type": "array",
+            "title": "Meetups"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "meetups"
+        ],
+        "title": "MeetupListResponse",
+        "description": "Response for listing all meetups.\n\nReturns meetups ordered by date descending (most recent first)."
+      },
+      "MeetupPublic": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "mazmo_meetup_url": {
+            "type": "string",
+            "title": "Mazmo Meetup Url"
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date"
+          },
+          "is_finalized": {
+            "type": "boolean",
+            "title": "Is Finalized"
+          },
+          "finalized_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalized At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "mazmo_meetup_url",
+          "date",
+          "is_finalized",
+          "finalized_at"
+        ],
+        "title": "MeetupPublic",
+        "description": "Public representation of a meetup.\n\nReturned when fetching meetup details. The mazmo_meetup_url is the\nsource URL used for syncing RSVPs from the Mazmo platform."
+      },
+      "PossibleRoles": {
+        "type": "string",
+        "enum": [
+          "STAFF",
+          "ADMIN"
+        ],
+        "title": "PossibleRoles",
+        "description": "Used for Python/Pydantic validation only.\nThe actual role name is stored as a VARCHAR in the `user_roles` table\nand referenced via a foreign key from `users.role_id`."
+      },
+      "RolePublic": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "$ref": "#/components/schemas/PossibleRoles"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "RolePublic",
+        "description": "Public representation of a user role.\n\nUsed when returning user data that includes their role information.\nMaps directly to the Role model via from_attributes."
+      },
+      "RoleRequest": {
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/PossibleRoles"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "title": "RoleRequest",
+        "description": "Request body for changing a user's role.\n\nUsed by admins to promote staff to admin or demote admins to staff."
+      },
+      "RsvpPublic": {
+        "properties": {
+          "rsvp_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Rsvp Time"
+          },
+          "cancelled_rsvp": {
+            "type": "boolean",
+            "title": "Cancelled Rsvp"
+          },
+          "has_arrived": {
+            "type": "boolean",
+            "title": "Has Arrived"
+          },
+          "arrival_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arrival Time"
+          },
+          "arrival_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arrival Order"
+          },
+          "is_walkin": {
+            "type": "boolean",
+            "title": "Is Walkin",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "rsvp_time",
+          "cancelled_rsvp",
+          "has_arrived"
+        ],
+        "title": "RsvpPublic",
+        "description": "Event-specific RSVP state for a guest at a meetup.\n\nThis data lives in the MeetupRsvp association table, not on the Guest.\narrival_time and arrival_order are set by a database trigger when\nhas_arrived flips to True during check-in."
+      },
+      "ServiceCheck": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ServiceStatus"
+          },
+          "latency_ms": {
+            "type": "number",
+            "title": "Latency Ms"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "latency_ms"
+        ],
+        "title": "ServiceCheck",
+        "description": "Result of a single service health check."
+      },
+      "ServiceStatus": {
+        "type": "string",
+        "enum": [
+          "healthy",
+          "unhealthy",
+          "degraded"
+        ],
+        "title": "ServiceStatus",
+        "description": "Status of an individual service check."
+      },
+      "StaffRegisterRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 15,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "StaffRegisterRequest",
+        "description": "Request body for staff registration.\n\nStrict mode ensures exact type matching - no coercion from strings to ints, etc.\nPassword has a minimum length of 15 characters for security."
+      },
+      "SyncResponse": {
+        "properties": {
+          "inserted": {
+            "type": "integer",
+            "title": "Inserted"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped"
+          },
+          "total_in_db": {
+            "type": "integer",
+            "title": "Total In Db"
+          }
+        },
+        "type": "object",
+        "required": [
+          "inserted",
+          "skipped",
+          "total_in_db"
+        ],
+        "title": "SyncResponse",
+        "description": "Response after syncing guests from Mazmo.\n\nReports how many new guests/RSVPs were inserted vs already existed.\nThe sync is idempotent - running it multiple times is safe."
+      },
+      "TokenResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token"
+        ],
+        "title": "TokenResponse",
+        "description": "Response returned after successful authentication.\n\nContains the JWT access token that the client should include in\nsubsequent requests via the Authorization header."
+      },
+      "UndoCheckInRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 5,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "UndoCheckInRequest",
+        "description": "Request body for undoing a check-in."
+      },
+      "UserPublic": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "is_approved": {
+            "type": "boolean",
+            "title": "Is Approved"
+          },
+          "role": {
+            "$ref": "#/components/schemas/RolePublic"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "is_disabled": {
+            "type": "boolean",
+            "title": "Is Disabled",
+            "default": false
+          },
+          "disabled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled At"
+          },
+          "disabled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "is_approved",
+          "role",
+          "created_at"
+        ],
+        "title": "UserPublic",
+        "description": "Public representation of a staff user.\n\nReturned when fetching user details. Includes the nested role object\nfor convenience. Never includes the hashed password."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/auth/token"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "auth",
+      "description": "Authentication endpoints. Create an account with `POST /auth/register`, then ask an admin to approve it via `PATCH /staff/{id}/approve`. Once approved, login with `POST /auth/token` to get a JWT."
+    },
+    {
+      "name": "staff",
+      "description": "Staff and admin management. List, approve, disable, and manage roles for staff accounts. Most operations require admin privileges."
+    },
+    {
+      "name": "guests",
+      "description": "Guest identity and ban management. View all known guests, manage ban status. Note: meetup-specific guest operations (sync, check-in) are under `meetups` tag."
+    },
+    {
+      "name": "meetups",
+      "description": "Meetup operations. Create meetups, sync guest lists from Mazmo, view RSVPs, and perform check-ins. Requires approved staff access."
+    },
+    {
+      "name": "events",
+      "description": "Audit event log. These are internal system events logged for auditing, not to be confused with Mazmo 'eventos' (meetups)."
+    },
+    {
+      "name": "meta",
+      "description": "Service metadata endpoints: health checks, root info, and ping."
+    },
+    {
+      "name": "internal_usage",
+      "description": "Internal endpoints for monitoring and observability (Prometheus metrics)."
+    }
+  ]
+}

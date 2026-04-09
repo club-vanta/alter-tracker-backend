@@ -6,6 +6,13 @@ Door tracker API for Alter meetups. Integrates with Mazmo to sync guest lists an
 
 **API Documentation:** Once running, visit [`/docs`](http://localhost:8000/docs) (Swagger UI) or [`/redoc`](http://localhost:8000/redoc) (ReDoc). All endpoints are documented there with examples.
 
+**Frontend:** The `velvet` repo consumes this API. After any endpoint change, regenerate the frontend types from the `velvet` directory:
+```bash
+npm run generate:api   # reads from ../alter-tracker-backend/openapi.json
+# or if the server is running:
+npx openapi-typescript http://localhost:8000/openapi.json -o src/api/types.ts
+```
+
 ---
 
 ## Quick Start
@@ -22,6 +29,8 @@ db-migrate
 
 # 4. Create initial admin user
 seed-admin
+#    - username: admin
+#    - password: insecure-changeme-123
 
 # 5. Start server with hot-reload
 dev-backend
@@ -45,7 +54,7 @@ Server runs at http://localhost:8000/docs
 ### Guests
 
 - A Guest is someone who has RSVPed to at least one meetup
-- Guests are not created manually - they appear when syncing from Mazmo
+- Guests are added when they RSVP to a meetup and staff syncs from Mazmo, or manually via `POST /guests/`
 - Each guest has:
   - `mazmo_user_id` - Their ID on Mazmo's platform (used as primary key)
   - `username` - Their @handle (rarely changes)

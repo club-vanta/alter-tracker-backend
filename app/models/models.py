@@ -39,6 +39,8 @@ class EventType(StrEnum):
     UNBAN = "UNBAN"
     MEETUP_FINALIZED = "MEETUP_FINALIZED"
     MEETUP_UNFINALIZED = "MEETUP_UNFINALIZED"
+    WALKIN = "WALKIN"
+    GUEST_CREATED = "GUEST_CREATED"
 
 
 # ── Role table ────────────────────────────────────────────────────────────────
@@ -140,6 +142,9 @@ class MeetupRsvp(SQLModel, table=True):
     has_arrived: bool = Field(default=False, index=True)
     arrival_time: datetime | None = None
     arrival_order: int | None = Field(default=None)
+
+    # ── Walk-in flag ──
+    is_walkin: bool = Field(default=False)
 
     # ── Check-in attribution ──
     checked_in_by_id: int | None = Field(default=None, foreign_key="users.id")

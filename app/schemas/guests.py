@@ -58,6 +58,7 @@ class RsvpPublic(BaseModel):
     has_arrived: bool
     arrival_time: datetime | None = None
     arrival_order: int | None = None
+    is_walkin: bool = False
 
 
 class MeetupGuestPublic(BaseModel):
@@ -111,6 +112,24 @@ class CheckInResponse(BaseModel):
     arrival_order: int
     arrival_time: datetime
     checked_in_by: CheckedInByPublic
+
+
+# ── Manual guest creation ─────────────────────────────────────────────────────
+
+
+class CreateGuestRequest(BaseModel):
+    """
+    Request body for creating a guest by Mazmo username.
+
+    Staff only need to know the handle (e.g. "cindydark"). The endpoint looks
+    up the canonical ID and profile data from Mazmo automatically.
+    """
+
+    username: str = Field(
+        min_length=1,
+        max_length=255,
+        description="Mazmo username to look up (e.g. 'cindydark')",
+    )
 
 
 # ── Ban-related schemas ───────────────────────────────────────────────────────
