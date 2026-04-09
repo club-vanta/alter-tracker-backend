@@ -129,6 +129,79 @@ def test_create_meetup_requires_auth(client: TestClient, mock_mazmo_for_meetups:
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
 
+def test_create_meetup_accepts_community_with_plus_prefix(
+    client: TestClient, admin_headers: dict, mock_mazmo_for_meetups: AsyncMock
+):
+    """
+    Verify that URLs with a '+' prefix in the community segment are accepted.
+
+    WHY: Some Mazmo communities use '+' as a prefix (e.g. +eventos-reuniones-argentina).
+    The old regex only allowed [\\w-] and rejected these URLs with a 422.
+    """
+    resp = client.post(
+        "/meetups/",
+        json={
+            "name": "Alter Tan Selmo Secret Face",
+            "mazmo_meetup_url": "https://mazmo.net/+eventos-reuniones-argentina/alter-tal-selmo-secret-face-opgnjcy4d0u",
+        },
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_201_CREATED
+
+
+def test_create_meetup_accepts_alphanumeric_slug_suffix(
+    client: TestClient, admin_headers: dict, mock_mazmo_for_meetups: AsyncMock
+):
+    """
+    Verify that thread slugs ending in an alphanumeric ID (not just numeric) are accepted.
+
+    WHY: Newer Mazmo events use alphanumeric IDs like 'opgnjcy4d0u' instead of
+    plain integers. The old regex required \\d+ at the end and rejected these.
+    """
+    resp = client.post(
+        "/meetups/",
+        json={
+            "name": "Test Alphanumeric ID",
+            "mazmo_meetup_url": "https://mazmo.net/some-community/some-event-abc123xyz",
+        },
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_201_CREATED
+
+
+def test_create_meetup_rejects_url_without_thread_segment(
+    client: TestClient, admin_headers: dict, mock_mazmo_for_meetups: AsyncMock
+):
+    """
+    Verify that URLs missing the thread path segment are still rejected.
+
+    WHY: A URL like https://mazmo.net/community (no thread) would be a community
+    page, not a meetup — it should never pass validation.
+    """
+    resp = client.post(
+        "/meetups/",
+        json={"name": "Bad URL", "mazmo_meetup_url": "https://mazmo.net/just-community"},
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_create_meetup_rejects_non_mazmo_url(
+    client: TestClient, admin_headers: dict, mock_mazmo_for_meetups: AsyncMock
+):
+    """Verify that URLs from other domains are rejected."""
+    resp = client.post(
+        "/meetups/",
+        json={"name": "Bad URL", "mazmo_meetup_url": "https://example.com/community/event-123"},
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
 # ── List meetups ──────────────────────────────────────────────────────────────
 
 

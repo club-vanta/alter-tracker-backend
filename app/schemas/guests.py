@@ -117,7 +117,7 @@ class CheckInResponse(BaseModel):
 # ── Manual guest creation ─────────────────────────────────────────────────────
 
 
-class CreateGuestByUsernameRequest(BaseModel):
+class CreateGuestRequest(BaseModel):
     """
     Request body for creating a guest by Mazmo username.
 
@@ -130,25 +130,6 @@ class CreateGuestByUsernameRequest(BaseModel):
         max_length=255,
         description="Mazmo username to look up (e.g. 'cindydark')",
     )
-
-
-class CreateGuestRequest(BaseModel):
-    """
-    Request body for manually creating a guest without a Mazmo sync.
-
-    Use this when someone shows up at the door without prior Mazmo history.
-    All three fields mirror what the sync service populates from Mazmo,
-    so a manually created guest is indistinguishable from a synced one.
-
-    Also useful for guests who prefer not to have their attendance visible on
-    Mazmo — they can attend the event without RSVPing publicly, and staff can
-    register them here so their presence is recorded internally without being
-    exposed to other Mazmo users outside the organization.
-    """
-
-    mazmo_user_id: int = Field(description="The guest's Mazmo user ID")
-    username: str = Field(min_length=1, max_length=255, description="Mazmo username (e.g. @handle)")
-    displayname: str = Field(min_length=1, max_length=255, description="Display name shown on Mazmo")
 
 
 # ── Ban-related schemas ───────────────────────────────────────────────────────

@@ -17,7 +17,7 @@ ResponsesDict = dict[int | str, dict[str, Any]]
 
 
 def error_401_invalid_credentials() -> ResponsesDict:
-    """401 - Invalid or missing authentication credentials."""
+    """401 - Invalid or missing JWT. Use on all endpoints that require authentication."""
     return {
         401: {
             "description": "Invalid or missing credentials",
@@ -32,6 +32,21 @@ def error_401_invalid_credentials() -> ResponsesDict:
                             "summary": "Invalid or expired JWT",
                             "value": {"detail": "Could not validate credentials"},
                         },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_401_wrong_password() -> ResponsesDict:
+    """401 - Wrong username or password. Only for POST /auth/token (form-based login)."""
+    return {
+        401: {
+            "description": "Wrong username or password",
+            "content": {
+                "application/json": {
+                    "examples": {
                         "wrong_password": {
                             "summary": "Wrong username or password",
                             "value": {"detail": "Incorrect username or password."},
@@ -113,8 +128,8 @@ def error_403_staff_own_events_only() -> ResponsesDict:
 # ── 400 Bad Request Errors ────────────────────────────────────────────────────
 
 
-def error_400_self_operation() -> ResponsesDict:
-    """400 - Cannot perform this operation on yourself."""
+def error_400_self_approve_revoke() -> ResponsesDict:
+    """400 - Admin cannot revoke their own approval. Only for PATCH /staff/{id}/approve."""
     return {
         400: {
             "description": "Invalid self-operation",
@@ -125,10 +140,40 @@ def error_400_self_operation() -> ResponsesDict:
                             "summary": "Cannot revoke own approval",
                             "value": {"detail": "Admins cannot revoke their own approval."},
                         },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_400_self_role() -> ResponsesDict:
+    """400 - Admin cannot demote themselves. Only for PATCH /staff/{id}/role."""
+    return {
+        400: {
+            "description": "Invalid self-operation",
+            "content": {
+                "application/json": {
+                    "examples": {
                         "self_demote": {
                             "summary": "Cannot demote yourself",
                             "value": {"detail": "Admins cannot demote themselves."},
                         },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_400_self_disable() -> ResponsesDict:
+    """400 - Admin cannot disable their own account. Only for PATCH /staff/{id}/disable."""
+    return {
+        400: {
+            "description": "Invalid self-operation",
+            "content": {
+                "application/json": {
+                    "examples": {
                         "self_disable": {
                             "summary": "Cannot disable own account",
                             "value": {"detail": "Admins cannot disable their own account."},
@@ -196,13 +241,38 @@ def error_404_guest() -> ResponsesDict:
                 "application/json": {
                     "examples": {
                         "guest_not_found": {
-                            "summary": "Guest has never RSVPed",
+                            "summary": "Guest not in system",
                             "value": {
                                 "detail": (
                                     "Guest with mazmo_user_id=99999 does not exist in our database. "
-                                    "This guest may not have RSVPed to any meetup yet, or the ID might be incorrect. "
-                                    "Guests are only added when they RSVP to a meetup and we sync from Mazmo. "
-                                    "Try POST /meetups/{meetup_id}/sync first, or verify the mazmo_user_id."
+                                    "Guests are added when they RSVP to a meetup and we sync from Mazmo, "
+                                    "or when registered manually via POST /guests/. "
+                                    "Try POST /meetups/{meetup_id}/sync, POST /guests/, or verify the mazmo_user_id."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_404_guest_username() -> ResponsesDict:
+    """404 - No guest with that username in our system. Only for GET /guests/by-username/{username}."""
+    return {
+        404: {
+            "description": "Guest not found by username",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "guest_username_not_found": {
+                            "summary": "Username not registered in this system",
+                            "value": {
+                                "detail": (
+                                    "No guest with username 'unknownuser' found in the system. "
+                                    "They may not have RSVPed to any meetup yet. "
+                                    "Use POST /guests/ to register them if they're at the door."
                                 )
                             },
                         },
@@ -605,7 +675,35 @@ def error_409_duplicate_meetup() -> ResponsesDict:
 
 
 def error_422_validation() -> ResponsesDict:
-    """422 - Request body validation failed."""
+    """422 - Generic validation error (missing required field). Use when no more specific variant applies."""
+    return {
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "missing_required_field": {
+                            "summary": "Missing required field",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "type": "missing",
+                                        "loc": ["body", "field_name"],
+                                        "msg": "Field required",
+                                        "input": {},
+                                    }
+                                ]
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_422_validation_password() -> ResponsesDict:
+    """422 - Password too short. Only for POST /auth/register."""
     return {
         422: {
             "description": "Validation error",
@@ -613,7 +711,7 @@ def error_422_validation() -> ResponsesDict:
                 "application/json": {
                     "examples": {
                         "password_too_short": {
-                            "summary": "Password validation failed",
+                            "summary": "Password too short",
                             "value": {
                                 "detail": [
                                     {
@@ -626,6 +724,21 @@ def error_422_validation() -> ResponsesDict:
                                 ]
                             },
                         },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_422_validation_url() -> ResponsesDict:
+    """422 - Invalid Mazmo URL format. Only for POST /meetups/."""
+    return {
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "examples": {
                         "invalid_url": {
                             "summary": "Invalid Mazmo URL format",
                             "value": {
@@ -633,12 +746,27 @@ def error_422_validation() -> ResponsesDict:
                                     {
                                         "type": "value_error",
                                         "loc": ["body", "mazmo_meetup_url"],
-                                        "msg": "Value error, URL must match pattern: https://mazmo.net/{community}/{thread-slug}-{id}",
+                                        "msg": "Value error, URL must match pattern: https://mazmo.net/{community}/{thread-slug}",
                                         "input": "https://invalid-url.com/meetup",
                                     }
                                 ]
                             },
                         },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_422_validation_reason() -> ResponsesDict:
+    """422 - Reason too short. For endpoints that require a reason field (ban, disable, undo-checkin)."""
+    return {
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "examples": {
                         "reason_too_short": {
                             "summary": "Reason too short",
                             "value": {
@@ -660,11 +788,40 @@ def error_422_validation() -> ResponsesDict:
     }
 
 
+def error_422_validation_username() -> ResponsesDict:
+    """422 - Empty username. Only for POST /guests/ (create by username)."""
+    return {
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "username_empty": {
+                            "summary": "Username cannot be empty",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "type": "string_too_short",
+                                        "loc": ["body", "username"],
+                                        "msg": "String should have at least 1 character",
+                                        "input": "",
+                                        "ctx": {"min_length": 1},
+                                    }
+                                ]
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
 # ── 502/504 Gateway Errors ────────────────────────────────────────────────────
 
 
-def error_502_mazmo_api() -> ResponsesDict:
-    """502 - Mazmo API returned an error."""
+def error_502_mazmo_create_meetup() -> ResponsesDict:
+    """502 - Mazmo API returned an error during meetup creation. Only for POST /meetups/."""
     return {
         502: {
             "description": "Mazmo API error",
@@ -679,6 +836,31 @@ def error_502_mazmo_api() -> ResponsesDict:
                                     "Error: HTTP 404 - Event not found. "
                                     "This could mean the Mazmo URL is invalid or the event doesn't exist. "
                                     "Verify the URL is correct and points to a valid Mazmo event page."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_502_mazmo_sync() -> ResponsesDict:
+    """502 - Mazmo API returned an error during sync. Only for POST /meetups/{id}/sync."""
+    return {
+        502: {
+            "description": "Mazmo API error",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "mazmo_api_error": {
+                            "summary": "Mazmo returned an HTTP error",
+                            "value": {
+                                "detail": (
+                                    "Sync failed: Mazmo API returned HTTP error 404. "
+                                    "The event may have been deleted on Mazmo, or their API is having issues. "
+                                    "Check if the meetup URL is still valid on Mazmo's website."
                                 )
                             },
                         },
@@ -699,8 +881,8 @@ def error_502_mazmo_api() -> ResponsesDict:
     }
 
 
-def error_504_mazmo_timeout() -> ResponsesDict:
-    """504 - Mazmo API unreachable or timed out."""
+def error_504_mazmo_create_meetup() -> ResponsesDict:
+    """504 - Mazmo unreachable during meetup creation. Only for POST /meetups/."""
     return {
         504: {
             "description": "Mazmo API timeout",
@@ -714,6 +896,55 @@ def error_504_mazmo_timeout() -> ResponsesDict:
                                     "Cannot create meetup: failed to connect to Mazmo API. "
                                     "This is likely a temporary network issue. Error: Connection timed out. "
                                     "Try again in a few moments, or check if Mazmo is experiencing an outage."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_504_mazmo_sync() -> ResponsesDict:
+    """504 - Mazmo unreachable during sync. Only for POST /meetups/{id}/sync."""
+    return {
+        504: {
+            "description": "Mazmo API timeout",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "mazmo_timeout": {
+                            "summary": "Could not connect to Mazmo",
+                            "value": {
+                                "detail": (
+                                    "Sync failed: could not connect to Mazmo API. "
+                                    "This is likely a temporary network issue. Error: Connection timed out. "
+                                    "Try again in a few moments."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_504_mazmo_create_guest() -> ResponsesDict:
+    """504 - Mazmo unreachable during guest creation. Only for POST /guests/."""
+    return {
+        504: {
+            "description": "Mazmo API timeout",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "mazmo_timeout": {
+                            "summary": "Could not connect to Mazmo",
+                            "value": {
+                                "detail": (
+                                    "Cannot create guest: failed to connect to Mazmo API. "
+                                    "Error: Connection timed out. Try again in a few moments."
                                 )
                             },
                         },

@@ -11,9 +11,12 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator
 
 # Pattern for validating Mazmo frontend URLs.
-# Expected format: https://mazmo.net/{community}/{thread-slug}-{numeric_id}
-# Example: https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217
-MAZMO_URL_PATTERN = re.compile(r"^https://mazmo\.net/[\w-]+/[\w-]+-\d+$")
+# Expected format: https://mazmo.net/{+community}/{thread-slug}-{id}
+# Community may start with '+'. Thread ID may be numeric or alphanumeric.
+# Examples:
+#   https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217
+#   https://mazmo.net/+eventos-reuniones-argentina/alter-tal-selmo-secret-face-opgnjcy4d0u
+MAZMO_URL_PATTERN = re.compile(r"^https://mazmo\.net/\+?[\w-]+/[\w-]+$")
 
 
 class MeetupPublic(BaseModel):
@@ -68,7 +71,7 @@ class MeetupCreate(BaseModel):
         """
         url_str = str(v)
         if not MAZMO_URL_PATTERN.match(url_str):
-            raise ValueError("URL must match pattern: https://mazmo.net/{community}/{thread-slug}-{id}")
+            raise ValueError("URL must match pattern: https://mazmo.net/{community}/{thread-slug}")
         return v
 
 

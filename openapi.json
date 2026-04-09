@@ -80,7 +80,7 @@
               "application/json": {
                 "examples": {
                   "password_too_short": {
-                    "summary": "Password validation failed",
+                    "summary": "Password too short",
                     "value": {
                       "detail": [
                         {
@@ -93,41 +93,6 @@
                           "input": "short",
                           "ctx": {
                             "min_length": 15
-                          }
-                        }
-                      ]
-                    }
-                  },
-                  "invalid_url": {
-                    "summary": "Invalid Mazmo URL format",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "value_error",
-                          "loc": [
-                            "body",
-                            "mazmo_meetup_url"
-                          ],
-                          "msg": "Value error, URL must match pattern: https://mazmo.net/{community}/{thread-slug}-{id}",
-                          "input": "https://invalid-url.com/meetup"
-                        }
-                      ]
-                    }
-                  },
-                  "reason_too_short": {
-                    "summary": "Reason too short",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "string_too_short",
-                          "loc": [
-                            "body",
-                            "reason"
-                          ],
-                          "msg": "String should have at least 5 characters",
-                          "input": "bad",
-                          "ctx": {
-                            "min_length": 5
                           }
                         }
                       ]
@@ -178,22 +143,10 @@
             }
           },
           "401": {
-            "description": "Invalid or missing credentials",
+            "description": "Wrong username or password",
             "content": {
               "application/json": {
                 "examples": {
-                  "missing_token": {
-                    "summary": "No token provided",
-                    "value": {
-                      "detail": "Not authenticated"
-                    }
-                  },
-                  "invalid_token": {
-                    "summary": "Invalid or expired JWT",
-                    "value": {
-                      "detail": "Could not validate credentials"
-                    }
-                  },
                   "wrong_password": {
                     "summary": "Wrong username or password",
                     "value": {
@@ -287,12 +240,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -419,12 +366,6 @@
                     "value": {
                       "detail": "Could not validate credentials"
                     }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
-                    }
                   }
                 }
               }
@@ -512,12 +453,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -647,18 +582,6 @@
                     "value": {
                       "detail": "Admins cannot revoke their own approval."
                     }
-                  },
-                  "self_demote": {
-                    "summary": "Cannot demote yourself",
-                    "value": {
-                      "detail": "Admins cannot demote themselves."
-                    }
-                  },
-                  "self_disable": {
-                    "summary": "Cannot disable own account",
-                    "value": {
-                      "detail": "Admins cannot disable their own account."
-                    }
                   }
                 }
               }
@@ -679,12 +602,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -829,22 +746,10 @@
             "content": {
               "application/json": {
                 "examples": {
-                  "self_revoke": {
-                    "summary": "Cannot revoke own approval",
-                    "value": {
-                      "detail": "Admins cannot revoke their own approval."
-                    }
-                  },
                   "self_demote": {
                     "summary": "Cannot demote yourself",
                     "value": {
                       "detail": "Admins cannot demote themselves."
-                    }
-                  },
-                  "self_disable": {
-                    "summary": "Cannot disable own account",
-                    "value": {
-                      "detail": "Admins cannot disable their own account."
                     }
                   }
                 }
@@ -866,12 +771,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -998,18 +897,6 @@
             "content": {
               "application/json": {
                 "examples": {
-                  "self_revoke": {
-                    "summary": "Cannot revoke own approval",
-                    "value": {
-                      "detail": "Admins cannot revoke their own approval."
-                    }
-                  },
-                  "self_demote": {
-                    "summary": "Cannot demote yourself",
-                    "value": {
-                      "detail": "Admins cannot demote themselves."
-                    }
-                  },
                   "self_disable": {
                     "summary": "Cannot disable own account",
                     "value": {
@@ -1035,12 +922,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -1097,41 +978,6 @@
             "content": {
               "application/json": {
                 "examples": {
-                  "password_too_short": {
-                    "summary": "Password validation failed",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "string_too_short",
-                          "loc": [
-                            "body",
-                            "password"
-                          ],
-                          "msg": "String should have at least 15 characters",
-                          "input": "short",
-                          "ctx": {
-                            "min_length": 15
-                          }
-                        }
-                      ]
-                    }
-                  },
-                  "invalid_url": {
-                    "summary": "Invalid Mazmo URL format",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "value_error",
-                          "loc": [
-                            "body",
-                            "mazmo_meetup_url"
-                          ],
-                          "msg": "Value error, URL must match pattern: https://mazmo.net/{community}/{thread-slug}-{id}",
-                          "input": "https://invalid-url.com/meetup"
-                        }
-                      ]
-                    }
-                  },
                   "reason_too_short": {
                     "summary": "Reason too short",
                     "value": {
@@ -1224,12 +1070,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -1365,12 +1205,6 @@
                     "value": {
                       "detail": "Could not validate credentials"
                     }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
-                    }
                   }
                 }
               }
@@ -1408,208 +1242,14 @@
         "tags": [
           "guests"
         ],
-        "summary": "Manually create a guest (no Mazmo sync required)",
-        "description": "Manually register a guest who has no prior Mazmo sync history.\n\nUse this when someone shows up at the door and has never RSVPed to any\nprevious meetup \u2014 so they don't exist in our system yet. After creating\nthem here, they can be added to a meetup via `POST /meetups/{id}/guests/{mazmo_user_id}/add-walkin`.\n\nThe `mazmo_user_id` must match the guest's actual Mazmo profile ID.\nIf the guest already exists in the system (synced from a previous meetup),\nthis returns 409 \u2014 no need to create them manually.",
+        "summary": "Create a guest by Mazmo username",
+        "description": "Register a guest using their Mazmo username handle.\n\nLooks up the canonical Mazmo user ID and profile data automatically,\nso staff at the door only need to know the handle (e.g. \"cindydark\").\n\nReturns 404 if the username doesn't exist on Mazmo.\nReturns 409 if the guest is already registered in the system.\nReturns 504 if Mazmo is unreachable.",
         "operationId": "create_guest_guests__post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateGuestRequest"
-              },
-              "examples": {
-                "new_attendee": {
-                  "summary": "Someone who never used Mazmo",
-                  "description": "Guest shows up at the door with no prior Mazmo history",
-                  "value": {
-                    "mazmo_user_id": 55555,
-                    "username": "recien_llegado",
-                    "displayname": "Reci\u00e9n Llegado"
-                  }
-                },
-                "privacy_conscious": {
-                  "summary": "Guest who prefers not to appear on Mazmo",
-                  "description": "Attends the event but doesn't want their RSVP visible on Mazmo publicly",
-                  "value": {
-                    "mazmo_user_id": 77777,
-                    "username": "usuario_discreto",
-                    "displayname": "Usuario Discreto"
-                  }
-                }
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Guest created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GuestPublic"
-                },
-                "examples": {
-                  "created": {
-                    "summary": "Guest successfully registered",
-                    "value": {
-                      "mazmo_user_id": 55555,
-                      "username": "recien_llegado",
-                      "displayname": "Reci\u00e9n Llegado",
-                      "is_banned": false
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Invalid or missing credentials",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "missing_token": {
-                    "summary": "No token provided",
-                    "value": {
-                      "detail": "Not authenticated"
-                    }
-                  },
-                  "invalid_token": {
-                    "summary": "Invalid or expired JWT",
-                    "value": {
-                      "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Account not approved or disabled",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "pending_approval": {
-                    "summary": "Account pending approval",
-                    "value": {
-                      "detail": "Your account is pending admin approval. Please try again later."
-                    }
-                  },
-                  "account_disabled": {
-                    "summary": "Account disabled",
-                    "value": {
-                      "detail": "Your account has been disabled."
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Guest already exists",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "guest_exists": {
-                    "summary": "mazmo_user_id already in system",
-                    "value": {
-                      "detail": "Cannot create guest: mazmo_user_id=12345 already exists in the system as 'fiestero_feliz'. If you want to add them to a meetup, use POST /meetups/{meetup_id}/guests/12345/add-walkin."
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation error",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "password_too_short": {
-                    "summary": "Password validation failed",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "string_too_short",
-                          "loc": [
-                            "body",
-                            "password"
-                          ],
-                          "msg": "String should have at least 15 characters",
-                          "input": "short",
-                          "ctx": {
-                            "min_length": 15
-                          }
-                        }
-                      ]
-                    }
-                  },
-                  "invalid_url": {
-                    "summary": "Invalid Mazmo URL format",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "value_error",
-                          "loc": [
-                            "body",
-                            "mazmo_meetup_url"
-                          ],
-                          "msg": "Value error, URL must match pattern: https://mazmo.net/{community}/{thread-slug}-{id}",
-                          "input": "https://invalid-url.com/meetup"
-                        }
-                      ]
-                    }
-                  },
-                  "reason_too_short": {
-                    "summary": "Reason too short",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "string_too_short",
-                          "loc": [
-                            "body",
-                            "reason"
-                          ],
-                          "msg": "String should have at least 5 characters",
-                          "input": "bad",
-                          "ctx": {
-                            "min_length": 5
-                          }
-                        }
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
-      }
-    },
-    "/guests/by-username": {
-      "post": {
-        "tags": [
-          "guests"
-        ],
-        "summary": "Create a guest by Mazmo username (no numeric ID needed)",
-        "description": "Register a guest using only their Mazmo username handle.\n\nLooks up the canonical Mazmo user ID and profile data automatically,\nso staff at the door only need to know the handle (e.g. \"cindydark\").\n\nReturns 404 if the username doesn't exist on Mazmo.\nReturns 409 if the guest is already registered in the system.\nReturns 504 if Mazmo is unreachable.",
-        "operationId": "create_guest_by_username_guests_by_username_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateGuestByUsernameRequest"
               },
               "examples": {
                 "by_username": {
@@ -1661,12 +1301,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -1729,55 +1363,20 @@
             "content": {
               "application/json": {
                 "examples": {
-                  "password_too_short": {
-                    "summary": "Password validation failed",
+                  "username_empty": {
+                    "summary": "Username cannot be empty",
                     "value": {
                       "detail": [
                         {
                           "type": "string_too_short",
                           "loc": [
                             "body",
-                            "password"
+                            "username"
                           ],
-                          "msg": "String should have at least 15 characters",
-                          "input": "short",
+                          "msg": "String should have at least 1 character",
+                          "input": "",
                           "ctx": {
-                            "min_length": 15
-                          }
-                        }
-                      ]
-                    }
-                  },
-                  "invalid_url": {
-                    "summary": "Invalid Mazmo URL format",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "value_error",
-                          "loc": [
-                            "body",
-                            "mazmo_meetup_url"
-                          ],
-                          "msg": "Value error, URL must match pattern: https://mazmo.net/{community}/{thread-slug}-{id}",
-                          "input": "https://invalid-url.com/meetup"
-                        }
-                      ]
-                    }
-                  },
-                  "reason_too_short": {
-                    "summary": "Reason too short",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "string_too_short",
-                          "loc": [
-                            "body",
-                            "reason"
-                          ],
-                          "msg": "String should have at least 5 characters",
-                          "input": "bad",
-                          "ctx": {
-                            "min_length": 5
+                            "min_length": 1
                           }
                         }
                       ]
@@ -1795,7 +1394,7 @@
                   "mazmo_timeout": {
                     "summary": "Could not connect to Mazmo",
                     "value": {
-                      "detail": "Cannot create meetup: failed to connect to Mazmo API. This is likely a temporary network issue. Error: Connection timed out. Try again in a few moments, or check if Mazmo is experiencing an outage."
+                      "detail": "Cannot create guest: failed to connect to Mazmo API. Error: Connection timed out. Try again in a few moments."
                     }
                   }
                 }
@@ -1870,12 +1469,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -1983,12 +1576,6 @@
                     "value": {
                       "detail": "Could not validate credentials"
                     }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
-                    }
                   }
                 }
               }
@@ -2021,9 +1608,135 @@
               "application/json": {
                 "examples": {
                   "guest_not_found": {
-                    "summary": "Guest has never RSVPed",
+                    "summary": "Guest not in system",
                     "value": {
-                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. This guest may not have RSVPed to any meetup yet, or the ID might be incorrect. Guests are only added when they RSVP to a meetup and we sync from Mazmo. Try POST /meetups/{meetup_id}/sync first, or verify the mazmo_user_id."
+                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/. Try POST /meetups/{meetup_id}/sync, POST /guests/, or verify the mazmo_user_id."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guests/by-username/{username}": {
+      "get": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "Get a single guest by Mazmo username",
+        "description": "Get a single guest by their Mazmo username handle.",
+        "operationId": "get_guest_by_username_guests_by_username__username__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Username"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guest found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestPublic"
+                },
+                "examples": {
+                  "normal_guest": {
+                    "summary": "Regular guest",
+                    "value": {
+                      "mazmo_user_id": 12345,
+                      "username": "fiestero_feliz",
+                      "displayname": "Juan El Fiestero",
+                      "is_banned": false
+                    }
+                  },
+                  "banned_guest": {
+                    "summary": "Banned guest",
+                    "description": "is_banned=true indicates this guest is banned",
+                    "value": {
+                      "mazmo_user_id": 99999,
+                      "username": "usuario_problematico",
+                      "displayname": "Persona Conflictiva",
+                      "is_banned": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Guest not found by username",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "guest_username_not_found": {
+                    "summary": "Username not registered in this system",
+                    "value": {
+                      "detail": "No guest with username 'unknownuser' found in the system. They may not have RSVPed to any meetup yet. Use POST /guests/ to register them if they're at the door."
                     }
                   }
                 }
@@ -2127,12 +1840,6 @@
                     "value": {
                       "detail": "Could not validate credentials"
                     }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
-                    }
                   }
                 }
               }
@@ -2159,9 +1866,9 @@
               "application/json": {
                 "examples": {
                   "guest_not_found": {
-                    "summary": "Guest has never RSVPed",
+                    "summary": "Guest not in system",
                     "value": {
-                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. This guest may not have RSVPed to any meetup yet, or the ID might be incorrect. Guests are only added when they RSVP to a meetup and we sync from Mazmo. Try POST /meetups/{meetup_id}/sync first, or verify the mazmo_user_id."
+                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/. Try POST /meetups/{meetup_id}/sync, POST /guests/, or verify the mazmo_user_id."
                     }
                   }
                 }
@@ -2188,41 +1895,6 @@
             "content": {
               "application/json": {
                 "examples": {
-                  "password_too_short": {
-                    "summary": "Password validation failed",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "string_too_short",
-                          "loc": [
-                            "body",
-                            "password"
-                          ],
-                          "msg": "String should have at least 15 characters",
-                          "input": "short",
-                          "ctx": {
-                            "min_length": 15
-                          }
-                        }
-                      ]
-                    }
-                  },
-                  "invalid_url": {
-                    "summary": "Invalid Mazmo URL format",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "value_error",
-                          "loc": [
-                            "body",
-                            "mazmo_meetup_url"
-                          ],
-                          "msg": "Value error, URL must match pattern: https://mazmo.net/{community}/{thread-slug}-{id}",
-                          "input": "https://invalid-url.com/meetup"
-                        }
-                      ]
-                    }
-                  },
                   "reason_too_short": {
                     "summary": "Reason too short",
                     "value": {
@@ -2312,12 +1984,6 @@
                     "value": {
                       "detail": "Could not validate credentials"
                     }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
-                    }
                   }
                 }
               }
@@ -2344,9 +2010,9 @@
               "application/json": {
                 "examples": {
                   "guest_not_found": {
-                    "summary": "Guest has never RSVPed",
+                    "summary": "Guest not in system",
                     "value": {
-                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. This guest may not have RSVPed to any meetup yet, or the ID might be incorrect. Guests are only added when they RSVP to a meetup and we sync from Mazmo. Try POST /meetups/{meetup_id}/sync first, or verify the mazmo_user_id."
+                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/. Try POST /meetups/{meetup_id}/sync, POST /guests/, or verify the mazmo_user_id."
                     }
                   }
                 }
@@ -2448,12 +2114,6 @@
                     "value": {
                       "detail": "Could not validate credentials"
                     }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
-                    }
                   }
                 }
               }
@@ -2554,12 +2214,6 @@
                     "value": {
                       "detail": "Could not validate credentials"
                     }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
-                    }
                   }
                 }
               }
@@ -2606,25 +2260,6 @@
             "content": {
               "application/json": {
                 "examples": {
-                  "password_too_short": {
-                    "summary": "Password validation failed",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "string_too_short",
-                          "loc": [
-                            "body",
-                            "password"
-                          ],
-                          "msg": "String should have at least 15 characters",
-                          "input": "short",
-                          "ctx": {
-                            "min_length": 15
-                          }
-                        }
-                      ]
-                    }
-                  },
                   "invalid_url": {
                     "summary": "Invalid Mazmo URL format",
                     "value": {
@@ -2635,27 +2270,8 @@
                             "body",
                             "mazmo_meetup_url"
                           ],
-                          "msg": "Value error, URL must match pattern: https://mazmo.net/{community}/{thread-slug}-{id}",
+                          "msg": "Value error, URL must match pattern: https://mazmo.net/{community}/{thread-slug}",
                           "input": "https://invalid-url.com/meetup"
-                        }
-                      ]
-                    }
-                  },
-                  "reason_too_short": {
-                    "summary": "Reason too short",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "string_too_short",
-                          "loc": [
-                            "body",
-                            "reason"
-                          ],
-                          "msg": "String should have at least 5 characters",
-                          "input": "bad",
-                          "ctx": {
-                            "min_length": 5
-                          }
                         }
                       ]
                     }
@@ -2673,12 +2289,6 @@
                     "summary": "Mazmo returned an error",
                     "value": {
                       "detail": "Cannot create meetup: Mazmo API returned an error. Error: HTTP 404 - Event not found. This could mean the Mazmo URL is invalid or the event doesn't exist. Verify the URL is correct and points to a valid Mazmo event page."
-                    }
-                  },
-                  "mazmo_parse_error": {
-                    "summary": "Mazmo response parse failed",
-                    "value": {
-                      "detail": "Sync failed: Mazmo returned data in an unexpected format. Error: Missing 'date' field in response. This could indicate Mazmo changed their API. Please report this issue."
                     }
                   }
                 }
@@ -2771,12 +2381,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -2913,12 +2517,6 @@
                     "value": {
                       "detail": "Could not validate credentials"
                     }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
-                    }
                   }
                 }
               }
@@ -2980,10 +2578,10 @@
             "content": {
               "application/json": {
                 "examples": {
-                  "mazmo_error": {
-                    "summary": "Mazmo returned an error",
+                  "mazmo_api_error": {
+                    "summary": "Mazmo returned an HTTP error",
                     "value": {
-                      "detail": "Cannot create meetup: Mazmo API returned an error. Error: HTTP 404 - Event not found. This could mean the Mazmo URL is invalid or the event doesn't exist. Verify the URL is correct and points to a valid Mazmo event page."
+                      "detail": "Sync failed: Mazmo API returned HTTP error 404. The event may have been deleted on Mazmo, or their API is having issues. Check if the meetup URL is still valid on Mazmo's website."
                     }
                   },
                   "mazmo_parse_error": {
@@ -3004,7 +2602,7 @@
                   "mazmo_timeout": {
                     "summary": "Could not connect to Mazmo",
                     "value": {
-                      "detail": "Cannot create meetup: failed to connect to Mazmo API. This is likely a temporary network issue. Error: Connection timed out. Try again in a few moments, or check if Mazmo is experiencing an outage."
+                      "detail": "Sync failed: could not connect to Mazmo API. This is likely a temporary network issue. Error: Connection timed out. Try again in a few moments."
                     }
                   }
                 }
@@ -3121,12 +2719,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -3262,12 +2854,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -3418,12 +3004,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -3586,12 +3166,6 @@
                     "value": {
                       "detail": "Could not validate credentials"
                     }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
-                    }
                   }
                 }
               }
@@ -3653,41 +3227,6 @@
             "content": {
               "application/json": {
                 "examples": {
-                  "password_too_short": {
-                    "summary": "Password validation failed",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "string_too_short",
-                          "loc": [
-                            "body",
-                            "password"
-                          ],
-                          "msg": "String should have at least 15 characters",
-                          "input": "short",
-                          "ctx": {
-                            "min_length": 15
-                          }
-                        }
-                      ]
-                    }
-                  },
-                  "invalid_url": {
-                    "summary": "Invalid Mazmo URL format",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "value_error",
-                          "loc": [
-                            "body",
-                            "mazmo_meetup_url"
-                          ],
-                          "msg": "Value error, URL must match pattern: https://mazmo.net/{community}/{thread-slug}-{id}",
-                          "input": "https://invalid-url.com/meetup"
-                        }
-                      ]
-                    }
-                  },
                   "reason_too_short": {
                     "summary": "Reason too short",
                     "value": {
@@ -3779,12 +3318,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -3919,12 +3452,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -4292,12 +3819,6 @@
                     "value": {
                       "detail": "Could not validate credentials"
                     }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
-                    }
                   }
                 }
               }
@@ -4516,12 +4037,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -4822,12 +4337,6 @@
                     "value": {
                       "detail": "Could not validate credentials"
                     }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
-                    }
                   }
                 }
               }
@@ -4860,9 +4369,9 @@
               "application/json": {
                 "examples": {
                   "guest_not_found": {
-                    "summary": "Guest has never RSVPed",
+                    "summary": "Guest not in system",
                     "value": {
-                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. This guest may not have RSVPed to any meetup yet, or the ID might be incorrect. Guests are only added when they RSVP to a meetup and we sync from Mazmo. Try POST /meetups/{meetup_id}/sync first, or verify the mazmo_user_id."
+                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/. Try POST /meetups/{meetup_id}/sync, POST /guests/, or verify the mazmo_user_id."
                     }
                   }
                 }
@@ -5143,12 +4652,6 @@
                     "summary": "Invalid or expired JWT",
                     "value": {
                       "detail": "Could not validate credentials"
-                    }
-                  },
-                  "wrong_password": {
-                    "summary": "Wrong username or password",
-                    "value": {
-                      "detail": "Incorrect username or password."
                     }
                   }
                 }
@@ -5494,7 +4997,7 @@
         "title": "CheckedInByPublic",
         "description": "Minimal staff representation for check-in attribution.\n\nOnly includes the essential fields needed to identify who performed\na check-in, without exposing sensitive fields like approval status."
       },
-      "CreateGuestByUsernameRequest": {
+      "CreateGuestRequest": {
         "properties": {
           "username": {
             "type": "string",
@@ -5508,39 +5011,8 @@
         "required": [
           "username"
         ],
-        "title": "CreateGuestByUsernameRequest",
-        "description": "Request body for creating a guest by Mazmo username.\n\nStaff only need to know the handle (e.g. \"cindydark\"). The endpoint looks\nup the canonical ID and profile data from Mazmo automatically."
-      },
-      "CreateGuestRequest": {
-        "properties": {
-          "mazmo_user_id": {
-            "type": "integer",
-            "title": "Mazmo User Id",
-            "description": "The guest's Mazmo user ID"
-          },
-          "username": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Username",
-            "description": "Mazmo username (e.g. @handle)"
-          },
-          "displayname": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Displayname",
-            "description": "Display name shown on Mazmo"
-          }
-        },
-        "type": "object",
-        "required": [
-          "mazmo_user_id",
-          "username",
-          "displayname"
-        ],
         "title": "CreateGuestRequest",
-        "description": "Request body for manually creating a guest without a Mazmo sync.\n\nUse this when someone shows up at the door without prior Mazmo history.\nAll three fields mirror what the sync service populates from Mazmo,\nso a manually created guest is indistinguishable from a synced one.\n\nAlso useful for guests who prefer not to have their attendance visible on\nMazmo \u2014 they can attend the event without RSVPing publicly, and staff can\nregister them here so their presence is recorded internally without being\nexposed to other Mazmo users outside the organization."
+        "description": "Request body for creating a guest by Mazmo username.\n\nStaff only need to know the handle (e.g. \"cindydark\"). The endpoint looks\nup the canonical ID and profile data from Mazmo automatically."
       },
       "DisableUserRequest": {
         "properties": {

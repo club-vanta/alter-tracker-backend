@@ -148,7 +148,8 @@ async def create_meetup(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=(
-                f"Cannot create meetup: Mazmo API returned an error. Error: {exc}. "
+                f"Cannot create meetup: Mazmo API returned an error. "
+                f"Frontend URL: {mazmo_url}. {exc}. "
                 f"This could mean the Mazmo URL is invalid or the event doesn't exist. "
                 f"Verify the URL is correct and points to a valid Mazmo event page."
             ),

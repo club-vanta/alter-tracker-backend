@@ -165,10 +165,15 @@ class MazmoClient:
 
         https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217
         → https://prod.mazmoapi.net/communities/eventos-reuniones-argentina/threads/alter-cordoba-4217
+
+        https://mazmo.net/+eventos-reuniones-argentina/alter-tal-selmo-opgnjcy4d0u
+        → https://prod.mazmoapi.net/communities/eventos-reuniones-argentina/threads/alter-tal-selmo-opgnjcy4d0u
         """
         parsed = urlparse(frontend_url)
         path_parts = parsed.path.strip("/").split("/")
-        community = path_parts[0]
+        # Some communities use '+' as a frontend prefix (e.g. +eventos-reuniones-argentina);
+        # the API doesn't accept it.
+        community = path_parts[0].lstrip("+")
         thread = path_parts[1]
         return f"{self._settings.mazmo_base_url}/communities/{community}/threads/{thread}"
 
@@ -221,8 +226,8 @@ class MazmoClient:
             MazmoNetworkError: If Mazmo API is unreachable.
             MazmoAPIError: If Mazmo API returns an error status.
         """
+        api_url = self._to_api_url(mazmo_url)
         try:
-            api_url = self._to_api_url(mazmo_url)
             log.info("Fetching meetup date from %s", api_url)
             response = await self._client.get(api_url)
             response.raise_for_status()
@@ -232,7 +237,7 @@ class MazmoClient:
         except httpx.RequestError as exc:
             raise MazmoNetworkError(f"Cannot reach Mazmo: {exc}") from exc
         except httpx.HTTPStatusError as exc:
-            raise MazmoAPIError(f"Mazmo returned {exc.response.status_code}") from exc
+            raise MazmoAPIError(f"Mazmo returned {exc.response.status_code} for API URL {api_url}") from exc
 
     # ── Single user by username ───────────────────────────────────────────────
 

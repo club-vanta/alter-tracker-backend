@@ -39,9 +39,12 @@ from app.openapi_examples._error_responses import (
     error_409_meetup_not_finalized,
     error_409_not_checked_in,
     error_409_walkin_already_rsvped,
-    error_422_validation,
-    error_502_mazmo_api,
-    error_504_mazmo_timeout,
+    error_422_validation_reason,
+    error_422_validation_url,
+    error_502_mazmo_create_meetup,
+    error_502_mazmo_sync,
+    error_504_mazmo_create_meetup,
+    error_504_mazmo_sync,
 )
 
 # ── POST /meetups/ ────────────────────────────────────────────────────────────
@@ -75,9 +78,9 @@ CREATE_MEETUP_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_401_invalid_credentials(),
     **error_403_not_approved(),
     **error_409_duplicate_meetup(),
-    **error_422_validation(),
-    **error_502_mazmo_api(),
-    **error_504_mazmo_timeout(),
+    **error_422_validation_url(),
+    **error_502_mazmo_create_meetup(),
+    **error_504_mazmo_create_meetup(),
 }
 
 # ── GET /meetups/ ─────────────────────────────────────────────────────────────
@@ -160,8 +163,8 @@ SYNC_MEETUP_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_403_not_approved(),
     **error_404_meetup(),
     **error_409_meetup_finalized(),
-    **error_502_mazmo_api(),
-    **error_504_mazmo_timeout(),
+    **error_502_mazmo_sync(),
+    **error_504_mazmo_sync(),
 }
 
 # ── GET /meetups/{id}/guests ──────────────────────────────────────────────────
@@ -278,7 +281,7 @@ UNDO_CHECKIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_404_meetup(),
     **error_404_rsvp(),
     **error_409_not_checked_in(),
-    **error_422_validation(),
+    **error_422_validation_reason(),
 }
 
 # ── PATCH /meetups/{id}/finalize ──────────────────────────────────────────────

@@ -29,6 +29,8 @@ db-migrate
 
 # 4. Create initial admin user
 seed-admin
+#    - username: admin
+#    - password: insecure-changeme-123
 
 # 5. Start server with hot-reload
 dev-backend
@@ -52,7 +54,7 @@ Server runs at http://localhost:8000/docs
 ### Guests
 
 - A Guest is someone who has RSVPed to at least one meetup
-- Guests are not created manually - they appear when syncing from Mazmo
+- Guests are added when they RSVP to a meetup and staff syncs from Mazmo, or manually via `POST /guests/`
 - Each guest has:
   - `mazmo_user_id` - Their ID on Mazmo's platform (used as primary key)
   - `username` - Their @handle (rarely changes)
