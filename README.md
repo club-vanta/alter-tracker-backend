@@ -1,5 +1,7 @@
 # Alter Event Tracker Backend
 
+[![codecov](https://codecov.io/gh/club-vanta/alter-tracker-backend/graph/badge.svg?token=CODECOV_TOKEN)](https://codecov.io/gh/club-vanta/alter-tracker-backend)
+
 Door tracker API for Alter meetups. Integrates with Mazmo to sync guest lists and track check-ins at events.
 
 **Tech Stack:** FastAPI, PostgreSQL, SQLModel, JWT auth, structlog
