@@ -42,7 +42,7 @@ ADMIN_PASSWORD=$(extract admin_password)
 export ADMIN_PASSWORD
 
 echo "Pulling latest image..."
-docker compose -f "$COMPOSE_FILE" pull app
+docker compose -f "$COMPOSE_FILE" pull
 
 echo "Starting services..."
 docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
