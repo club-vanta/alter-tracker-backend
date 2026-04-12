@@ -1,0 +1,38 @@
+name: Start Instance
+
+on:
+  workflow_dispatch:
+
+jobs:
+  start:
+    name: Start EC2 instance and update DNS
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Start EC2 instance
+        run: |
+          aws ec2 start-instances --instance-ids i-064332b2f768cf778 --region us-east-1
+          echo "Waiting for instance to reach running state..."
+          aws ec2 wait instance-running --instance-ids i-064332b2f768cf778 --region us-east-1
+          echo "Instance is running"
+
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Update Cloudflare DNS with new public IP
+        working-directory: infra
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.TF_VAR_cloudflare_api_token }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.TF_VAR_cloudflare_account_id }}
+        run: |
+          tofu init
+          tofu apply -auto-approve

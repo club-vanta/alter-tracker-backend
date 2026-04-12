@@ -380,18 +380,22 @@ Two alerting mechanisms are in place:
 
 ### Credentials
 
-All credentials live in `infra/terraform.tfvars` (gitignored — never commit it):
+**AWS** — credentials live in `~/.aws/credentials` (standard credential chain, picked up by both the S3 backend and provider):
+
+```ini
+[default]
+aws_access_key_id = AKIA...
+aws_secret_access_key = ...
+```
+
+Generate access keys at: IAM → Users → your user → Security credentials → Create access key.
+
+**Cloudflare** — credentials live in `infra/terraform.tfvars` (gitignored — never commit it):
 
 ```hcl
-# infra/terraform.tfvars
-aws_access_key_id     = "AKIA..."
-aws_secret_access_key = "..."
-
 cloudflare_api_token  = "cfut_..."
 cloudflare_account_id = "..."
 ```
-
-Generate AWS access keys at: IAM → Users → your user → Security credentials → Create access key.
 
 The Cloudflare API token must have:
 
@@ -455,14 +459,36 @@ deploy.sh
 The instance only needs to be running during meetups — stopping it saves
 ~$7.50/month in compute costs.
 
-```bash
-# Before a meetup — start instance and update DNS
-aws ec2 start-instances --instance-ids i-xxxx
-cd infra && tofu apply   # updates the A record with the new public IPv4
+Use the GitHub Actions manual workflows — triggerable from the GitHub UI or the GitHub mobile app:
 
-# After a meetup — stop to save costs
-aws ec2 stop-instances --instance-ids i-xxxx
+| Workflow | What it does |
+| -------- | ------------ |
+| **Start Instance** | Starts the EC2 instance, waits until running, then runs `tofu apply` to update Cloudflare DNS with the new public IP |
+| **Stop Instance** | Stops the EC2 instance |
+
+Go to **Actions → Start Instance (or Stop Instance) → Run workflow**.
+
+### GitHub Secrets
+
+The workflows require these repository secrets (already configured):
+
+| Secret | Description |
+| ------ | ----------- |
+| `AWS_ACCESS_KEY_ID` | IAM user access key |
+| `AWS_SECRET_ACCESS_KEY` | IAM user secret key |
+| `TF_VAR_cloudflare_api_token` | Cloudflare API token |
+| `TF_VAR_cloudflare_account_id` | Cloudflare account ID |
+
+To recreate them:
+
+```bash
+gh secret set AWS_ACCESS_KEY_ID --repo club-vanta/alter-tracker-backend --body "AKIA..."
+gh secret set AWS_SECRET_ACCESS_KEY --repo club-vanta/alter-tracker-backend --body "..."
+gh secret set TF_VAR_cloudflare_api_token --repo club-vanta/alter-tracker-backend --body "cfut_..."
+gh secret set TF_VAR_cloudflare_account_id --repo club-vanta/alter-tracker-backend --body "..."
 ```
+
+> The values are in `~/.aws/credentials` (AWS keys) and `infra/terraform.tfvars` (Cloudflare). Neither file is committed — `*.tfvars` and `~/.aws/credentials` are gitignored.
 
 ---
 
