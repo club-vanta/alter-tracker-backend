@@ -488,7 +488,7 @@ gh secret set TF_VAR_cloudflare_api_token --repo club-vanta/alter-tracker-backen
 gh secret set TF_VAR_cloudflare_account_id --repo club-vanta/alter-tracker-backend --body "..."
 ```
 
-> The values are in `~/.aws/credentials` (AWS keys) and `infra/terraform.tfvars` (Cloudflare). Neither file is committed — `*.tfvars` and `~/.aws/credentials` are gitignored.
+> The values are in `~/.aws/credentials` (AWS keys) and `infra/terraform.tfvars` (Cloudflare). `terraform.tfvars` is gitignored and never committed.
 
 ---
 
