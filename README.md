@@ -216,7 +216,6 @@ All commands are defined in `devenv.nix` and available in the dev shell:
 | `coverage`               | Run tests with coverage, generate HTML report in `htmlcov/` |
 | `lint`                   | Run ruff linter                                             |
 | `format`                 | Run ruff formatter                                          |
-| `export-aws-credentials` | Export AWS credentials as env vars (for OpenTofu)           |
 
 ---
 
@@ -379,9 +378,22 @@ Two alerting mechanisms are in place:
 > forwarding to a real address. If the forwarding destination ever changes,
 > update it there, not in Terraform.
 
-### Cloudflare credentials
+### Credentials
 
-The API token must have the following permissions:
+All credentials live in `infra/terraform.tfvars` (gitignored — never commit it):
+
+```hcl
+# infra/terraform.tfvars
+aws_access_key_id     = "AKIA..."
+aws_secret_access_key = "..."
+
+cloudflare_api_token  = "cfut_..."
+cloudflare_account_id = "..."
+```
+
+Generate AWS access keys at: IAM → Users → your user → Security credentials → Create access key.
+
+The Cloudflare API token must have:
 
 | Resource                   | Permission |
 | -------------------------- | ---------- |
@@ -390,49 +402,14 @@ The API token must have the following permissions:
 | Zone / Zone Settings       | Edit       |
 | Zone / DNS                 | Edit       |
 
-The Cloudflare API token can be provided in two ways — use whichever is more
-convenient:
-
-**Option A — environment variable (per terminal session):**
-
-```bash
-export TF_VAR_cloudflare_api_token="your-api-token-here"
-```
-
-**Option B — tfvars file (set once, persists):**
-
-```hcl
-# infra/terraform.tfvars
-cloudflare_api_token  = "your-api-token-here"
-cloudflare_account_id = "your-account-id-here"
-```
-
-> `terraform.tfvars` is gitignored. Never commit it — it contains secrets.
-
 ### Deploying
 
 ```bash
-# 1. Log in to AWS
-aws login
-
-# 2. Export AWS credentials into your current shell
-#    (this MUST be run with eval — a script cannot do it for you)
-eval $(aws configure export-credentials --format env)
-
-# 3. Set Cloudflare token (env var or tfvars — see above)
-export TF_VAR_cloudflare_api_token="your-api-token-here"
-
-# 4. Run tofu
 cd infra
 tofu init
 tofu plan
 tofu apply
 ```
-
-> **Why `eval`?** `aws configure export-credentials` prints `export VAR=value`
-> lines to stdout. Wrapping it in `eval $(...)` makes your shell execute those
-> lines, setting the variables in your current session. Without `eval`, the
-> credentials are printed but never applied — tofu won't see them.
 
 ### Deploying the application
 
@@ -481,8 +458,7 @@ The instance only needs to be running during meetups — stopping it saves
 ```bash
 # Before a meetup — start instance and update DNS
 aws ec2 start-instances --instance-ids i-xxxx
-eval $(aws configure export-credentials --format env)
-tofu apply   # updates the A record with the new public IPv4
+cd infra && tofu apply   # updates the A record with the new public IPv4
 
 # After a meetup — stop to save costs
 aws ec2 stop-instances --instance-ids i-xxxx
@@ -546,16 +522,7 @@ LOG_LEVEL=DEBUG dev-backend
 
 ### AWS credentials expired / "Unable to locate credentials"
 
-Export both sets of credentials into the current shell:
-
-```bash
-aws login
-eval $(aws configure export-credentials --format env)
-export TF_VAR_cloudflare_api_token="your-api-token-here"
-```
-
-Note: `eval` is required. Running a script that calls this internally won't work
-— the exports only take effect in the shell that runs the `eval`.
+Check that `aws_access_key_id` and `aws_secret_access_key` are set in `infra/terraform.tfvars`.
 
 ### "Cannot connect to database"
 

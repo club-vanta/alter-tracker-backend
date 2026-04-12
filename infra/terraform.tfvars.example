@@ -1,2 +1,5 @@
+aws_access_key_id     = "AKIA..."
+aws_secret_access_key = "..."
+
 cloudflare_account_id = "your_cloudflare_account_id_here"
 cloudflare_api_token  = "your_api_token_here"
