@@ -13,6 +13,12 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d alter_event_tracker"]
       interval: 5s
       retries: 5
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-east-1
+        awslogs-group: /alter-tracker-backend
+        awslogs-stream: db
 
   migrate:
     image: ghcr.io/club-vanta/alter-tracker-backend:latest
@@ -25,6 +31,12 @@ services:
       db:
         condition: service_healthy
     restart: on-failure
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-east-1
+        awslogs-group: /alter-tracker-backend
+        awslogs-stream: migrate
 
   seed:
     image: ghcr.io/club-vanta/alter-tracker-backend:latest
@@ -40,6 +52,12 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: on-failure
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-east-1
+        awslogs-group: /alter-tracker-backend
+        awslogs-stream: seed
 
   app:
     image: ghcr.io/club-vanta/alter-tracker-backend:latest
@@ -54,6 +72,30 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-east-1
+        awslogs-group: /alter-tracker-backend
+        awslogs-stream: app
+
+  backup:
+    image: ghcr.io/club-vanta/alter-tracker-backend-backup:latest
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/alter_event_tracker
+      BACKUP_BUCKET: alter-tracker-backend-db-backups-784421200272
+      AWS_DEFAULT_REGION: us-east-1
+    depends_on:
+      db:
+        condition: service_healthy
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-east-1
+        awslogs-group: /alter-tracker-backend
+        awslogs-stream: backup
 
 volumes:
   postgres_data:
