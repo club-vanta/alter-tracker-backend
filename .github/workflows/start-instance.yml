@@ -20,9 +20,9 @@ jobs:
 
       - name: Start EC2 instance
         run: |
-          aws ec2 start-instances --instance-ids i-064332b2f768cf778 --region us-east-1
+          aws ec2 start-instances --instance-ids i-054c0dd0cd6c37dc5 --region us-east-1
           echo "Waiting for instance to reach running state..."
-          aws ec2 wait instance-running --instance-ids i-064332b2f768cf778 --region us-east-1
+          aws ec2 wait instance-running --instance-ids i-054c0dd0cd6c37dc5 --region us-east-1
           echo "Instance is running"
 
       - name: Install OpenTofu

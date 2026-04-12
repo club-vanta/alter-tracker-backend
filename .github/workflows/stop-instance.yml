@@ -18,5 +18,5 @@ jobs:
 
       - name: Stop EC2 instance
         run: |
-          aws ec2 stop-instances --instance-ids i-064332b2f768cf778 --region us-east-1
+          aws ec2 stop-instances --instance-ids i-054c0dd0cd6c37dc5 --region us-east-1
           echo "Instance stop initiated"
