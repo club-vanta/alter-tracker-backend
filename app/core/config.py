@@ -2,6 +2,17 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Define the patterns as a list of strings
+CORS_PATTERNS = [
+    r"https://(.*\.)?club-vanta\.com",  # Subdomains and main domain
+    r"http://192\.168\.\d+\.\d+(:\d+)?",  # Local LAN IP addresses with optional ports
+    # Cloudflare Pages (any subdomain like 'fix-branch.velvet-f1x.pages.dev')
+    r"https://([^/]+\.)?velvet-f1x\.pages\.dev",
+]
+
+# Join them into one string: "pattern1|pattern2"
+ALLOWED_DOMAINS_REGEX = "|".join(CORS_PATTERNS)
+
 
 class Settings(BaseSettings):
     """
@@ -65,6 +76,9 @@ class Settings(BaseSettings):
     # Timeout in seconds for outbound HTTP calls to Mazmo.
     # If Mazmo doesn't respond within this window the request is aborted.
     mazmo_request_timeout: float = 15.0
+
+    # A regex of the allowed domains
+    allowed_domains_regex: str = ALLOWED_DOMAINS_REGEX
 
 
 @lru_cache

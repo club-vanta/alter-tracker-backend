@@ -114,7 +114,7 @@ app.add_middleware(
     ],
     # Covers club-vanta.com and any subdomain (e.g. app.club-vanta.com)
     # Also covers LAN origins for local dev (phone testing, etc.)
-    allow_origin_regex=r"https://(.*\.)?club-vanta\.com|http://192\.168\.\d+\.\d+(:\d+)?",
+    allow_origin_regex=settings.allowed_domains_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
