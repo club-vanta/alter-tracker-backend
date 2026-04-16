@@ -88,6 +88,33 @@ Server runs at http://localhost:8000/docs
 - New registrations start as "unapproved" - admin approval required before login
 - Accounts are disabled (not deleted) to preserve audit trails
 
+### Password Recovery
+
+The app has no email-based password reset. Recovery is handled manually by an admin who generates a one-time code and communicates it out-of-band (WhatsApp, Slack, etc.).
+
+**Admin side:**
+
+An admin generates a 6-digit numeric recovery code for any staff user via `POST /staff/{user_id}/recovery-code`. The code is returned once and never shown again. If the user already had a pending code, it is immediately invalidated and replaced by the new one — a user can only have one active code at a time.
+
+**User side:**
+
+The user submits their username and the code to `POST /auth/verify-recovery-code`. If valid, they proceed to `POST /auth/reset-password` with the same username, code, and their new password.
+
+**Rules:**
+
+- The code does **not** grant login access — it only unlocks the password change form.
+- The code expires 72 hours after generation.
+- The code is invalidated **only when the password change completes successfully**, not when the user first submits it. This means a user can enter the code, navigate away accidentally, and re-enter it later to continue.
+- Validation fails if the code is missing, expired, or already used.
+
+**Endpoints:**
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/staff/{user_id}/recovery-code` | Admin | Generate code, returns `{ username, code }` |
+| `POST` | `/auth/verify-recovery-code` | None | Check `{ username, code }` → 200 or 400 |
+| `POST` | `/auth/reset-password` | None | Submit `{ username, code, new_password }` → changes password, invalidates code |
+
 ### Check-in Flow
 
 1. Create meetup using Mazmo URL
