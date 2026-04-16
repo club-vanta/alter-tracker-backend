@@ -158,7 +158,12 @@ def _validate_code(user: User, code: str) -> bool:
         return False
     if user.recovery_code_created_at is None:
         return False
-    if datetime.now(UTC) - user.recovery_code_created_at > _RECOVERY_CODE_TTL:
+    created_at = user.recovery_code_created_at
+    # SQLAlchemy may return timezone-naive datetimes for TIMESTAMPTZ columns;
+    # treat them as UTC when timezone info is missing.
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    if datetime.now(UTC) - created_at > _RECOVERY_CODE_TTL:
         return False
     return user.recovery_code == code
 
