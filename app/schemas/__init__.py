@@ -54,10 +54,6 @@ from app.schemas.meetups import (
 __all__ = [
     "MAZMO_URL_PATTERN",
     "ApproveUserRequest",
-    "RecoveryCodeResponse",
-    "ResetPasswordRequest",
-    "ResetPasswordResponse",
-    "VerifyRecoveryCodeRequest",
     "BanGuestRequest",
     "BannedGuestListResponse",
     "BannedGuestPublic",
@@ -80,6 +76,9 @@ __all__ = [
     "MeetupGuestPublic",
     "MeetupListResponse",
     "MeetupPublic",
+    "RecoveryCodeResponse",
+    "ResetPasswordRequest",
+    "ResetPasswordResponse",
     "RolePublic",
     "RoleRequest",
     "RsvpPublic",
@@ -87,4 +86,5 @@ __all__ = [
     "SyncResponse",
     "TokenResponse",
     "UserPublic",
+    "VerifyRecoveryCodeRequest",
 ]

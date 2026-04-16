@@ -15,7 +15,6 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from app.models.models import PossibleRoles
 from tests.conftest import make_user
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
