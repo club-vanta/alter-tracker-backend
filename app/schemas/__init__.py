@@ -11,7 +11,16 @@ the submodules directly or from this package:
 """
 
 from app.schemas.admin import ApproveUserRequest, DisableUserRequest, RoleRequest
-from app.schemas.auth import RolePublic, StaffRegisterRequest, TokenResponse, UserPublic
+from app.schemas.auth import (
+    RecoveryCodeResponse,
+    ResetPasswordRequest,
+    ResetPasswordResponse,
+    RolePublic,
+    StaffRegisterRequest,
+    TokenResponse,
+    UserPublic,
+    VerifyRecoveryCodeRequest,
+)
 from app.schemas.events import (
     EventActorPublic,
     EventGuestPublic,
@@ -45,6 +54,10 @@ from app.schemas.meetups import (
 __all__ = [
     "MAZMO_URL_PATTERN",
     "ApproveUserRequest",
+    "RecoveryCodeResponse",
+    "ResetPasswordRequest",
+    "ResetPasswordResponse",
+    "VerifyRecoveryCodeRequest",
     "BanGuestRequest",
     "BannedGuestListResponse",
     "BannedGuestPublic",

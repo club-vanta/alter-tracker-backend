@@ -1,11 +1,14 @@
 """
 Auth router
 
-POST /auth/register  → create a new staff account (unapproved by default)
-POST /auth/token     → OAuth2 password flow - returns a JWT
-GET  /auth/userinfo        → returns the currently logged-in user's profile
+POST /auth/register              → create a new staff account (unapproved by default)
+POST /auth/token                 → OAuth2 password flow - returns a JWT
+GET  /auth/userinfo              → returns the currently logged-in user's profile
+POST /auth/verify-recovery-code  → check a 6-digit recovery code (no auth required)
+POST /auth/reset-password        → reset password using a valid recovery code (no auth required)
 """
 
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
@@ -27,7 +30,14 @@ from app.openapi_examples.auth_examples import (
     TOKEN_RESPONSES,
     USERINFO_RESPONSES,
 )
-from app.schemas import StaffRegisterRequest, TokenResponse, UserPublic
+from app.schemas import (
+    ResetPasswordRequest,
+    ResetPasswordResponse,
+    StaffRegisterRequest,
+    TokenResponse,
+    UserPublic,
+    VerifyRecoveryCodeRequest,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -135,3 +145,91 @@ async def get_me(
     current_user: User = Depends(get_approved_user),
 ) -> User:
     return current_user
+
+
+# ── Recovery code helpers ─────────────────────────────────────────────────────
+
+_RECOVERY_CODE_TTL = timedelta(hours=72)
+_INVALID_CODE_DETAIL = "Código inválido o expirado."
+
+
+def _validate_code(user: User, code: str) -> bool:
+    if not user.recovery_code or user.recovery_code_used:
+        return False
+    if user.recovery_code_created_at is None:
+        return False
+    if datetime.now(UTC) - user.recovery_code_created_at > _RECOVERY_CODE_TTL:
+        return False
+    return user.recovery_code == code
+
+
+def _get_user_for_recovery(username: str, session: Session) -> User:
+    """Return user by username, raising a generic 400 on miss (no user enumeration)."""
+    user = session.exec(select(User).where(User.username == username)).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=_INVALID_CODE_DETAIL,
+        )
+    return user
+
+
+# ── Verify recovery code ──────────────────────────────────────────────────────
+
+
+@router.post(
+    "/verify-recovery-code",
+    summary="Verify a 6-digit recovery code without consuming it",
+    status_code=status.HTTP_200_OK,
+)
+async def verify_recovery_code(
+    body: VerifyRecoveryCodeRequest,
+    session: Session = Depends(get_session),
+) -> dict:
+    """
+    Check that a recovery code is valid and not yet expired or used.
+
+    Does NOT mark the code as used, so closing the tab and retrying still works.
+    Returns a generic error on invalid username to avoid user enumeration.
+    """
+    user = _get_user_for_recovery(body.username, session)
+    if not _validate_code(user, body.code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=_INVALID_CODE_DETAIL,
+        )
+    return {"ok": True}
+
+
+# ── Reset password ────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/reset-password",
+    response_model=ResetPasswordResponse,
+    summary="Reset a user's password using a valid recovery code",
+    status_code=status.HTTP_200_OK,
+)
+async def reset_password(
+    body: ResetPasswordRequest,
+    session: Session = Depends(get_session),
+) -> ResetPasswordResponse:
+    """
+    Reset the user's password if the provided recovery code is valid.
+
+    Marks the code as used after a successful reset so it cannot be reused.
+    Returns a generic error on invalid username to avoid user enumeration.
+    """
+    user = _get_user_for_recovery(body.username, session)
+    if not _validate_code(user, body.code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=_INVALID_CODE_DETAIL,
+        )
+
+    user.hashed_password = get_password_hash(body.new_password)
+    user.recovery_code_used = True
+    session.add(user)
+    session.commit()
+
+    return ResetPasswordResponse(username=user.username)

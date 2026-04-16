@@ -93,6 +93,11 @@ class User(SQLModel, table=True):
     disabled_by_id: int | None = Field(default=None, foreign_key="users.id")
     disabled_reason: str | None = Field(default=None, max_length=500)
 
+    # ── Password recovery ──
+    recovery_code: str | None = Field(default=None, max_length=6)
+    recovery_code_created_at: datetime | None = Field(default=None)
+    recovery_code_used: bool = Field(default=False)
+
     # Relationship - loads the full Role object
     role: Role | None = Relationship(back_populates="users")
 

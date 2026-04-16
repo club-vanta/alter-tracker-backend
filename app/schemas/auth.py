@@ -71,3 +71,27 @@ class UserPublic(BaseModel):
     is_disabled: bool = False
     disabled_at: datetime | None = None
     disabled_reason: str | None = None
+
+
+class VerifyRecoveryCodeRequest(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    username: str
+    code: str
+
+
+class ResetPasswordRequest(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    username: str
+    code: str
+    new_password: str = Field(min_length=15, max_length=128)
+
+
+class ResetPasswordResponse(BaseModel):
+    username: str
+
+
+class RecoveryCodeResponse(BaseModel):
+    username: str
+    code: str
