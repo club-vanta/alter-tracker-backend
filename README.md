@@ -115,6 +115,31 @@ The user submits their username and the code to `POST /auth/verify-recovery-code
 | `POST` | `/auth/verify-recovery-code` | None | Check `{ username, code }` → 200 or 400 |
 | `POST` | `/auth/reset-password` | None | Submit `{ username, code, new_password }` → changes password, invalidates code |
 
+**Debugging an invalid code:**
+
+Connect to the production DB (see Troubleshooting) and run:
+
+```sql
+SELECT
+    username,
+    recovery_code,
+    recovery_code_used,
+    recovery_code_created_at,
+    recovery_code_created_at + INTERVAL '72 hours' AS expires_at,
+    now() AS now_utc,
+    now() > recovery_code_created_at + INTERVAL '72 hours' AS is_expired
+FROM users;
+```
+
+| Column | What it means |
+|--------|---------------|
+| `recovery_code IS NULL` | No code has been generated for this user |
+| `recovery_code_used = true` | Code was already consumed by a completed reset |
+| `is_expired = true` | 72-hour TTL has passed |
+| Code looks valid but still fails | The username lookup is a case-sensitive exact match — verify the frontend is submitting it exactly as stored (e.g. `Vananita Dolca` with correct casing and spaces) |
+
+If the code is expired or used, an admin regenerates it via `POST /staff/{user_id}/recovery-code`.
+
 ### Check-in Flow
 
 1. Create meetup using Mazmo URL
@@ -589,6 +614,25 @@ docker ps  # Should show alter-tracker-postgres
 ### Check-in not working / "Guest not RSVPed"
 
 Sync the guest list from Mazmo first via `POST /meetups/{meetup_id}/sync`.
+
+### Access the production database
+
+The DB is a PostgreSQL container with no public port. Access it via SSM:
+
+```bash
+# 1. Open SSM session on the EC2 instance
+aws ssm start-session --target i-054c0dd0cd6c37dc5 --document-name alter-tracker-backend-session-preferences
+
+# 2. Fetch credentials and connect
+SECRET=$(aws secretsmanager get-secret-value \
+  --secret-id alter-tracker-backend/secrets \
+  --query SecretString --output text)
+
+DB_USER=$(echo $SECRET | python3 -c "import sys,json; print(json.load(sys.stdin)['db_user'])")
+DB_PASS=$(echo $SECRET | python3 -c "import sys,json; print(json.load(sys.stdin)['db_password'])")
+
+docker exec -it $(docker ps -qf name=db) psql -U $DB_USER -d alter_event_tracker
+```
 
 ### Port 8000 already in use
 

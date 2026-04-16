@@ -41,6 +41,27 @@ dnf install -y cronie
 systemctl enable --now crond
 echo "*/10 * * * * root /usr/local/bin/disk-check.sh" > /etc/cron.d/disk-check
 
+# ── Memory usage alert cron job ───────────────────────────────────────────────
+# Runs every 10 minutes. If memory usage exceeds 85%, publishes an SNS alert.
+
+cat <<'EOF' > /usr/local/bin/memory-check.sh
+#!/bin/bash
+USAGE=$(free | awk '/^Mem:/ {printf "%.0f", $3/$2 * 100}')
+THRESHOLD=85
+SNS_TOPIC_ARN="${sns_topic_arn}"
+
+if [ "$USAGE" -gt "$THRESHOLD" ]; then
+  aws sns publish \
+    --region us-east-1 \
+    --topic-arn "$SNS_TOPIC_ARN" \
+    --subject "Memory alert: alter-tracker server" \
+    --message "Memory usage is at $${USAGE}% on the alter-tracker server."
+fi
+EOF
+
+chmod +x /usr/local/bin/memory-check.sh
+echo "*/10 * * * * root /usr/local/bin/memory-check.sh" > /etc/cron.d/memory-check
+
 # ── Application files ─────────────────────────────────────────────────────────
 # Terraform injects the repo's deploy.sh and docker-compose.yml as base64 so
 # they are copied verbatim without any shell or templatefile escaping issues.
