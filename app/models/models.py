@@ -43,6 +43,28 @@ class EventType(StrEnum):
     GUEST_CREATED = "GUEST_CREATED"
 
 
+# ── Organization table ────────────────────────────────────────────────────────
+
+
+class Organization(SQLModel, table=True):
+    """
+    Represents a tenant organization using the app.
+
+    Each organization has its own staff, meetups, and bans.
+    Mazmo guests are global (shared across orgs) but bans are per-org.
+
+    `slug` is used as the subdomain identifier (e.g. "club-vanta" →
+    velvet.club-vanta.com). Seeded with Club Vanta (id=1) in migration 0008.
+    """
+
+    __tablename__ = "organizations"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(max_length=128)
+    slug: str = Field(unique=True, max_length=64)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 # ── Role table ────────────────────────────────────────────────────────────────
 
 
@@ -72,6 +94,7 @@ class User(SQLModel, table=True):
     New registrations start with `is_approved = False`.
     An admin must flip this flag before the user can log in.
     `role_id` is a FK to `user_roles`, defaulting to the STAFF row.
+    `org_id` scopes this user to a specific organization.
 
     Soft-delete: Instead of deleting users, we disable them to preserve
     audit trails. A disabled user cannot log in but their data remains
@@ -85,6 +108,7 @@ class User(SQLModel, table=True):
     hashed_password: str
     is_approved: bool = Field(default=False)
     role_id: int = Field(foreign_key="user_roles.id")
+    org_id: int = Field(foreign_key="organizations.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # ── Disable fields (soft-delete) ──
@@ -150,9 +174,6 @@ class MeetupRsvp(SQLModel, table=True):
     checked_in_by_id: int | None = Field(default=None, foreign_key="users.id")
 
     # ── Relationships ──
-    # "Guest" and "Meetup" are in quotes because the classes are defined BELOW
-    # this one. Python hasn't seen them yet, so we use a forward reference string.
-    # SQLModel/SQLAlchemy resolves these strings to actual classes later.
     guest: "Guest" = Relationship(back_populates="rsvps")
     meetup: "Meetup" = Relationship(back_populates="rsvps")
 
@@ -170,6 +191,9 @@ class Guest(SQLModel, table=True):
     This table only holds static user data. Event-specific data (like RSVPs
     and check-in times) is handled by the MeetupRsvp link table.
 
+    Bans are NOT stored here — they live in GuestBan (per-org). A guest
+    banned in one organization is not automatically banned in another.
+
     DOMAIN KNOWLEDGE: A guest's `displayname` is highly mutable and changes
     frequently based on how they want to present themselves. However, their
     `username` is effectively constant and serves as their unique social handle
@@ -184,34 +208,12 @@ class Guest(SQLModel, table=True):
     username: str = Field(index=True)
     displayname: str
 
-    # ── Ban fields ──
-    # Index on is_banned speeds up the banned guests list query
-    is_banned: bool = Field(default=False, index=True)
-    banned_at: datetime | None = Field(default=None)
-    banned_by_id: int | None = Field(default=None, foreign_key="users.id")
-    banned_reason: str | None = Field(default=None, max_length=500)
-
-    # Relationship to the staff member who banned this guest
-    banned_by: Optional["User"] = Relationship()
-
     # ── Why two relationships? ──
     #
     # We define BOTH `rsvps` and `meetups` because they serve different purposes:
     #
     # 1. `rsvps` - Direct access to MeetupRsvp records
-    #    Use when you need RSVP data: guest.rsvps[0].has_arrived
-    #    Good for: eager loading with selectinload(Guest.rsvps)
-    #
     # 2. `meetups` - Convenience many-to-many, skips the association table
-    #    Use when you just want the meetups: guest.meetups
-    #    SQLAlchemy handles the JOIN internally via link_model=MeetupRsvp
-    #
-    # ── What's sa_relationship_kwargs={"overlaps": ...}? ──
-    #
-    # SQLAlchemy warns when multiple relationships write to the same FK columns.
-    # Both `rsvps` and `meetups` involve meetup_rsvps.guest_id, so SQLAlchemy
-    # says "hey, these overlap!" The overlaps parameter tells it:
-    # "Yes, I know they overlap. That's intentional. Stop warning me."
 
     rsvps: list["MeetupRsvp"] = Relationship(
         back_populates="guest",
@@ -220,11 +222,37 @@ class Guest(SQLModel, table=True):
 
     meetups: list["Meetup"] = Relationship(
         back_populates="guests",
-        # link_model tells SQLAlchemy this is a many-to-many relationship
-        # and MeetupRsvp is the association table in the middle.
         link_model=MeetupRsvp,
         sa_relationship_kwargs={"overlaps": "guest,rsvps,meetup"},
     )
+
+    bans: list["GuestBan"] = Relationship(back_populates="guest")
+
+
+class GuestBan(SQLModel, table=True):
+    """
+    Per-organization ban record for a Mazmo guest.
+
+    Composite PK (mazmo_user_id, org_id) ensures one ban record per guest
+    per organization. A guest banned in Club Vanta is not banned in other orgs.
+
+    The absence of a row means the guest is not banned in that org.
+    """
+
+    __tablename__ = "guest_bans"  # type: ignore[assignment]
+
+    mazmo_user_id: MazmoUserId = Field(
+        foreign_key="guests.mazmo_user_id",
+        primary_key=True,
+        sa_type=Integer,
+    )
+    org_id: int = Field(foreign_key="organizations.id", primary_key=True)
+    banned_at: datetime
+    banned_by_id: int = Field(foreign_key="users.id")
+    banned_reason: str = Field(max_length=500)
+
+    guest: "Guest" = Relationship(back_populates="bans")
+    banned_by: Optional["User"] = Relationship()
 
 
 class Meetup(SQLModel, table=True):
@@ -233,6 +261,9 @@ class Meetup(SQLModel, table=True):
 
     Linked to a specific Mazmo URL, which the background sync service uses
     to scrape the current RSVP list.
+
+    `org_id` scopes the meetup to a specific organization — staff from other
+    orgs cannot see or interact with this meetup.
 
     Once finalized, no further check-ins or syncs are allowed.
     """
@@ -247,14 +278,13 @@ class Meetup(SQLModel, table=True):
 
     name: str = Field(index=True)
     date: datetime
+    org_id: int = Field(foreign_key="organizations.id")
 
     # Finalization — set once the event is over
     is_finalized: bool = Field(default=False)
     finalized_at: datetime | None = Field(default=None)
 
     # Same dual-relationship pattern as Guest - see comments there for details.
-    # rsvps: for eager loading RSVP data
-    # guests: convenience many-to-many when you don't need RSVP details
     rsvps: list["MeetupRsvp"] = Relationship(
         back_populates="meetup",
         sa_relationship_kwargs={"overlaps": "guests,meetups"},
@@ -282,17 +312,8 @@ class EventLog(SQLModel, table=True):
     Records who performed an action, on which guest, at which meetup (if
     applicable), and when. Used for accountability and investigation.
 
-    Event types:
-      - CHECK_IN: Staff checked in a guest at a meetup
-      - UNDO_CHECK_IN: Staff undid a check-in (mistake correction)
-      - BAN: Admin banned a guest
-      - UNBAN: Admin unbanned a guest
-
-    Query patterns:
-      - "What did staff X do?" → filter by actor_id
-      - "What happened to guest Y?" → filter by guest_id
-      - "Activity at meetup Z?" → filter by meetup_id
-      - "All bans?" → filter by event_type
+    `org_id` scopes audit events to an organization. Set from the acting
+    user's org at event creation time.
     """
 
     __tablename__ = "event_log"  # type: ignore[assignment]
@@ -300,6 +321,9 @@ class EventLog(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     event_type: str = Field(max_length=32, index=True)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC), index=True)
+
+    # Organization this event belongs to (derived from actor at creation time)
+    org_id: int | None = Field(default=None, foreign_key="organizations.id")
 
     # Who performed the action (staff/admin)
     actor_id: int | None = Field(default=None, foreign_key="users.id")

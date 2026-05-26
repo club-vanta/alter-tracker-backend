@@ -20,14 +20,14 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
-from app.models.models import PossibleRoles, Role, User
+from app.models.models import Organization, PossibleRoles, Role, User
 from app.openapi_examples.auth_examples import (
     REGISTER_REQUEST_EXAMPLES,
     REGISTER_RESPONSES,
     TOKEN_RESPONSES,
     USERINFO_RESPONSES,
 )
-from app.schemas import StaffRegisterRequest, TokenResponse, UserPublic
+from app.schemas import OrgRegisterRequest, TokenResponse, UserPublic
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -43,9 +43,17 @@ router = APIRouter(prefix="/auth", tags=["auth"])
     responses=REGISTER_RESPONSES,
 )
 async def register(
-    body: Annotated[StaffRegisterRequest, Body(openapi_examples=REGISTER_REQUEST_EXAMPLES)],
+    body: Annotated[OrgRegisterRequest, Body(openapi_examples=REGISTER_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
 ) -> User:
+    # Resolve organization by slug
+    org = session.exec(select(Organization).where(Organization.slug == body.org_slug)).first()
+    if not org:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Organization '{body.org_slug}' not found.",
+        )
+
     existing = session.exec(select(User).where(User.username == body.username)).first()
     if existing:
         raise HTTPException(
@@ -71,6 +79,7 @@ async def register(
         hashed_password=get_password_hash(body.password),
         is_approved=False,
         role_id=staff_role.id,
+        org_id=org.id,
     )
     session.add(user)
     session.commit()
@@ -116,6 +125,7 @@ async def login(
         JWTPayload(
             sub=user.username,
             role=user.role.name if user.role else PossibleRoles.STAFF,
+            org_id=user.org_id,
             exp=None,  # type: ignore[typeddict-item]  # set inside create_access_token
         )
     )

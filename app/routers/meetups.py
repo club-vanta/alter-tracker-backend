@@ -42,6 +42,7 @@ from app.openapi_examples.meetups_examples import (
     UNDO_CHECKIN_RESPONSES,
     UNFINALIZE_MEETUP_RESPONSES,
 )
+from app.routers.guests import _get_ban, _get_bans_map, _to_guest_public
 from app.schemas import (
     CheckedInByPublic,
     CheckInResponse,
@@ -105,7 +106,7 @@ def _raise_if_finalized(meetup: Meetup) -> None:
 async def create_meetup(
     payload: Annotated[MeetupCreate, Body(openapi_examples=CREATE_MEETUP_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
-    _staff: User = Depends(get_approved_user),
+    staff: User = Depends(get_approved_user),
     settings: Settings = Depends(get_settings),
 ) -> Meetup:
     """
@@ -159,6 +160,7 @@ async def create_meetup(
         name=payload.name,
         mazmo_meetup_url=mazmo_url,
         date=event_date,
+        org_id=staff.org_id,
     )
     session.add(meetup)
     session.commit()
@@ -177,10 +179,12 @@ async def create_meetup(
 )
 async def list_meetups(
     session: Session = Depends(get_session),
-    _staff: User = Depends(get_approved_user),
+    staff: User = Depends(get_approved_user),
 ) -> MeetupListResponse:
-    """List all meetups ordered by date descending."""
-    meetups = session.exec(select(Meetup).order_by(Meetup.date.desc())).all()  # type: ignore[attr-defined]
+    """List all meetups for the current organization, ordered by date descending."""
+    meetups = session.exec(
+        select(Meetup).where(Meetup.org_id == staff.org_id).order_by(Meetup.date.desc())  # type: ignore[attr-defined]
+    ).all()
     return MeetupListResponse(
         total=len(meetups),
         meetups=[MeetupPublic.model_validate(m) for m in meetups],
@@ -287,7 +291,7 @@ async def sync_meetup_guests(
 async def list_meetup_guests(
     meetup_id: uuid.UUID,
     session: Session = Depends(get_session),
-    _staff: User = Depends(get_approved_user),
+    staff: User = Depends(get_approved_user),
 ) -> MeetupGuestListResponse:
     """List all guests who have RSVPed to this meetup with their RSVP state."""
     _get_meetup_or_404(session, meetup_id)
@@ -299,9 +303,12 @@ async def list_meetup_guests(
         .order_by(MeetupRsvp.rsvp_time)  # type: ignore[attr-defined]
     ).all()
 
+    guest_ids = [rsvp.guest_id for rsvp in rsvps]
+    bans = _get_bans_map(session, guest_ids, staff.org_id)
+
     guests = [
         MeetupGuestPublic(
-            guest=GuestPublic.model_validate(rsvp.guest),
+            guest=_to_guest_public(rsvp.guest, bans.get(rsvp.guest_id)),
             rsvp=RsvpPublic.model_validate(rsvp),
         )
         for rsvp in rsvps
@@ -377,6 +384,7 @@ async def add_walkin_guest(
         actor_id=staff.id,
         guest_id=MazmoUserId(mazmo_user_id),
         meetup_id=meetup_id,
+        org_id=staff.org_id,
     )
 
     session.add(rsvp)
@@ -402,8 +410,9 @@ async def add_walkin_guest(
         meetup_id=str(meetup_id),
     )
 
+    ban = _get_ban(session, mazmo_user_id, staff.org_id)
     return MeetupGuestPublic(
-        guest=GuestPublic.model_validate(guest),
+        guest=_to_guest_public(guest, ban),
         rsvp=RsvpPublic.model_validate(rsvp),
     )
 
@@ -479,6 +488,7 @@ async def checkin_guest(
         actor_id=staff.id,
         guest_id=mazmo_user_id,
         meetup_id=meetup_id,
+        org_id=staff.org_id,
     )
 
     session.add(rsvp)
@@ -499,8 +509,9 @@ async def checkin_guest(
             ),
         )
 
+    ban = _get_ban(session, mazmo_user_id, staff.org_id)
     return CheckInResponse(
-        guest=GuestPublic.model_validate(guest),
+        guest=_to_guest_public(guest, ban),
         arrival_order=rsvp.arrival_order,  # type: ignore[arg-type]
         arrival_time=rsvp.arrival_time,  # type: ignore[arg-type]
         checked_in_by=CheckedInByPublic.model_validate(staff),
@@ -580,6 +591,7 @@ async def undo_checkin_guest(
         actor_id=staff.id,
         guest_id=mazmo_user_id,
         meetup_id=meetup_id,
+        org_id=staff.org_id,
         reason=request.reason,
     )
 
@@ -608,7 +620,8 @@ async def undo_checkin_guest(
         meetup_id=str(meetup_id),
         reason=request.reason,
     )
-    return guest
+    ban = _get_ban(session, mazmo_user_id, staff.org_id)
+    return _to_guest_public(guest, ban)
 
 
 # ── Finalize meetup ───────────────────────────────────────────────────────────
@@ -647,6 +660,7 @@ async def finalize_meetup(
         event_type=EventType.MEETUP_FINALIZED,
         actor_id=staff.id,
         meetup_id=meetup_id,
+        org_id=staff.org_id,
     )
 
     session.add(meetup)
@@ -697,6 +711,7 @@ async def unfinalize_meetup(
         event_type=EventType.MEETUP_UNFINALIZED,
         actor_id=staff.id,
         meetup_id=meetup_id,
+        org_id=staff.org_id,
     )
 
     session.add(meetup)

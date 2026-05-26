@@ -27,7 +27,7 @@ from app.core.database import get_session
 from app.core.security import get_password_hash
 from app.domain_types import MazmoUserId
 from app.main import app
-from app.models.models import Guest, Meetup, MeetupRsvp, PossibleRoles, Role, User
+from app.models.models import Guest, GuestBan, Meetup, MeetupRsvp, PossibleRoles, Role, User
 
 settings = get_settings()
 
@@ -75,9 +75,18 @@ def setup_test_database():
     SQLModel.metadata.drop_all(test_engine)
     SQLModel.metadata.create_all(test_engine)
 
-    # Seed roles and create the arrival_order trigger function
+    # Seed roles, default org, and create the arrival_order trigger function
     with test_engine.connect() as conn:
         conn.execute(text("INSERT INTO user_roles (name) VALUES ('STAFF'), ('ADMIN') ON CONFLICT DO NOTHING"))
+        conn.execute(
+            text(
+                "INSERT INTO organizations (id, name, slug, created_at) "
+                "VALUES (1, 'Test Org', 'test-org', NOW()), "
+                "       (2, 'Other Org', 'other-org', NOW()), "
+                "       (3, 'Club Vanta', 'club-vanta', NOW()) "
+                "ON CONFLICT DO NOTHING"
+            )
+        )
         # Create the trigger function for arrival_order (same as in migration)
         conn.execute(
             text("""
@@ -180,6 +189,7 @@ def make_user(
     password: str = "a-very-secure-passphrase",
     is_approved: bool = True,
     role: PossibleRoles = PossibleRoles.STAFF,
+    org_id: int = 1,
 ) -> User:
     """Helper to create a User directly in the test session."""
     from sqlmodel import select
@@ -196,6 +206,7 @@ def make_user(
         hashed_password=get_password_hash(password),
         is_approved=is_approved,
         role_id=role_row.id,
+        org_id=org_id,
     )
     session.add(user)
     session.flush()  # get the ID without committing
@@ -228,17 +239,43 @@ def make_meetup(
     name: str = "Test Meetup",
     mazmo_meetup_url: str = "https://mazmo.net/test-community/test-meetup-123",
     date: datetime | None = None,
+    org_id: int = 1,
 ) -> Meetup:
     """Helper to create a Meetup directly in the test session."""
     meetup = Meetup(
         name=name,
         mazmo_meetup_url=mazmo_meetup_url,
         date=date or datetime.now(UTC),
+        org_id=org_id,
     )
     session.add(meetup)
     session.flush()
     session.refresh(meetup)
     return meetup
+
+
+def make_ban(
+    session: Session,
+    *,
+    guest: Guest,
+    banned_by: User,
+    reason: str = "Test ban reason",
+    org_id: int = 1,
+) -> GuestBan:
+    """Helper to create a GuestBan directly in the test session."""
+    from datetime import UTC, datetime
+
+    ban = GuestBan(
+        mazmo_user_id=guest.mazmo_user_id,
+        org_id=org_id,
+        banned_at=datetime.now(UTC),
+        banned_by_id=banned_by.id,
+        banned_reason=reason,
+    )
+    session.add(ban)
+    session.flush()
+    session.refresh(ban)
+    return ban
 
 
 def make_rsvp(

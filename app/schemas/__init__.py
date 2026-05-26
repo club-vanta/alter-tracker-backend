@@ -11,7 +11,7 @@ the submodules directly or from this package:
 """
 
 from app.schemas.admin import ApproveUserRequest, DisableUserRequest, RoleRequest
-from app.schemas.auth import RolePublic, StaffRegisterRequest, TokenResponse, UserPublic
+from app.schemas.auth import OrgRegisterRequest, RolePublic, StaffRegisterRequest, TokenResponse, UserPublic
 from app.schemas.events import (
     EventActorPublic,
     EventGuestPublic,
@@ -67,6 +67,7 @@ __all__ = [
     "MeetupGuestPublic",
     "MeetupListResponse",
     "MeetupPublic",
+    "OrgRegisterRequest",
     "RolePublic",
     "RoleRequest",
     "RsvpPublic",

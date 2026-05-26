@@ -145,19 +145,17 @@ class BannedGuestPublic(BaseModel):
     """
     Extended guest info including ban details for the banned list.
 
-    Used in the banned guests list endpoint where admins need to see
-    the full audit trail (when banned, why, by whom).
+    Constructed explicitly from a Guest + GuestBan pair (not via from_attributes)
+    because ban data now lives in the separate GuestBan table.
     """
-
-    model_config = ConfigDict(from_attributes=True)
 
     mazmo_user_id: int
     username: str
     displayname: str
-    is_banned: bool
-    banned_at: datetime | None
-    banned_reason: str | None
-    banned_by_id: int | None
+    is_banned: bool = True  # always True in this context
+    banned_at: datetime
+    banned_reason: str
+    banned_by_id: int
 
 
 class BannedGuestListResponse(BaseModel):

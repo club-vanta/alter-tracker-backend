@@ -21,7 +21,7 @@ from app.models.models import PossibleRoles
 
 def _make_payload(username: str = "testuser") -> JWTPayload:
     """Create a valid JWTPayload for testing."""
-    return JWTPayload(sub=username, role=PossibleRoles.STAFF, exp=None)  # type: ignore[typeddict-item]
+    return JWTPayload(sub=username, role=PossibleRoles.STAFF, org_id=1, exp=None)  # type: ignore[typeddict-item]
 
 
 # ── Password hashing ──────────────────────────────────────────────────────────

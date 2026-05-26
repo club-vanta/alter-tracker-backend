@@ -10,6 +10,7 @@ PATCH /api/guests/{mazmo_user_id}/ban      → ban a guest (admin only)
 PATCH /api/guests/{mazmo_user_id}/unban    → unban a guest (admin only)
 
 Note: Meetup-specific operations (sync, checkin) are in the meetups router.
+Ban status is always org-scoped: a guest banned in one org is not banned in others.
 """
 
 from datetime import UTC, datetime
@@ -23,7 +24,7 @@ from sqlmodel import Session, select
 from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.deps import get_admin_user, get_approved_user
-from app.models.models import EventLog, EventType, Guest, User
+from app.models.models import EventLog, EventType, Guest, GuestBan, User
 from app.openapi_examples.guests_examples import (
     BAN_REQUEST_EXAMPLES,
     BAN_RESPONSES,
@@ -49,6 +50,49 @@ log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/guests", tags=["guests"])
 
 
+# ── Ban helpers ───────────────────────────────────────────────────────────────
+
+
+def _get_ban(session: Session, mazmo_user_id: int, org_id: int) -> GuestBan | None:
+    """Return the GuestBan row for this guest+org, or None if not banned."""
+    return session.exec(
+        select(GuestBan).where(
+            GuestBan.mazmo_user_id == mazmo_user_id,
+            GuestBan.org_id == org_id,
+        )
+    ).first()
+
+
+def _get_bans_map(session: Session, mazmo_user_ids: list[int], org_id: int) -> dict[int, GuestBan]:
+    """Batch-fetch bans for a list of guests in a single query. Returns {mazmo_user_id: GuestBan}."""
+    if not mazmo_user_ids:
+        return {}
+    bans = session.exec(
+        select(GuestBan).where(
+            GuestBan.mazmo_user_id.in_(mazmo_user_ids),  # type: ignore[attr-defined]
+            GuestBan.org_id == org_id,
+        )
+    ).all()
+    return {b.mazmo_user_id: b for b in bans}
+
+
+def _to_guest_public(guest: Guest, ban: GuestBan | None) -> GuestPublic:
+    pub = GuestPublic.model_validate(guest)
+    pub.is_banned = ban is not None
+    return pub
+
+
+def _to_banned_guest_public(guest: Guest, ban: GuestBan) -> BannedGuestPublic:
+    return BannedGuestPublic(
+        mazmo_user_id=guest.mazmo_user_id,
+        username=guest.username,
+        displayname=guest.displayname,
+        banned_at=ban.banned_at,
+        banned_reason=ban.banned_reason,
+        banned_by_id=ban.banned_by_id,
+    )
+
+
 # ── Create guest by Mazmo username ───────────────────────────────────────────
 
 
@@ -64,7 +108,7 @@ async def create_guest(
     session: Session = Depends(get_session),
     staff: User = Depends(get_approved_user),
     settings: Settings = Depends(get_settings),
-) -> Guest:
+) -> GuestPublic:
     """
     Register a guest using their Mazmo username handle.
 
@@ -115,6 +159,7 @@ async def create_guest(
         event_type=EventType.GUEST_CREATED,
         actor_id=staff.id,
         guest_id=user.mazmo_user_id,
+        org_id=staff.org_id,
     )
 
     session.add(guest)
@@ -127,9 +172,10 @@ async def create_guest(
         staff=staff.username,
         guest=guest.username,
         guest_id=guest.mazmo_user_id,
+        org_id=staff.org_id,
     )
 
-    return guest
+    return _to_guest_public(guest, ban=None)
 
 
 # ── List guests ──────────────────────────────────────────────────────────────
@@ -143,13 +189,15 @@ async def create_guest(
 )
 async def list_guests(
     session: Session = Depends(get_session),
-    _staff: User = Depends(get_approved_user),
+    staff: User = Depends(get_approved_user),
 ) -> GuestListResponse:
     """List all guests in the system (identity only, no RSVP state)."""
     guests = session.exec(select(Guest).order_by(Guest.username)).all()
+    ids = [g.mazmo_user_id for g in guests]
+    bans = _get_bans_map(session, ids, staff.org_id)
     return GuestListResponse(
         total=len(guests),
-        guests=[GuestPublic.model_validate(g) for g in guests],
+        guests=[_to_guest_public(g, bans.get(g.mazmo_user_id)) for g in guests],
     )
 
 
@@ -164,16 +212,18 @@ async def list_guests(
 )
 async def list_banned_guests(
     session: Session = Depends(get_session),
-    _staff: User = Depends(get_approved_user),
+    staff: User = Depends(get_approved_user),
 ) -> BannedGuestListResponse:
-    """List all banned guests with their ban details."""
-    guests = session.exec(
-        select(Guest).where(Guest.is_banned == True).order_by(Guest.username)  # noqa: E712
-    ).all()
-    return BannedGuestListResponse(
-        total=len(guests),
-        guests=[BannedGuestPublic.model_validate(g) for g in guests],
-    )
+    """List all guests banned in the current organization."""
+    bans = session.exec(select(GuestBan).where(GuestBan.org_id == staff.org_id)).all()
+
+    results: list[BannedGuestPublic] = []
+    for ban in sorted(bans, key=lambda b: b.mazmo_user_id):
+        guest = session.get(Guest, ban.mazmo_user_id)
+        if guest:
+            results.append(_to_banned_guest_public(guest, ban))
+
+    return BannedGuestListResponse(total=len(results), guests=results)
 
 
 # ── Get single guest ─────────────────────────────────────────────────────────
@@ -188,8 +238,8 @@ async def list_banned_guests(
 async def get_guest(
     mazmo_user_id: int,
     session: Session = Depends(get_session),
-    _staff: User = Depends(get_approved_user),
-) -> Guest:
+    staff: User = Depends(get_approved_user),
+) -> GuestPublic:
     """Get a single guest by their Mazmo user ID."""
     guest = session.get(Guest, mazmo_user_id)
     if not guest:
@@ -202,7 +252,8 @@ async def get_guest(
                 f"Try POST /meetups/{{meetup_id}}/sync, POST /guests/, or verify the mazmo_user_id."
             ),
         )
-    return guest
+    ban = _get_ban(session, mazmo_user_id, staff.org_id)
+    return _to_guest_public(guest, ban)
 
 
 # ── Get guest by username ─────────────────────────────────────────────────────
@@ -217,8 +268,8 @@ async def get_guest(
 async def get_guest_by_username(
     username: str,
     session: Session = Depends(get_session),
-    _staff: User = Depends(get_approved_user),
-) -> Guest:
+    staff: User = Depends(get_approved_user),
+) -> GuestPublic:
     """Get a single guest by their Mazmo username handle."""
     guest = session.exec(select(Guest).where(Guest.username == username)).first()
     if not guest:
@@ -230,7 +281,8 @@ async def get_guest_by_username(
                 f"Use POST /guests/ to register them if they're at the door."
             ),
         )
-    return guest
+    ban = _get_ban(session, guest.mazmo_user_id, staff.org_id)
+    return _to_guest_public(guest, ban)
 
 
 # ── Ban guest ─────────────────────────────────────────────────────────────────
@@ -247,12 +299,15 @@ async def ban_guest(
     request: Annotated[BanGuestRequest, Body(openapi_examples=BAN_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
     admin: User = Depends(get_admin_user),
-) -> Guest:
+) -> BannedGuestPublic:
     """
-    Ban a guest. Records the admin who performed the ban and the reason.
+    Ban a guest in the current organization.
+
+    Records the admin who performed the ban and the reason.
+    A ban is org-scoped: this guest may still attend events in other organizations.
 
     Returns 404 if the guest doesn't exist.
-    Returns 409 if the guest is already banned.
+    Returns 409 if the guest is already banned in this organization.
     """
     guest = session.get(Guest, mazmo_user_id)
     if not guest:
@@ -264,43 +319,48 @@ async def ban_guest(
                 f"Sync a meetup they've RSVPed to, or register them manually first."
             ),
         )
-    if guest.is_banned:
+
+    existing_ban = _get_ban(session, mazmo_user_id, admin.org_id)
+    if existing_ban:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 f"Cannot ban guest: '{guest.username}' (mazmo_user_id={mazmo_user_id}) "
-                f"is already banned. They were banned on {guest.banned_at} "
-                f"for reason: '{guest.banned_reason}'. To update the ban reason, "
+                f"is already banned in this organization. They were banned on {existing_ban.banned_at} "
+                f"for reason: '{existing_ban.banned_reason}'. To update the ban reason, "
                 f"unban first via PATCH /guests/{mazmo_user_id}/unban, then re-ban."
             ),
         )
 
-    guest.is_banned = True
-    guest.banned_at = datetime.now(UTC)
-    guest.banned_by_id = admin.id
-    guest.banned_reason = request.reason
-
-    # Create audit log entry
+    ban = GuestBan(
+        mazmo_user_id=mazmo_user_id,
+        org_id=admin.org_id,
+        banned_at=datetime.now(UTC),
+        banned_by_id=admin.id,
+        banned_reason=request.reason,
+    )
     event = EventLog(
         event_type=EventType.BAN,
         actor_id=admin.id,
         guest_id=guest.mazmo_user_id,
+        org_id=admin.org_id,
         reason=request.reason,
     )
 
-    session.add(guest)
+    session.add(ban)
     session.add(event)
     session.commit()
-    session.refresh(guest)
+    session.refresh(ban)
 
     log.info(
         "Guest banned",
         admin=admin.username,
         guest=guest.username,
         guest_id=guest.mazmo_user_id,
+        org_id=admin.org_id,
         reason=request.reason,
     )
-    return guest
+    return _to_banned_guest_public(guest, ban)
 
 
 # ── Unban guest ───────────────────────────────────────────────────────────────
@@ -316,12 +376,12 @@ async def unban_guest(
     mazmo_user_id: int,
     session: Session = Depends(get_session),
     admin: User = Depends(get_admin_user),
-) -> Guest:
+) -> GuestPublic:
     """
-    Unban a guest. Clears all ban-related fields.
+    Unban a guest in the current organization. Deletes the GuestBan row.
 
     Returns 404 if the guest doesn't exist.
-    Returns 409 if the guest is not currently banned.
+    Returns 409 if the guest is not currently banned in this organization.
     """
     guest = session.get(Guest, mazmo_user_id)
     if not guest:
@@ -332,37 +392,33 @@ async def unban_guest(
                 f"Double-check the ID via GET /guests/ or GET /guests/banned."
             ),
         )
-    if not guest.is_banned:
+
+    ban = _get_ban(session, mazmo_user_id, admin.org_id)
+    if not ban:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 f"Cannot unban guest: '{guest.username}' (mazmo_user_id={mazmo_user_id}) "
-                f"is not currently banned. They may have been unbanned by another admin. "
-                f"Check audit trail at GET /events/guests/{mazmo_user_id}."
+                f"is not currently banned in this organization. They may have been unbanned by "
+                f"another admin. Check audit trail at GET /events/guests/{mazmo_user_id}."
             ),
         )
 
-    guest.is_banned = False
-    guest.banned_at = None
-    guest.banned_by_id = None
-    guest.banned_reason = None
-
-    # Create audit log entry
+    session.delete(ban)
     event = EventLog(
         event_type=EventType.UNBAN,
         actor_id=admin.id,
         guest_id=guest.mazmo_user_id,
+        org_id=admin.org_id,
     )
-
-    session.add(guest)
     session.add(event)
     session.commit()
-    session.refresh(guest)
 
     log.info(
         "Guest unbanned",
         admin=admin.username,
         guest=guest.username,
         guest_id=guest.mazmo_user_id,
+        org_id=admin.org_id,
     )
-    return guest
+    return _to_guest_public(guest, ban=None)

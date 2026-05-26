@@ -16,7 +16,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/StaffRegisterRequest"
+                "$ref": "#/components/schemas/OrgRegisterRequest"
               },
               "examples": {
                 "new_volunteer": {
@@ -1415,7 +1415,7 @@
           "guests"
         ],
         "summary": "List all banned guests",
-        "description": "List all banned guests with their ban details.",
+        "description": "List all guests banned in the current organization.",
         "operationId": "list_banned_guests_guests_banned_get",
         "responses": {
           "200": {
@@ -1762,7 +1762,7 @@
           "guests"
         ],
         "summary": "Ban a guest (admin only)",
-        "description": "Ban a guest. Records the admin who performed the ban and the reason.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is already banned.",
+        "description": "Ban a guest in the current organization.\n\nRecords the admin who performed the ban and the reason.\nA ban is org-scoped: this guest may still attend events in other organizations.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is already banned in this organization.",
         "operationId": "ban_guest_guests__mazmo_user_id__ban_patch",
         "security": [
           {
@@ -1927,7 +1927,7 @@
           "guests"
         ],
         "summary": "Unban a guest (admin only)",
-        "description": "Unban a guest. Clears all ban-related fields.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is not currently banned.",
+        "description": "Unban a guest in the current organization. Deletes the GuestBan row.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is not currently banned in this organization.",
         "operationId": "unban_guest_guests__mazmo_user_id__unban_patch",
         "security": [
           {
@@ -2053,7 +2053,7 @@
           "meetups"
         ],
         "summary": "List all meetups",
-        "description": "List all meetups ordered by date descending.",
+        "description": "List all meetups for the current organization, ordered by date descending.",
         "operationId": "list_meetups_meetups__get",
         "responses": {
           "200": {
@@ -4847,40 +4847,20 @@
           },
           "is_banned": {
             "type": "boolean",
-            "title": "Is Banned"
+            "title": "Is Banned",
+            "default": true
           },
           "banned_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date-time",
             "title": "Banned At"
           },
           "banned_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Banned Reason"
           },
           "banned_by_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "integer",
             "title": "Banned By Id"
           }
         },
@@ -4889,13 +4869,12 @@
           "mazmo_user_id",
           "username",
           "displayname",
-          "is_banned",
           "banned_at",
           "banned_reason",
           "banned_by_id"
         ],
         "title": "BannedGuestPublic",
-        "description": "Extended guest info including ban details for the banned list.\n\nUsed in the banned guests list endpoint where admins need to see\nthe full audit trail (when banned, why, by whom)."
+        "description": "Extended guest info including ban details for the banned list.\n\nConstructed explicitly from a Guest + GuestBan pair (not via from_attributes)\nbecause ban data now lives in the separate GuestBan table."
       },
       "Body_login_auth_token_post": {
         "properties": {
@@ -5401,6 +5380,34 @@
         "title": "MeetupPublic",
         "description": "Public representation of a meetup.\n\nReturned when fetching meetup details. The mazmo_meetup_url is the\nsource URL used for syncing RSVPs from the Mazmo platform."
       },
+      "OrgRegisterRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 15,
+            "title": "Password"
+          },
+          "org_slug": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Org Slug",
+            "default": "club-vanta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "OrgRegisterRequest",
+        "description": "Request body for multi-org staff registration.\n\n`org_slug` identifies which organization the new staff member belongs to\n(e.g. \"club-vanta\"). Defaults to \"club-vanta\" for backwards compatibility\nwith the existing frontend signup form."
+      },
       "PossibleRoles": {
         "type": "string",
         "enum": [
@@ -5533,28 +5540,6 @@
         "title": "ServiceStatus",
         "description": "Status of an individual service check."
       },
-      "StaffRegisterRequest": {
-        "properties": {
-          "username": {
-            "type": "string",
-            "maxLength": 64,
-            "title": "Username"
-          },
-          "password": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 15,
-            "title": "Password"
-          }
-        },
-        "type": "object",
-        "required": [
-          "username",
-          "password"
-        ],
-        "title": "StaffRegisterRequest",
-        "description": "Request body for staff registration.\n\nStrict mode ensures exact type matching - no coercion from strings to ints, etc.\nPassword has a minimum length of 15 characters for security."
-      },
       "SyncResponse": {
         "properties": {
           "inserted": {
@@ -5631,6 +5616,10 @@
           "role": {
             "$ref": "#/components/schemas/RolePublic"
           },
+          "org_id": {
+            "type": "integer",
+            "title": "Org Id"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -5671,6 +5660,7 @@
           "username",
           "is_approved",
           "role",
+          "org_id",
           "created_at"
         ],
         "title": "UserPublic",

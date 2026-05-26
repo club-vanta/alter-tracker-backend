@@ -23,6 +23,7 @@ class JWTPayload(TypedDict):
 
     sub: str  # username
     role: str  # PossibleRoles value
+    org_id: int  # organization the user belongs to
     exp: NotRequired[datetime]  # set automatically by create_access_token
 
 
@@ -60,6 +61,7 @@ def decode_access_token(token: str) -> JWTPayload | None:
         return JWTPayload(
             sub=payload["sub"],
             role=payload["role"],
+            org_id=payload["org_id"],
             exp=payload["exp"],
         )
     except ExpiredSignatureError:
