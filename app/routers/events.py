@@ -80,6 +80,7 @@ def _parse_event_types(type_param: str | None) -> list[str] | None:
 
 def _build_event_query(
     *,
+    org_id: int,
     type_param: str | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
@@ -93,7 +94,7 @@ def _build_event_query(
     All filters are optional and combine with AND logic.
     Returns the query (not executed) for further modification.
     """
-    query = select(EventLog)
+    query = select(EventLog).where(EventLog.org_id == org_id)
 
     # Filter by event type(s)
     event_types = _parse_event_types(type_param)
@@ -200,7 +201,7 @@ def _is_admin(user: User) -> bool:
 )
 async def list_all_events(
     session: Session = Depends(get_session),
-    _admin: User = Depends(get_admin_user),
+    admin: User = Depends(get_admin_user),
     type: str | None = Query(
         default=None,
         description="Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN",
@@ -222,6 +223,7 @@ async def list_all_events(
     Returns paginated results ordered by timestamp descending (newest first).
     """
     query = _build_event_query(
+        org_id=admin.org_id,
         type_param=type,
         since=since,
         until=until,
@@ -245,7 +247,7 @@ async def list_all_events(
 async def list_meetup_events(
     meetup_id: uuid.UUID,
     session: Session = Depends(get_session),
-    _staff: User = Depends(get_approved_user),
+    staff: User = Depends(get_approved_user),
     type: str | None = Query(
         default=None,
         description="Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN",
@@ -277,6 +279,7 @@ async def list_meetup_events(
         )
 
     query = _build_event_query(
+        org_id=staff.org_id,
         type_param=type,
         since=since,
         until=until,
@@ -347,6 +350,7 @@ async def list_guest_events(
             type = f"{EventType.BAN.value},{EventType.UNBAN.value}"
 
     query = _build_event_query(
+        org_id=current_user.org_id,
         type_param=type,
         since=since,
         until=until,
@@ -413,7 +417,15 @@ async def list_staff_events(
             ),
         )
 
+    # Prevent admins from querying staff in other orgs
+    if target_user.org_id != current_user.org_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Staff member with id={staff_id} not found.",
+        )
+
     query = _build_event_query(
+        org_id=current_user.org_id,
         type_param=type,
         since=since,
         until=until,
