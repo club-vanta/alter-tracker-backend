@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from app.models.models import OrgRole, User
-from tests.conftest import make_org, make_org_member, make_user
+from tests.conftest import get_auth_headers, make_org, make_org_member, make_user
 
 # ======================================================================
 # POST /organizations/
@@ -196,8 +196,7 @@ class TestListOrgMembers:
         """
         SITE_ADMIN can list org members.
 
-        WHY: Admins need to see who has access to each org for
-        access control management.
+        WHY: Site admins need global visibility for access control management.
         """
         org = make_org(session)
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
@@ -208,14 +207,49 @@ class TestListOrgMembers:
         assert data["total"] == 1
         assert "members" in data
 
+    def test_list_members_as_org_admin_returns_200(self, client: TestClient, session: Session, staff_user: User):
+        """
+        Org ADMIN can list members of their own org.
+
+        WHY: Org admins need to see who is in their org to manage access,
+        without requiring site-wide admin privileges.
+        """
+        org = make_org(session)
+        org_admin_user = make_user(session, username="org_admin_user")
+        make_org_member(session, org=org, user=org_admin_user, role=OrgRole.ADMIN)
+        make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
+
+        resp = client.get(
+            f"/organizations/{org.id}/members",
+            headers=get_auth_headers(client, org_admin_user.username, "a-very-secure-passphrase"),
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        data = resp.json()
+        assert data["total"] == 2
+
+    def test_list_members_as_org_staff_returns_403(self, client: TestClient, session: Session, staff_user: User):
+        """
+        Org STAFF member cannot list org members - only ADMIN or SITE_ADMIN can.
+
+        WHY: Prevents regular members from enumerating org membership.
+        """
+        org = make_org(session)
+        make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
+
+        resp = client.get(
+            f"/organizations/{org.id}/members",
+            headers=get_auth_headers(client, staff_user.username, "a-very-secure-passphrase"),
+        )
+        assert resp.status_code == status.HTTP_403_FORBIDDEN
+
     def test_list_members_nonexistent_org_returns_404(self, client: TestClient, admin_headers: dict):
         """Nonexistent org returns 404 when listing members."""
         fake_id = uuid.uuid4()
         resp = client.get(f"/organizations/{fake_id}/members", headers=admin_headers)
         assert resp.status_code == status.HTTP_404_NOT_FOUND
 
-    def test_list_members_as_regular_user_returns_403(self, client: TestClient, staff_headers: dict, session: Session):
-        """Regular users (non-SITE_ADMIN) cannot list members."""
+    def test_list_members_as_non_member_returns_403(self, client: TestClient, staff_headers: dict, session: Session):
+        """Users with no membership in the org cannot list members."""
         org = make_org(session)
         resp = client.get(f"/organizations/{org.id}/members", headers=staff_headers)
         assert resp.status_code == status.HTTP_403_FORBIDDEN

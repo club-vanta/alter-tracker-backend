@@ -199,7 +199,7 @@ async def update_organization(
 async def list_org_members(
     org_id: uuid.UUID,
     session: Session = Depends(get_session),
-    _admin: User = Depends(get_site_admin),
+    _admin: User = Depends(get_org_admin),
 ) -> OrgMemberListResponse:
     """List all members of an organization with their org roles."""
     _get_org_or_404(session, org_id)
