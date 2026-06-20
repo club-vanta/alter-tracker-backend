@@ -1,11 +1,11 @@
 """
 Auth router
 
-POST /auth/register              → create a new staff account (unapproved by default)
-POST /auth/token                 → OAuth2 password flow - returns a JWT
-GET  /auth/userinfo              → returns the currently logged-in user's profile
-POST /auth/verify-recovery-code  → check a 6-digit recovery code (no auth required)
-POST /auth/reset-password        → reset password using a valid recovery code (no auth required)
+POST /auth/register              -> create a new staff account (auto-approved)
+POST /auth/token                 -> OAuth2 password flow - returns a JWT
+GET  /auth/userinfo              -> returns the currently logged-in user's profile
+POST /auth/verify-recovery-code  -> check a 6-digit recovery code (no auth required)
+POST /auth/reset-password        -> reset password using a valid recovery code (no auth required)
 """
 
 from datetime import UTC, datetime, timedelta
@@ -50,7 +50,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
     "/register",
     response_model=UserPublic,
     status_code=status.HTTP_201_CREATED,
-    summary="Register a new staff account (pending admin approval)",
+    summary="Register a new staff account (auto-approved)",
     responses=REGISTER_RESPONSES,
 )
 async def register(
@@ -80,7 +80,7 @@ async def register(
     user = User(
         username=body.username,
         hashed_password=get_password_hash(body.password),
-        is_approved=False,
+        is_approved=True,
         role_id=staff_role.id,
     )
     session.add(user)

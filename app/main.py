@@ -7,7 +7,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.middleware import RequestContextMiddleware
-from app.routers import auth, events, guests, meetups, meta, organizations, staff
+from app.routers import auth, events, guests, meetups, meta, organizations, staff, users
 
 settings = get_settings()
 
@@ -42,9 +42,8 @@ tags_metadata = [
     {
         "name": "auth",
         "description": (
-            "Authentication endpoints. Create an account with `POST /auth/register`, "
-            "then ask an admin to approve it via `PATCH /staff/{id}/approve`. "
-            "Once approved, login with `POST /auth/token` to get a JWT."
+            "Authentication endpoints. Create an account with `POST /auth/register` "
+            "(auto-approved), then login with `POST /auth/token` to get a JWT."
         ),
     },
     {
@@ -81,6 +80,10 @@ tags_metadata = [
             "Audit event log. These are internal system events logged for auditing, "
             "not to be confused with Mazmo 'eventos' (meetups)."
         ),
+    },
+    {
+        "name": "users",
+        "description": "User search. Search active users by username to add them to organizations.",
     },
     {
         "name": "meta",
@@ -137,4 +140,5 @@ app.include_router(staff.router)
 app.include_router(guests.router)
 app.include_router(meetups.router)
 app.include_router(events.router)
+app.include_router(users.router)
 app.include_router(meta.router)

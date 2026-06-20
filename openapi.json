@@ -10,7 +10,7 @@
         "tags": [
           "auth"
         ],
-        "summary": "Register a new staff account (pending admin approval)",
+        "summary": "Register a new staff account (auto-approved)",
         "operationId": "register_auth_register_post",
         "requestBody": {
           "content": {
@@ -6117,6 +6117,61 @@
         }
       }
     },
+    "/users/": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Search active users by username",
+        "description": "Return up to 20 active users matching the username query. Returns id and username only.",
+        "operationId": "search_users_users__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Filter by username (case-insensitive, partial match)",
+              "default": "",
+              "title": "Q"
+            },
+            "description": "Filter by username (case-insensitive, partial match)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserSearchResult"
+                  },
+                  "title": "Response Search Users Users  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/ping": {
       "get": {
         "tags": [
@@ -7351,6 +7406,25 @@
         "title": "UserPublic",
         "description": "Public representation of a staff user.\n\nReturned when fetching user details. Includes the nested role object\nfor convenience. Never includes the hashed password."
       },
+      "UserSearchResult": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "username"
+        ],
+        "title": "UserSearchResult",
+        "description": "Minimal user info returned by the search endpoint."
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -7425,7 +7499,7 @@
   "tags": [
     {
       "name": "auth",
-      "description": "Authentication endpoints. Create an account with `POST /auth/register`, then ask an admin to approve it via `PATCH /staff/{id}/approve`. Once approved, login with `POST /auth/token` to get a JWT."
+      "description": "Authentication endpoints. Create an account with `POST /auth/register` (auto-approved), then login with `POST /auth/token` to get a JWT."
     },
     {
       "name": "organizations",
@@ -7446,6 +7520,10 @@
     {
       "name": "events",
       "description": "Audit event log. These are internal system events logged for auditing, not to be confused with Mazmo 'eventos' (meetups)."
+    },
+    {
+      "name": "users",
+      "description": "User search. Search active users by username to add them to organizations."
     },
     {
       "name": "meta",

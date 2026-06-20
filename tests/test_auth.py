@@ -19,8 +19,8 @@ def test_register_new_account_success(client: TestClient, session: Session):
     """
     Verify that a new user can register with valid credentials.
 
-    WHY: This is the happy path for onboarding new staff members. We check that:
-    - The account is created but NOT approved (security: requires admin review)
+    WHY: Registration is self-service and auto-approves accounts. We check that:
+    - The account is created and immediately approved (no admin review required)
     - The default role is USER (least privilege principle)
     - The password hash is never exposed in the response (security)
     """
@@ -34,7 +34,7 @@ def test_register_new_account_success(client: TestClient, session: Session):
 
     assert resp.status_code == status.HTTP_201_CREATED
     assert data["username"] == "newuser", "Username should match payload"
-    assert data["is_approved"] is False, "New accounts should not be approved by default"
+    assert data["is_approved"] is True, "New accounts should be auto-approved"
     assert data["role"]["name"] == "USER", "Default role should be USER"
     assert "hashed_password" not in data, "Hashed password must not leak in response"
 

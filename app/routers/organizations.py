@@ -5,9 +5,9 @@ POST   /organizations/                                   -> create org (SITE_ADM
 GET    /organizations/                                   -> list orgs (SITE_ADMIN)
 GET    /organizations/{org_id}                           -> get org (site_admin or member)
 PATCH  /organizations/{org_id}                           -> update org name/slug (SITE_ADMIN)
-POST   /organizations/{org_id}/members/{user_id}         -> add member (SITE_ADMIN)
-PATCH  /organizations/{org_id}/members/{user_id}         -> change member role (SITE_ADMIN)
-DELETE /organizations/{org_id}/members/{user_id}         -> remove member (SITE_ADMIN)
+POST   /organizations/{org_id}/members/{user_id}         -> add member (ORG_ADMIN or SITE_ADMIN)
+PATCH  /organizations/{org_id}/members/{user_id}         -> change member role (ORG_ADMIN or SITE_ADMIN)
+DELETE /organizations/{org_id}/members/{user_id}         -> remove member (ORG_ADMIN or SITE_ADMIN)
 GET    /organizations/{org_id}/members                   -> list members (SITE_ADMIN)
 GET    /organizations/{org_id}/guests/banned             -> list banned guests in org (org member)
 PATCH  /organizations/{org_id}/guests/{id}/ban           -> ban a guest in org (org admin)
@@ -225,7 +225,7 @@ async def add_org_member(
     user_id: int,
     payload: Annotated[AddOrgMemberRequest, Body(openapi_examples=ADD_MEMBER_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
-    admin: User = Depends(get_site_admin),
+    admin: User = Depends(get_org_admin),
 ) -> UserOrganization:
     """Add a user to an organization with a specified role (STAFF or ADMIN)."""
     _get_org_or_404(session, org_id)
@@ -278,7 +278,7 @@ async def update_org_member_role(
     user_id: int,
     payload: Annotated[AddOrgMemberRequest, Body(openapi_examples=UPDATE_MEMBER_ROLE_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
-    admin: User = Depends(get_site_admin),
+    admin: User = Depends(get_org_admin),
 ) -> UserOrganization:
     """Change a member's role within an organization (STAFF <-> ADMIN)."""
     membership = session.exec(
@@ -319,7 +319,7 @@ async def remove_org_member(
     org_id: uuid.UUID,
     user_id: int,
     session: Session = Depends(get_session),
-    admin: User = Depends(get_site_admin),
+    admin: User = Depends(get_org_admin),
 ) -> None:
     """Remove a user from an organization."""
     membership = session.exec(

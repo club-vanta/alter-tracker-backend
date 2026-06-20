@@ -61,6 +61,7 @@ from app.schemas.organizations import (
     OrgPublic,
     OrgUpdate,
 )
+from app.schemas.users import UserSearchResult
 
 __all__ = [
     "MAZMO_URL_PATTERN",
@@ -106,5 +107,6 @@ __all__ = [
     "SyncResponse",
     "TokenResponse",
     "UserPublic",
+    "UserSearchResult",
     "VerifyRecoveryCodeRequest",
 ]
