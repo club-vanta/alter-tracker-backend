@@ -1,8 +1,8 @@
 """Tests for the /staff router.
 
-These tests verify admin-only staff management operations: listing users,
+These tests verify site-admin-only staff management operations: listing users,
 approving registrations, changing roles, and disabling/enabling accounts.
-All these endpoints require ADMIN role - regular staff cannot manage other users.
+All these endpoints require SITE_ADMIN role - regular users cannot manage other users.
 """
 
 from fastapi import status
@@ -17,9 +17,9 @@ from tests.conftest import make_user
 
 def test_list_all_staff_returns_200_ok_with_all_accounts(client: TestClient, admin_headers: dict, session: Session):
     """
-    Verify that admins can list all staff accounts.
+    Verify that site admins can list all staff accounts.
 
-    WHY: Admins need to see all users to manage the system - approve new
+    WHY: Site admins need to see all users to manage the system - approve new
     registrations, check who has access, etc.
     """
     make_user(session, username="extra1")
@@ -33,9 +33,9 @@ def test_list_all_staff_returns_200_ok_with_all_accounts(client: TestClient, adm
 
 def test_list_all_staff_by_non_admin_returns_403_forbidden(client: TestClient, staff_headers: dict):
     """
-    Verify that regular staff cannot list all users.
+    Verify that regular users cannot list all users.
 
-    WHY: User management is admin-only. Regular staff shouldn't see other
+    WHY: User management is site-admin-only. Regular users shouldn't see other
     users' accounts - this could leak information about who works events.
     """
     resp = client.get("/staff/", headers=staff_headers)
@@ -62,7 +62,7 @@ def test_list_pending_returns_200_ok_with_only_unapproved_accounts(
     """
     Verify that /pending returns only unapproved accounts.
 
-    WHY: Admins need a filtered view of users awaiting approval. This
+    WHY: Site admins need a filtered view of users awaiting approval. This
     endpoint makes it easy to see who needs attention without scrolling
     through all users.
     """
@@ -89,9 +89,9 @@ def test_list_pending_is_empty_when_all_accounts_are_approved(
 
 def test_list_pending_by_non_admin_returns_403_forbidden(client: TestClient, staff_headers: dict):
     """
-    Verify that regular staff cannot see pending users.
+    Verify that regular users cannot see pending users.
 
-    WHY: Approving users is an admin function. Staff shouldn't see who
+    WHY: Approving users is a site-admin function. Users shouldn't see who
     else is trying to register.
     """
     resp = client.get("/staff/pending", headers=staff_headers)
@@ -105,9 +105,9 @@ def test_approving_pending_user_returns_200_ok_with_is_approved_true(
     client: TestClient, admin_headers: dict, pending_user
 ):
     """
-    Verify that admins can approve pending registrations.
+    Verify that site admins can approve pending registrations.
 
-    WHY: Core admin workflow - new users register, admin reviews and
+    WHY: Core admin workflow - new users register, site admin reviews and
     approves. This enables the user to log in.
     """
     resp = client.patch(
@@ -123,9 +123,9 @@ def test_revoking_approval_of_staff_user_returns_200_ok_with_is_approved_false(
     client: TestClient, admin_headers: dict, staff_user
 ):
     """
-    Verify that admins can revoke access from approved users.
+    Verify that site admins can revoke access from approved users.
 
-    WHY: If someone leaves or their access needs to be suspended, admins
+    WHY: If someone leaves or their access needs to be suspended, site admins
     must be able to revoke approval. This blocks their login.
     """
     resp = client.patch(
@@ -139,9 +139,9 @@ def test_revoking_approval_of_staff_user_returns_200_ok_with_is_approved_false(
 
 def test_admin_revoking_own_approval_returns_400_bad_request(client: TestClient, admin_headers: dict, admin_user):
     """
-    Verify that admins cannot revoke their own approval.
+    Verify that site admins cannot revoke their own approval.
 
-    WHY: Self-lockout protection. If an admin could revoke themselves,
+    WHY: Self-lockout protection. If a site admin could revoke themselves,
     they might accidentally lock themselves out with no way to recover.
     """
     resp = client.patch(
@@ -150,7 +150,7 @@ def test_admin_revoking_own_approval_returns_400_bad_request(client: TestClient,
         headers=admin_headers,
     )
     assert resp.status_code == status.HTTP_400_BAD_REQUEST
-    assert "cannot revoke" in resp.json()["detail"].lower()
+    assert "site admins cannot revoke their own approval" in resp.json()["detail"].lower()
 
 
 def test_approving_nonexistent_user_returns_404_not_found(client: TestClient, admin_headers: dict):
@@ -170,10 +170,10 @@ def test_approving_nonexistent_user_returns_404_not_found(client: TestClient, ad
 
 def test_approving_user_by_non_admin_returns_403_forbidden(client: TestClient, staff_headers: dict, pending_user):
     """
-    Verify that regular staff cannot approve other users.
+    Verify that regular users cannot approve other users.
 
-    WHY: Privilege escalation prevention. If staff could approve users,
-    they could approve their friends without admin oversight.
+    WHY: Privilege escalation prevention. If users could approve others,
+    they could approve their friends without site admin oversight.
     """
     resp = client.patch(
         f"/staff/{pending_user.id}/approve",
@@ -200,55 +200,57 @@ def test_approving_user_without_token_returns_401_unauthorized(client: TestClien
 # ── Change role ───────────────────────────────────────────────────────────────
 
 
-def test_promoting_staff_to_admin_returns_200_ok_with_updated_role(client: TestClient, admin_headers: dict, staff_user):
+def test_promoting_user_to_site_admin_returns_200_ok_with_updated_role(
+    client: TestClient, admin_headers: dict, staff_user
+):
     """
-    Verify that admins can promote staff to admin role.
+    Verify that site admins can promote users to site admin role.
 
-    WHY: Role management workflow. Existing admins can create new admins
-    to share the administrative workload.
+    WHY: Role management workflow. Existing site admins can create new site
+    admins to share the administrative workload.
     """
     resp = client.patch(
         f"/staff/{staff_user.id}/role",
-        json={"role": "ADMIN"},
+        json={"role": "SITE_ADMIN"},
         headers=admin_headers,
     )
     assert resp.status_code == status.HTTP_200_OK
-    assert resp.json()["role"]["name"] == "ADMIN"
+    assert resp.json()["role"]["name"] == "SITE_ADMIN"
 
 
-def test_demoting_another_admin_to_staff_returns_200_ok_with_updated_role(
+def test_demoting_another_admin_to_user_returns_200_ok_with_updated_role(
     client: TestClient, session: Session, admin_headers: dict
 ):
     """
-    Verify that admins can demote other admins to staff.
+    Verify that site admins can demote other site admins to user.
 
-    WHY: If someone no longer needs admin privileges, they can be demoted.
+    WHY: If someone no longer needs site admin privileges, they can be demoted.
     This follows the principle of least privilege.
     """
-    other_admin = make_user(session, username="otheradmin", role=PossibleRoles.ADMIN)
+    other_admin = make_user(session, username="otheradmin", role=PossibleRoles.SITE_ADMIN)
     resp = client.patch(
         f"/staff/{other_admin.id}/role",
-        json={"role": "STAFF"},
+        json={"role": "USER"},
         headers=admin_headers,
     )
     assert resp.status_code == status.HTTP_200_OK
-    assert resp.json()["role"]["name"] == "STAFF"
+    assert resp.json()["role"]["name"] == "USER"
 
 
 def test_admin_demoting_themselves_returns_400_bad_request(client: TestClient, admin_headers: dict, admin_user):
     """
-    Verify that admins cannot demote themselves.
+    Verify that site admins cannot demote themselves.
 
-    WHY: Self-lockout protection. If the only admin demoted themselves,
+    WHY: Self-lockout protection. If the only site admin demoted themselves,
     there would be no one left to manage the system.
     """
     resp = client.patch(
         f"/staff/{admin_user.id}/role",
-        json={"role": "STAFF"},
+        json={"role": "USER"},
         headers=admin_headers,
     )
     assert resp.status_code == status.HTTP_400_BAD_REQUEST
-    assert "cannot demote" in resp.json()["detail"].lower()
+    assert "site admins cannot demote themselves" in resp.json()["detail"].lower()
 
 
 def test_setting_role_to_unknown_value_returns_422_unprocessable_entity(
@@ -257,8 +259,8 @@ def test_setting_role_to_unknown_value_returns_422_unprocessable_entity(
     """
     Verify that invalid role names are rejected.
 
-    WHY: Input validation. Only STAFF and ADMIN are valid roles. Trying
-    to set "SUPERUSER" or other made-up roles should fail.
+    WHY: Input validation. Only USER and SITE_ADMIN are valid roles. Trying
+    to set "SUPERUSER", "ADMIN", "STAFF", or other invalid roles should fail.
     """
     resp = client.patch(
         f"/staff/{staff_user.id}/role",
@@ -270,14 +272,14 @@ def test_setting_role_to_unknown_value_returns_422_unprocessable_entity(
 
 def test_changing_role_by_non_admin_returns_403_forbidden(client: TestClient, staff_headers: dict, pending_user):
     """
-    Verify that regular staff cannot change roles.
+    Verify that regular users cannot change roles.
 
-    WHY: Privilege escalation prevention. Staff shouldn't be able to
-    promote themselves or others to admin.
+    WHY: Privilege escalation prevention. Users shouldn't be able to
+    promote themselves or others to site admin.
     """
     resp = client.patch(
         f"/staff/{pending_user.id}/role",
-        json={"role": "ADMIN"},
+        json={"role": "SITE_ADMIN"},
         headers=staff_headers,
     )
     assert resp.status_code == status.HTTP_403_FORBIDDEN
@@ -290,7 +292,7 @@ def test_disabling_staff_user_returns_200_ok_with_audit_trail(
     client: TestClient, admin_headers: dict, session: Session, admin_user
 ):
     """
-    Verify that admins can disable staff accounts with a reason.
+    Verify that site admins can disable user accounts with a reason.
 
     WHY: Soft-delete preserves audit trails. When someone leaves or needs
     to be suspended, we disable their account instead of deleting it.
@@ -311,9 +313,9 @@ def test_disabling_staff_user_returns_200_ok_with_audit_trail(
 
 def test_admin_disabling_themselves_returns_400_bad_request(client: TestClient, admin_headers: dict, admin_user):
     """
-    Verify that admins cannot disable their own account.
+    Verify that site admins cannot disable their own account.
 
-    WHY: Self-lockout protection. If the only admin disabled themselves,
+    WHY: Self-lockout protection. If the only site admin disabled themselves,
     the system would become unmanageable.
     """
     resp = client.patch(
@@ -368,9 +370,9 @@ def test_disabling_nonexistent_user_returns_404_not_found(client: TestClient, ad
 
 def test_disabling_user_by_non_admin_returns_403_forbidden(client: TestClient, staff_headers: dict, pending_user):
     """
-    Verify that regular staff cannot disable accounts.
+    Verify that regular users cannot disable accounts.
 
-    WHY: Only admins can disable users. Staff shouldn't be able to
+    WHY: Only site admins can disable users. Users shouldn't be able to
     suspend other users.
     """
     resp = client.patch(
@@ -434,10 +436,10 @@ def test_disabling_user_without_token_returns_401_unauthorized(client: TestClien
 
 def test_enabling_disabled_user_returns_200_ok(client: TestClient, admin_headers: dict, session: Session):
     """
-    Verify that admins can re-enable disabled staff accounts.
+    Verify that site admins can re-enable disabled user accounts.
 
     WHY: Reversible action. If someone returns or was disabled by mistake,
-    admins can restore their access.
+    site admins can restore their access.
     """
     target = make_user(session, username="toreenable")
     # First disable
@@ -472,9 +474,9 @@ def test_enabling_user_by_non_admin_returns_403_forbidden(
     client: TestClient, staff_headers: dict, session: Session, admin_headers: dict
 ):
     """
-    Verify that regular staff cannot enable accounts.
+    Verify that regular users cannot enable accounts.
 
-    WHY: Only admins can enable users. Staff shouldn't be able to
+    WHY: Only site admins can enable users. Users shouldn't be able to
     restore suspended accounts.
     """
     target = make_user(session, username="staffcantreenable")
@@ -484,7 +486,7 @@ def test_enabling_user_by_non_admin_returns_403_forbidden(
         json={"reason": "Testing"},
         headers=admin_headers,
     )
-    # Staff tries to enable
+    # User tries to enable
     resp = client.patch(f"/staff/{target.id}/enable", headers=staff_headers)
     assert resp.status_code == status.HTTP_403_FORBIDDEN
 

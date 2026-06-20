@@ -2,54 +2,78 @@
 
 Covers: create, list, get, list guests, check-in, undo check-in, finalize/unfinalize.
 Sync endpoint tests live in test_sync.py.
+
+All routes are org-scoped: /organizations/{org_id}/meetups/...
 """
 
 import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
+import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from app.models.models import EventLog, EventType
+from app.models.models import EventLog, EventType, Organization, OrgRole, User
 from app.services.mazmo import MazmoAPIError, MazmoNetworkError
-from tests.conftest import make_guest, make_meetup, make_rsvp
+from tests.conftest import make_guest, make_meetup, make_org_member, make_rsvp
 
-# ── Create meetup ─────────────────────────────────────────────────────────────
+# -- Shared fixture -----------------------------------------------------------
+
+
+@pytest.fixture()
+def org_staff_member(session: Session, org: Organization, staff_user: User):
+    """
+    Add the staff_user to the default org with OrgRole.STAFF.
+
+    Request this fixture alongside staff_headers in any test where
+    staff_headers needs to access org-scoped endpoints.
+    """
+    return make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
+
+
+# -- Create meetup ------------------------------------------------------------
 
 
 def test_create_meetup_returns_201_with_meetup_data(
-    client: TestClient, admin_headers: dict, mock_mazmo_for_meetups: AsyncMock
+    client: TestClient,
+    admin_headers: dict,
+    org: Organization,
+    mock_mazmo_for_meetups: AsyncMock,
 ):
     """
     Verify that a valid meetup creation request returns 201 with the created meetup.
 
-    WHY: Happy path - staff provides a Mazmo URL, we fetch the date from Mazmo
+    WHY: Happy path - admin provides a Mazmo URL, we fetch the date from Mazmo
     and persist the meetup.
     """
     resp = client.post(
-        "/meetups/",
-        json={"name": "Alter Córdoba #5", "mazmo_meetup_url": "https://mazmo.net/test/alter-5"},
+        f"/organizations/{org.id}/meetups/",
+        json={"name": "Alter Cordoba #5", "mazmo_meetup_url": "https://mazmo.net/test/alter-5"},
         headers=admin_headers,
     )
 
     assert resp.status_code == status.HTTP_201_CREATED
     data = resp.json()
-    assert data["name"] == "Alter Córdoba #5"
+    assert data["name"] == "Alter Cordoba #5"
     assert data["mazmo_meetup_url"] == "https://mazmo.net/test/alter-5"
     assert "id" in data
     assert "date" in data
 
 
-def test_create_meetup_accessible_by_regular_staff(
-    client: TestClient, staff_headers: dict, mock_mazmo_for_meetups: AsyncMock
+def test_create_meetup_accessible_by_org_staff(
+    client: TestClient,
+    staff_headers: dict,
+    org: Organization,
+    org_staff_member,
+    mock_mazmo_for_meetups: AsyncMock,
 ):
     """
-    Verify that regular staff (not just admins) can create meetups.
+    Verify that org members (not just site admins) can create meetups.
     """
     resp = client.post(
-        "/meetups/",
+        f"/organizations/{org.id}/meetups/",
         json={"name": "Test Meetup", "mazmo_meetup_url": "https://mazmo.net/test/meetup-999"},
         headers=staff_headers,
     )
@@ -58,7 +82,11 @@ def test_create_meetup_accessible_by_regular_staff(
 
 
 def test_create_meetup_returns_409_for_duplicate_url(
-    client: TestClient, admin_headers: dict, session: Session, mock_mazmo_for_meetups: AsyncMock
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    org: Organization,
+    mock_mazmo_for_meetups: AsyncMock,
 ):
     """
     Verify that creating a meetup with a duplicate Mazmo URL returns 409.
@@ -66,10 +94,10 @@ def test_create_meetup_returns_409_for_duplicate_url(
     WHY: Each Mazmo event should only be tracked once. A duplicate URL
     means someone already created this meetup.
     """
-    make_meetup(session, mazmo_meetup_url="https://mazmo.net/test/duplicate-123")
+    make_meetup(session, org=org, mazmo_meetup_url="https://mazmo.net/test/duplicate-123")
 
     resp = client.post(
-        "/meetups/",
+        f"/organizations/{org.id}/meetups/",
         json={"name": "Duplicate", "mazmo_meetup_url": "https://mazmo.net/test/duplicate-123"},
         headers=admin_headers,
     )
@@ -78,7 +106,10 @@ def test_create_meetup_returns_409_for_duplicate_url(
 
 
 def test_create_meetup_returns_504_when_mazmo_unreachable(
-    client: TestClient, admin_headers: dict, mock_mazmo_for_meetups: AsyncMock
+    client: TestClient,
+    admin_headers: dict,
+    org: Organization,
+    mock_mazmo_for_meetups: AsyncMock,
 ):
     """
     Verify that a Mazmo network error returns 504.
@@ -89,7 +120,7 @@ def test_create_meetup_returns_504_when_mazmo_unreachable(
     mock_mazmo_for_meetups.fetch_meetup_date.side_effect = MazmoNetworkError("timeout")
 
     resp = client.post(
-        "/meetups/",
+        f"/organizations/{org.id}/meetups/",
         json={"name": "Test", "mazmo_meetup_url": "https://mazmo.net/test/unreachable-1"},
         headers=admin_headers,
     )
@@ -98,7 +129,10 @@ def test_create_meetup_returns_504_when_mazmo_unreachable(
 
 
 def test_create_meetup_returns_502_when_mazmo_returns_error(
-    client: TestClient, admin_headers: dict, mock_mazmo_for_meetups: AsyncMock
+    client: TestClient,
+    admin_headers: dict,
+    org: Organization,
+    mock_mazmo_for_meetups: AsyncMock,
 ):
     """
     Verify that Mazmo API errors return 502.
@@ -109,7 +143,7 @@ def test_create_meetup_returns_502_when_mazmo_returns_error(
     mock_mazmo_for_meetups.fetch_meetup_date.side_effect = MazmoAPIError("404")
 
     resp = client.post(
-        "/meetups/",
+        f"/organizations/{org.id}/meetups/",
         json={"name": "Test", "mazmo_meetup_url": "https://mazmo.net/test/bad-url-1"},
         headers=admin_headers,
     )
@@ -117,12 +151,16 @@ def test_create_meetup_returns_502_when_mazmo_returns_error(
     assert resp.status_code == status.HTTP_502_BAD_GATEWAY
 
 
-def test_create_meetup_requires_auth(client: TestClient, mock_mazmo_for_meetups: AsyncMock):
+def test_create_meetup_requires_auth(
+    client: TestClient,
+    org: Organization,
+    mock_mazmo_for_meetups: AsyncMock,
+):
     """
     Verify that meetup creation requires authentication.
     """
     resp = client.post(
-        "/meetups/",
+        f"/organizations/{org.id}/meetups/",
         json={"name": "Test", "mazmo_meetup_url": "https://mazmo.net/test/no-auth-1"},
     )
 
@@ -130,7 +168,10 @@ def test_create_meetup_requires_auth(client: TestClient, mock_mazmo_for_meetups:
 
 
 def test_create_meetup_accepts_community_with_plus_prefix(
-    client: TestClient, admin_headers: dict, mock_mazmo_for_meetups: AsyncMock
+    client: TestClient,
+    admin_headers: dict,
+    org: Organization,
+    mock_mazmo_for_meetups: AsyncMock,
 ):
     """
     Verify that URLs with a '+' prefix in the community segment are accepted.
@@ -139,7 +180,7 @@ def test_create_meetup_accepts_community_with_plus_prefix(
     The old regex only allowed [\\w-] and rejected these URLs with a 422.
     """
     resp = client.post(
-        "/meetups/",
+        f"/organizations/{org.id}/meetups/",
         json={
             "name": "Alter Tan Selmo Secret Face",
             "mazmo_meetup_url": "https://mazmo.net/+eventos-reuniones-argentina/alter-tal-selmo-secret-face-opgnjcy4d0u",
@@ -151,7 +192,10 @@ def test_create_meetup_accepts_community_with_plus_prefix(
 
 
 def test_create_meetup_accepts_alphanumeric_slug_suffix(
-    client: TestClient, admin_headers: dict, mock_mazmo_for_meetups: AsyncMock
+    client: TestClient,
+    admin_headers: dict,
+    org: Organization,
+    mock_mazmo_for_meetups: AsyncMock,
 ):
     """
     Verify that thread slugs ending in an alphanumeric ID (not just numeric) are accepted.
@@ -160,7 +204,7 @@ def test_create_meetup_accepts_alphanumeric_slug_suffix(
     plain integers. The old regex required \\d+ at the end and rejected these.
     """
     resp = client.post(
-        "/meetups/",
+        f"/organizations/{org.id}/meetups/",
         json={
             "name": "Test Alphanumeric ID",
             "mazmo_meetup_url": "https://mazmo.net/some-community/some-event-abc123xyz",
@@ -172,16 +216,19 @@ def test_create_meetup_accepts_alphanumeric_slug_suffix(
 
 
 def test_create_meetup_rejects_url_without_thread_segment(
-    client: TestClient, admin_headers: dict, mock_mazmo_for_meetups: AsyncMock
+    client: TestClient,
+    admin_headers: dict,
+    org: Organization,
+    mock_mazmo_for_meetups: AsyncMock,
 ):
     """
     Verify that URLs missing the thread path segment are still rejected.
 
     WHY: A URL like https://mazmo.net/community (no thread) would be a community
-    page, not a meetup — it should never pass validation.
+    page, not a meetup -- it should never pass validation.
     """
     resp = client.post(
-        "/meetups/",
+        f"/organizations/{org.id}/meetups/",
         json={"name": "Bad URL", "mazmo_meetup_url": "https://mazmo.net/just-community"},
         headers=admin_headers,
     )
@@ -190,11 +237,14 @@ def test_create_meetup_rejects_url_without_thread_segment(
 
 
 def test_create_meetup_rejects_non_mazmo_url(
-    client: TestClient, admin_headers: dict, mock_mazmo_for_meetups: AsyncMock
+    client: TestClient,
+    admin_headers: dict,
+    org: Organization,
+    mock_mazmo_for_meetups: AsyncMock,
 ):
     """Verify that URLs from other domains are rejected."""
     resp = client.post(
-        "/meetups/",
+        f"/organizations/{org.id}/meetups/",
         json={"name": "Bad URL", "mazmo_meetup_url": "https://example.com/community/event-123"},
         headers=admin_headers,
     )
@@ -202,17 +252,23 @@ def test_create_meetup_rejects_non_mazmo_url(
     assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
-# ── List meetups ──────────────────────────────────────────────────────────────
+# -- List meetups -------------------------------------------------------------
 
 
-def test_list_meetups_returns_all_meetups(client: TestClient, staff_headers: dict, session: Session):
+def test_list_meetups_returns_all_meetups(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    org: Organization,
+    org_staff_member,
+):
     """
-    Verify that list returns all meetups with total count.
+    Verify that list returns all meetups in the org with total count.
     """
-    make_meetup(session, name="Meetup A", mazmo_meetup_url="https://mazmo.net/test/a-1")
-    make_meetup(session, name="Meetup B", mazmo_meetup_url="https://mazmo.net/test/b-2")
+    make_meetup(session, org=org, name="Meetup A", mazmo_meetup_url="https://mazmo.net/test/a-1")
+    make_meetup(session, org=org, name="Meetup B", mazmo_meetup_url="https://mazmo.net/test/b-2")
 
-    resp = client.get("/meetups/", headers=staff_headers)
+    resp = client.get(f"/organizations/{org.id}/meetups/", headers=staff_headers)
 
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
@@ -221,11 +277,16 @@ def test_list_meetups_returns_all_meetups(client: TestClient, staff_headers: dic
     assert names == {"Meetup A", "Meetup B"}
 
 
-def test_list_meetups_returns_empty_when_none_exist(client: TestClient, staff_headers: dict):
+def test_list_meetups_returns_empty_when_none_exist(
+    client: TestClient,
+    staff_headers: dict,
+    org: Organization,
+    org_staff_member,
+):
     """
     Verify that listing meetups when none exist returns empty list.
     """
-    resp = client.get("/meetups/", headers=staff_headers)
+    resp = client.get(f"/organizations/{org.id}/meetups/", headers=staff_headers)
 
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
@@ -233,19 +294,24 @@ def test_list_meetups_returns_empty_when_none_exist(client: TestClient, staff_he
     assert data["meetups"] == []
 
 
-def test_list_meetups_requires_auth(client: TestClient):
-    resp = client.get("/meetups/")
+def test_list_meetups_requires_auth(client: TestClient, org: Organization):
+    resp = client.get(f"/organizations/{org.id}/meetups/")
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-# ── Get single meetup ─────────────────────────────────────────────────────────
+# -- Get single meetup --------------------------------------------------------
 
 
-def test_get_meetup_returns_meetup_by_id(client: TestClient, staff_headers: dict, meetup):
+def test_get_meetup_returns_meetup_by_id(
+    client: TestClient,
+    staff_headers: dict,
+    meetup,
+    org_staff_member,
+):
     """
     Verify that a meetup can be retrieved by its UUID.
     """
-    resp = client.get(f"/meetups/{meetup.id}", headers=staff_headers)
+    resp = client.get(f"/organizations/{meetup.org_id}/meetups/{meetup.id}", headers=staff_headers)
 
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
@@ -253,20 +319,58 @@ def test_get_meetup_returns_meetup_by_id(client: TestClient, staff_headers: dict
     assert data["name"] == meetup.name
 
 
-def test_get_meetup_returns_404_for_unknown_id(client: TestClient, staff_headers: dict):
+def test_get_meetup_returns_404_for_unknown_id(
+    client: TestClient,
+    staff_headers: dict,
+    org: Organization,
+    org_staff_member,
+):
     """
     Verify that requesting a non-existent meetup returns 404.
     """
     fake_id = uuid.uuid4()
-    resp = client.get(f"/meetups/{fake_id}", headers=staff_headers)
+    resp = client.get(f"/organizations/{org.id}/meetups/{fake_id}", headers=staff_headers)
 
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
-# ── List meetup guests ────────────────────────────────────────────────────────
+def test_get_meetup_returns_404_for_meetup_from_different_org(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    org: Organization,
+    meetup,
+):
+    """
+    Verify that requesting a meetup using the wrong org_id in the URL returns 404.
+
+    WHY: A meetup belongs to exactly one org. Using a valid meetup ID under the
+    wrong org should not leak data across org boundaries -- the caller gets 404
+    as if the meetup doesn't exist in that org.
+    """
+    from tests.conftest import make_org
+
+    other_org = make_org(session, name="Other Org", slug="other-org")
+
+    # meetup belongs to `org`, but we request it under `other_org`
+    resp = client.get(
+        f"/organizations/{other_org.id}/meetups/{meetup.id}",
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_list_meetup_guests_returns_all_rsvps(client: TestClient, staff_headers: dict, session: Session, meetup):
+# -- List meetup guests -------------------------------------------------------
+
+
+def test_list_meetup_guests_returns_all_rsvps(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
     """
     Verify that listing meetup guests returns all RSVPed guests.
     """
@@ -275,7 +379,10 @@ def test_list_meetup_guests_returns_all_rsvps(client: TestClient, staff_headers:
     make_rsvp(session, meetup=meetup, guest=alice)
     make_rsvp(session, meetup=meetup, guest=bob)
 
-    resp = client.get(f"/meetups/{meetup.id}/guests", headers=staff_headers)
+    resp = client.get(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests",
+        headers=staff_headers,
+    )
 
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
@@ -285,7 +392,11 @@ def test_list_meetup_guests_returns_all_rsvps(client: TestClient, staff_headers:
 
 
 def test_list_meetup_guests_includes_rsvp_and_checkin_state(
-    client: TestClient, staff_headers: dict, session: Session, meetup
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
 ):
     """
     Verify that the guest list includes RSVP and check-in state fields.
@@ -296,7 +407,10 @@ def test_list_meetup_guests_includes_rsvp_and_checkin_state(
     alice = make_guest(session, mazmo_user_id=201, username="alice_rsvp")
     make_rsvp(session, meetup=meetup, guest=alice, has_arrived=True, arrival_order=1)
 
-    resp = client.get(f"/meetups/{meetup.id}/guests", headers=staff_headers)
+    resp = client.get(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests",
+        headers=staff_headers,
+    )
 
     assert resp.status_code == status.HTTP_200_OK
     guest_entry = resp.json()["guests"][0]
@@ -304,21 +418,65 @@ def test_list_meetup_guests_includes_rsvp_and_checkin_state(
     assert guest_entry["rsvp"]["arrival_order"] == 1
 
 
-def test_list_meetup_guests_returns_404_for_unknown_meetup(client: TestClient, staff_headers: dict):
+def test_list_meetup_guests_includes_is_banned_field(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
+    """
+    Verify that each guest entry in the meetup guest list includes is_banned.
+
+    WHY: GuestWithBanPublic exposes is_banned so the door UI can show a
+    warning before a banned guest is checked in. This field must always
+    be present in the response even when False.
+    """
+    guest = make_guest(session, mazmo_user_id=250, username="unbanned_guest")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    resp = client.get(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    guest_entry = resp.json()["guests"][0]
+    assert "is_banned" in guest_entry["guest"]
+    assert guest_entry["guest"]["is_banned"] is False
+
+
+def test_list_meetup_guests_returns_404_for_unknown_meetup(
+    client: TestClient,
+    staff_headers: dict,
+    org: Organization,
+    org_staff_member,
+):
     """
     Verify that listing guests for a non-existent meetup returns 404.
     """
     fake_id = uuid.uuid4()
-    resp = client.get(f"/meetups/{fake_id}/guests", headers=staff_headers)
+    resp = client.get(
+        f"/organizations/{org.id}/meetups/{fake_id}/guests",
+        headers=staff_headers,
+    )
 
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_list_meetup_guests_returns_empty_when_no_rsvps(client: TestClient, staff_headers: dict, meetup):
+def test_list_meetup_guests_returns_empty_when_no_rsvps(
+    client: TestClient,
+    staff_headers: dict,
+    meetup,
+    org_staff_member,
+):
     """
     Verify that a meetup with no RSVPs returns empty list.
     """
-    resp = client.get(f"/meetups/{meetup.id}/guests", headers=staff_headers)
+    resp = client.get(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests",
+        headers=staff_headers,
+    )
 
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
@@ -326,10 +484,16 @@ def test_list_meetup_guests_returns_empty_when_no_rsvps(client: TestClient, staf
     assert data["guests"] == []
 
 
-# ── Check in ─────────────────────────────────────────────────────────────────
+# -- Check in -----------------------------------------------------------------
 
 
-def test_checkin_marks_guest_as_arrived(client: TestClient, staff_headers: dict, session: Session, meetup):
+def test_checkin_marks_guest_as_arrived(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
     """
     Verify that check-in marks the guest as arrived and returns their data.
 
@@ -340,7 +504,7 @@ def test_checkin_marks_guest_as_arrived(client: TestClient, staff_headers: dict,
     make_rsvp(session, meetup=meetup, guest=guest)
 
     resp = client.post(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
         headers=staff_headers,
     )
 
@@ -350,7 +514,14 @@ def test_checkin_marks_guest_as_arrived(client: TestClient, staff_headers: dict,
     assert data["arrival_order"] is not None
 
 
-def test_checkin_writes_event_log_entry(client: TestClient, staff_headers: dict, session: Session, meetup, staff_user):
+def test_checkin_writes_event_log_entry(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    staff_user: User,
+    org_staff_member,
+):
     """
     Verify that check-in creates an audit log entry.
 
@@ -360,7 +531,7 @@ def test_checkin_writes_event_log_entry(client: TestClient, staff_headers: dict,
     make_rsvp(session, meetup=meetup, guest=guest)
 
     client.post(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
         headers=staff_headers,
     )
 
@@ -371,7 +542,12 @@ def test_checkin_writes_event_log_entry(client: TestClient, staff_headers: dict,
     assert event.meetup_id == meetup.id
 
 
-def test_checkin_returns_404_when_guest_not_rsvped(client: TestClient, staff_headers: dict, meetup):
+def test_checkin_returns_404_when_guest_not_rsvped(
+    client: TestClient,
+    staff_headers: dict,
+    meetup,
+    org_staff_member,
+):
     """
     Verify that checking in a non-RSVPed guest returns 404.
 
@@ -379,14 +555,20 @@ def test_checkin_returns_404_when_guest_not_rsvped(client: TestClient, staff_hea
     or who needs to be synced first. Clear 404 prompts them to sync.
     """
     resp = client.post(
-        f"/meetups/{meetup.id}/guests/99999/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/99999/checkin",
         headers=staff_headers,
     )
 
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_checkin_returns_409_when_already_checked_in(client: TestClient, staff_headers: dict, session: Session, meetup):
+def test_checkin_returns_409_when_already_checked_in(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
     """
     Verify that double check-in returns 409.
 
@@ -404,30 +586,38 @@ def test_checkin_returns_409_when_already_checked_in(client: TestClient, staff_h
     )
 
     resp = client.post(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
         headers=staff_headers,
     )
 
     assert resp.status_code == status.HTTP_409_CONFLICT
 
 
-def test_checkin_returns_404_for_unknown_meetup(client: TestClient, staff_headers: dict):
+def test_checkin_returns_404_for_unknown_meetup(
+    client: TestClient,
+    staff_headers: dict,
+    org: Organization,
+    org_staff_member,
+):
     """
     Verify that check-in on non-existent meetup returns 404.
     """
     fake_id = uuid.uuid4()
-    resp = client.post(f"/meetups/{fake_id}/guests/123/checkin", headers=staff_headers)
+    resp = client.post(
+        f"/organizations/{org.id}/meetups/{fake_id}/guests/123/checkin",
+        headers=staff_headers,
+    )
 
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
-# ── Check-in concurrency guarantees ──────────────────────────────────────────
+# -- Check-in concurrency guarantees ------------------------------------------
 #
 # True concurrent requests can't be tested with the synchronous TestClient
 # (tests share a single rolled-back transaction). Instead, these tests verify
 # the observable guarantees that SELECT FOR UPDATE provides:
 #
-#   1. A second check-in on an already-checked-in guest returns 409 — which is
+#   1. A second check-in on an already-checked-in guest returns 409 -- which is
 #      exactly what the second concurrent request sees after the first commits.
 #   2. Only one CHECK_IN event log entry is ever created for a given guest+meetup,
 #      regardless of how many attempts were made.
@@ -436,40 +626,47 @@ def test_checkin_returns_404_for_unknown_meetup(client: TestClient, staff_header
 
 
 def test_checkin_second_attempt_after_first_succeeds_returns_409(
-    client: TestClient, staff_headers: dict, session: Session, meetup
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
 ):
     """
     Verify that a second check-in attempt after the first succeeded returns 409.
 
     WHY: This is the state the second concurrent request observes after SELECT
-    FOR UPDATE releases the lock — has_arrived is True, so it gets 409.
+    FOR UPDATE releases the lock -- has_arrived is True, so it gets 409.
     The first check-in won; the second must not silently succeed or 500.
     """
     guest = make_guest(session, mazmo_user_id=350, username="concurrent_checkin")
     make_rsvp(session, meetup=meetup, guest=guest)
 
-    # First check-in succeeds
     resp1 = client.post(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
         headers=staff_headers,
     )
     assert resp1.status_code == status.HTTP_200_OK
 
-    # Second check-in (what the losing concurrent request sees after lock release)
     resp2 = client.post(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
         headers=staff_headers,
     )
     assert resp2.status_code == status.HTTP_409_CONFLICT
 
 
 def test_checkin_produces_exactly_one_event_log_entry_on_duplicate_attempt(
-    client: TestClient, staff_headers: dict, session: Session, meetup, staff_user
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    staff_user: User,
+    org_staff_member,
 ):
     """
     Verify that only one CHECK_IN event log entry exists after two attempts.
 
-    WHY: The audit trail must reflect reality — only the staff member who
+    WHY: The audit trail must reflect reality -- only the staff member who
     actually performed the first check-in should appear in the log.
     A second concurrent request must not inject its own event log entry.
     """
@@ -477,11 +674,11 @@ def test_checkin_produces_exactly_one_event_log_entry_on_duplicate_attempt(
     make_rsvp(session, meetup=meetup, guest=guest)
 
     client.post(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
         headers=staff_headers,
     )
     client.post(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
         headers=staff_headers,
     )
 
@@ -495,7 +692,14 @@ def test_checkin_produces_exactly_one_event_log_entry_on_duplicate_attempt(
 
 
 def test_checkin_event_log_records_first_staff_not_second(
-    client: TestClient, session: Session, meetup, staff_user, admin_user, staff_headers, admin_headers
+    client: TestClient,
+    session: Session,
+    meetup,
+    staff_user: User,
+    admin_user: User,
+    staff_headers: dict,
+    admin_headers: dict,
+    org_staff_member,
 ):
     """
     Verify that the event log records the staff member who checked in first,
@@ -509,12 +713,12 @@ def test_checkin_event_log_records_first_staff_not_second(
 
     # Staff checks in first
     client.post(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
         headers=staff_headers,
     )
     # Admin tries to check in the same guest (arrives second)
     client.post(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
         headers=admin_headers,
     )
 
@@ -527,10 +731,16 @@ def test_checkin_event_log_records_first_staff_not_second(
     assert event.actor_id == staff_user.id  # first, not admin
 
 
-# ── Undo check-in ─────────────────────────────────────────────────────────────
+# -- Undo check-in ------------------------------------------------------------
 
 
-def test_undo_checkin_clears_arrival_data(client: TestClient, staff_headers: dict, session: Session, meetup):
+def test_undo_checkin_clears_arrival_data(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
     """
     Verify that undo check-in clears all arrival fields.
 
@@ -548,7 +758,7 @@ def test_undo_checkin_clears_arrival_data(client: TestClient, staff_headers: dic
     )
 
     resp = client.patch(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
         json={"reason": "Checked in by mistake"},
         headers=staff_headers,
     )
@@ -562,7 +772,12 @@ def test_undo_checkin_clears_arrival_data(client: TestClient, staff_headers: dic
 
 
 def test_undo_checkin_writes_event_log_with_reason(
-    client: TestClient, staff_headers: dict, session: Session, meetup, staff_user
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    staff_user: User,
+    org_staff_member,
 ):
     """
     Verify that undo check-in creates an audit log entry with the reason.
@@ -580,7 +795,7 @@ def test_undo_checkin_writes_event_log_with_reason(
     )
 
     client.patch(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
         json={"reason": "Wrong person scanned"},
         headers=staff_headers,
     )
@@ -595,12 +810,17 @@ def test_undo_checkin_writes_event_log_with_reason(
     assert event.actor_id == staff_user.id
 
 
-def test_undo_checkin_returns_404_when_guest_not_rsvped(client: TestClient, staff_headers: dict, meetup):
+def test_undo_checkin_returns_404_when_guest_not_rsvped(
+    client: TestClient,
+    staff_headers: dict,
+    meetup,
+    org_staff_member,
+):
     """
     Verify that undo on a non-RSVPed guest returns 404.
     """
     resp = client.patch(
-        f"/meetups/{meetup.id}/guests/99999/undo-checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/99999/undo-checkin",
         json={"reason": "Test reason"},
         headers=staff_headers,
     )
@@ -609,7 +829,11 @@ def test_undo_checkin_returns_404_when_guest_not_rsvped(client: TestClient, staf
 
 
 def test_undo_checkin_returns_409_when_guest_not_checked_in(
-    client: TestClient, staff_headers: dict, session: Session, meetup
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
 ):
     """
     Verify that undo on a guest who hasn't checked in returns 409.
@@ -620,7 +844,7 @@ def test_undo_checkin_returns_409_when_guest_not_checked_in(
     make_rsvp(session, meetup=meetup, guest=guest, has_arrived=False)
 
     resp = client.patch(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
         json={"reason": "Oops!"},
         headers=staff_headers,
     )
@@ -629,7 +853,11 @@ def test_undo_checkin_returns_409_when_guest_not_checked_in(
 
 
 def test_undo_checkin_rejects_reason_that_is_too_short(
-    client: TestClient, staff_headers: dict, session: Session, meetup
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
 ):
     """
     Verify that undo check-in requires a meaningful reason (min 5 chars).
@@ -648,7 +876,7 @@ def test_undo_checkin_rejects_reason_that_is_too_short(
     )
 
     resp = client.patch(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
         json={"reason": "no"},
         headers=staff_headers,
     )
@@ -656,13 +884,18 @@ def test_undo_checkin_rejects_reason_that_is_too_short(
     assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
-def test_undo_checkin_returns_404_for_unknown_meetup(client: TestClient, staff_headers: dict):
+def test_undo_checkin_returns_404_for_unknown_meetup(
+    client: TestClient,
+    staff_headers: dict,
+    org: Organization,
+    org_staff_member,
+):
     """
     Verify that undo on non-existent meetup returns 404.
     """
     fake_id = uuid.uuid4()
     resp = client.patch(
-        f"/meetups/{fake_id}/guests/123/undo-checkin",
+        f"/organizations/{org.id}/meetups/{fake_id}/guests/123/undo-checkin",
         json={"reason": "Test reason"},
         headers=staff_headers,
     )
@@ -670,19 +903,26 @@ def test_undo_checkin_returns_404_for_unknown_meetup(client: TestClient, staff_h
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
-# ── Finalize / un-finalize ────────────────────────────────────────────────────
+# -- Finalize / un-finalize ---------------------------------------------------
 
 
 def test_finalize_meetup_sets_is_finalized_and_finalized_at(
-    client: TestClient, staff_headers: dict, session: Session, meetup
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    meetup,
 ):
     """
     Verify that finalizing a meetup sets is_finalized=True and records finalized_at.
 
     WHY: Core requirement - once an event ends we lock it to prevent
     accidental check-ins or syncs from corrupting the historical record.
+    Uses admin_headers because finalize requires org admin (SITE_ADMIN or ADMIN role).
     """
-    resp = client.patch(f"/meetups/{meetup.id}/finalize", headers=staff_headers)
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/finalize",
+        headers=admin_headers,
+    )
 
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
@@ -695,7 +935,11 @@ def test_finalize_meetup_sets_is_finalized_and_finalized_at(
 
 
 def test_finalize_meetup_writes_event_log_entry(
-    client: TestClient, staff_headers: dict, session: Session, meetup, staff_user
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    meetup,
+    admin_user: User,
 ):
     """
     Verify that finalizing a meetup creates an audit log entry.
@@ -703,16 +947,45 @@ def test_finalize_meetup_writes_event_log_entry(
     WHY: We need to know who finalized a meetup and when, in case it was done
     in error and needs to be reversed.
     """
-    client.patch(f"/meetups/{meetup.id}/finalize", headers=staff_headers)
+    client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/finalize",
+        headers=admin_headers,
+    )
 
     event = session.exec(
         select(EventLog).where(EventLog.meetup_id == meetup.id).where(EventLog.event_type == EventType.MEETUP_FINALIZED)
     ).first()
     assert event is not None
-    assert event.actor_id == staff_user.id
+    assert event.actor_id == admin_user.id
 
 
-def test_finalize_meetup_returns_409_when_already_finalized(client: TestClient, staff_headers: dict, session: Session):
+def test_finalize_meetup_returns_403_for_org_staff_without_admin_role(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
+    """
+    Verify that an org member with STAFF role cannot finalize a meetup.
+
+    WHY: finalize/unfinalize are admin-only operations (SITE_ADMIN or org ADMIN).
+    A STAFF-role member should be rejected with 403 to prevent accidental lockouts.
+    """
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/finalize",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_finalize_meetup_returns_409_when_already_finalized(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    org: Organization,
+):
     """
     Verify that finalizing an already-finalized meetup returns 409.
 
@@ -721,6 +994,7 @@ def test_finalize_meetup_returns_409_when_already_finalized(client: TestClient, 
     """
     finalized = make_meetup(
         session,
+        org=org,
         name="Already Final",
         mazmo_meetup_url="https://mazmo.net/test/already-final-1",
     )
@@ -729,22 +1003,38 @@ def test_finalize_meetup_returns_409_when_already_finalized(client: TestClient, 
     session.add(finalized)
     session.flush()
 
-    resp = client.patch(f"/meetups/{finalized.id}/finalize", headers=staff_headers)
+    resp = client.patch(
+        f"/organizations/{org.id}/meetups/{finalized.id}/finalize",
+        headers=admin_headers,
+    )
 
     assert resp.status_code == status.HTTP_409_CONFLICT
 
 
-def test_finalize_meetup_returns_404_for_unknown_meetup(client: TestClient, staff_headers: dict):
+def test_finalize_meetup_returns_404_for_unknown_meetup(
+    client: TestClient,
+    admin_headers: dict,
+    org: Organization,
+):
     """
     Verify that finalizing a non-existent meetup returns 404.
     """
     fake_id = uuid.uuid4()
-    resp = client.patch(f"/meetups/{fake_id}/finalize", headers=staff_headers)
+    resp = client.patch(
+        f"/organizations/{org.id}/meetups/{fake_id}/finalize",
+        headers=admin_headers,
+    )
 
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_checkin_returns_409_when_meetup_is_finalized(client: TestClient, staff_headers: dict, session: Session):
+def test_checkin_returns_409_when_meetup_is_finalized(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    org: Organization,
+    org_staff_member,
+):
     """
     Verify that check-in is blocked on a finalized meetup.
 
@@ -753,6 +1043,7 @@ def test_checkin_returns_409_when_meetup_is_finalized(client: TestClient, staff_
     """
     finalized = make_meetup(
         session,
+        org=org,
         name="Closed Meetup",
         mazmo_meetup_url="https://mazmo.net/test/closed-1",
     )
@@ -764,7 +1055,7 @@ def test_checkin_returns_409_when_meetup_is_finalized(client: TestClient, staff_
     session.flush()
 
     resp = client.post(
-        f"/meetups/{finalized.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{org.id}/meetups/{finalized.id}/guests/{guest.mazmo_user_id}/checkin",
         headers=staff_headers,
     )
 
@@ -776,6 +1067,8 @@ def test_sync_returns_409_when_meetup_is_finalized(
     client: TestClient,
     staff_headers: dict,
     session: Session,
+    org: Organization,
+    org_staff_member,
     mock_mazmo: AsyncMock,
 ):
     """
@@ -786,6 +1079,7 @@ def test_sync_returns_409_when_meetup_is_finalized(
     """
     finalized = make_meetup(
         session,
+        org=org,
         name="Synced Closed",
         mazmo_meetup_url="https://mazmo.net/test/sync-closed-1",
     )
@@ -794,21 +1088,31 @@ def test_sync_returns_409_when_meetup_is_finalized(
     session.add(finalized)
     session.flush()
 
-    resp = client.post(f"/meetups/{finalized.id}/sync", headers=staff_headers)
+    resp = client.post(
+        f"/organizations/{org.id}/meetups/{finalized.id}/sync",
+        headers=staff_headers,
+    )
 
     assert resp.status_code == status.HTTP_409_CONFLICT
     assert "finalized" in resp.json()["detail"].lower()
 
 
-def test_unfinalize_meetup_clears_finalization(client: TestClient, staff_headers: dict, session: Session):
+def test_unfinalize_meetup_clears_finalization(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    org: Organization,
+):
     """
     Verify that un-finalizing a meetup restores it to active state.
 
     WHY: Accidents happen. Staff need a way to reverse accidental finalization
     so check-ins and syncs can resume.
+    Uses admin_headers because unfinalize requires org admin.
     """
     finalized = make_meetup(
         session,
+        org=org,
         name="Undo Final",
         mazmo_meetup_url="https://mazmo.net/test/undo-final-1",
     )
@@ -817,7 +1121,10 @@ def test_unfinalize_meetup_clears_finalization(client: TestClient, staff_headers
     session.add(finalized)
     session.flush()
 
-    resp = client.patch(f"/meetups/{finalized.id}/unfinalize", headers=staff_headers)
+    resp = client.patch(
+        f"/organizations/{org.id}/meetups/{finalized.id}/unfinalize",
+        headers=admin_headers,
+    )
 
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
@@ -829,19 +1136,33 @@ def test_unfinalize_meetup_clears_finalization(client: TestClient, staff_headers
     assert finalized.finalized_at is None
 
 
-def test_unfinalize_meetup_returns_409_when_not_finalized(client: TestClient, staff_headers: dict, meetup):
+def test_unfinalize_meetup_returns_409_when_not_finalized(
+    client: TestClient,
+    admin_headers: dict,
+    meetup,
+):
     """
     Verify that un-finalizing a non-finalized meetup returns 409.
 
     WHY: Prevents confusion - staff should know whether a meetup
     is actually finalized before attempting to reverse it.
     """
-    resp = client.patch(f"/meetups/{meetup.id}/unfinalize", headers=staff_headers)
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/unfinalize",
+        headers=admin_headers,
+    )
 
     assert resp.status_code == status.HTTP_409_CONFLICT
 
 
-def test_checkin_works_after_unfinalize(client: TestClient, staff_headers: dict, session: Session):
+def test_checkin_works_after_unfinalize(
+    client: TestClient,
+    admin_headers: dict,
+    staff_headers: dict,
+    session: Session,
+    org: Organization,
+    org_staff_member,
+):
     """
     Verify that check-in works again after un-finalizing a meetup.
 
@@ -850,6 +1171,7 @@ def test_checkin_works_after_unfinalize(client: TestClient, staff_headers: dict,
     """
     finalized = make_meetup(
         session,
+        org=org,
         name="Restored Meetup",
         mazmo_meetup_url="https://mazmo.net/test/restored-1",
     )
@@ -860,17 +1182,24 @@ def test_checkin_works_after_unfinalize(client: TestClient, staff_headers: dict,
     make_rsvp(session, meetup=finalized, guest=guest)
     session.flush()
 
-    client.patch(f"/meetups/{finalized.id}/unfinalize", headers=staff_headers)
+    client.patch(
+        f"/organizations/{org.id}/meetups/{finalized.id}/unfinalize",
+        headers=admin_headers,
+    )
 
     resp = client.post(
-        f"/meetups/{finalized.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{org.id}/meetups/{finalized.id}/guests/{guest.mazmo_user_id}/checkin",
         headers=staff_headers,
     )
     assert resp.status_code == status.HTTP_200_OK
 
 
 def test_unfinalize_meetup_writes_event_log_entry(
-    client: TestClient, staff_headers: dict, session: Session, staff_user
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    org: Organization,
+    admin_user: User,
 ):
     """
     Verify that un-finalizing a meetup creates an audit log entry.
@@ -880,6 +1209,7 @@ def test_unfinalize_meetup_writes_event_log_entry(
     """
     finalized = make_meetup(
         session,
+        org=org,
         name="Log Unfinalize",
         mazmo_meetup_url="https://mazmo.net/test/log-unfinalize-1",
     )
@@ -888,7 +1218,10 @@ def test_unfinalize_meetup_writes_event_log_entry(
     session.add(finalized)
     session.flush()
 
-    client.patch(f"/meetups/{finalized.id}/unfinalize", headers=staff_headers)
+    client.patch(
+        f"/organizations/{org.id}/meetups/{finalized.id}/unfinalize",
+        headers=admin_headers,
+    )
 
     event = session.exec(
         select(EventLog)
@@ -896,24 +1229,30 @@ def test_unfinalize_meetup_writes_event_log_entry(
         .where(EventLog.event_type == EventType.MEETUP_UNFINALIZED)
     ).first()
     assert event is not None
-    assert event.actor_id == staff_user.id
+    assert event.actor_id == admin_user.id
 
 
-# ── Add walk-in guest ─────────────────────────────────────────────────────────
+# -- Add walk-in guest --------------------------------------------------------
 
 
-def test_add_walkin_returns_201_with_is_walkin_true(client: TestClient, staff_headers: dict, session: Session, meetup):
+def test_add_walkin_returns_201_with_is_walkin_true(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
     """
     Verify that adding a walk-in guest returns 201 with is_walkin=True.
 
-    WHY: Core requirement — staff needs to add guests who have a Mazmo profile
+    WHY: Core requirement -- staff needs to add guests who have a Mazmo profile
     but didn't RSVP. The is_walkin flag must be set so the frontend can show
     the badge.
     """
     guest = make_guest(session, mazmo_user_id=601, username="walkin_guest")
 
     resp = client.post(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/add-walkin",
         headers=staff_headers,
     )
 
@@ -924,7 +1263,12 @@ def test_add_walkin_returns_201_with_is_walkin_true(client: TestClient, staff_he
 
 
 def test_add_walkin_writes_event_log_entry(
-    client: TestClient, staff_headers: dict, session: Session, meetup, staff_user
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    staff_user: User,
+    org_staff_member,
 ):
     """
     Verify that adding a walk-in creates a WALKIN audit log entry.
@@ -934,7 +1278,7 @@ def test_add_walkin_writes_event_log_entry(
     guest = make_guest(session, mazmo_user_id=602, username="walkin_audit")
 
     client.post(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/add-walkin",
         headers=staff_headers,
     )
 
@@ -946,7 +1290,12 @@ def test_add_walkin_writes_event_log_entry(
     assert event.meetup_id == meetup.id
 
 
-def test_add_walkin_returns_404_when_guest_not_in_system(client: TestClient, staff_headers: dict, meetup):
+def test_add_walkin_returns_404_when_guest_not_in_system(
+    client: TestClient,
+    staff_headers: dict,
+    meetup,
+    org_staff_member,
+):
     """
     Verify that adding a walk-in for an unknown Mazmo user returns 404.
 
@@ -954,7 +1303,7 @@ def test_add_walkin_returns_404_when_guest_not_in_system(client: TestClient, sta
     doesn't exist at all, the request is invalid.
     """
     resp = client.post(
-        f"/meetups/{meetup.id}/guests/99999/add-walkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/99999/add-walkin",
         headers=staff_headers,
     )
 
@@ -962,34 +1311,45 @@ def test_add_walkin_returns_404_when_guest_not_in_system(client: TestClient, sta
 
 
 def test_add_walkin_returns_409_when_rsvp_already_exists(
-    client: TestClient, staff_headers: dict, session: Session, meetup
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
 ):
     """
     Verify that adding a walk-in for a guest who already has an RSVP returns 409.
 
-    WHY: Prevents duplicate RSVPs — the guest may have RSVPed on Mazmo or
+    WHY: Prevents duplicate RSVPs -- the guest may have RSVPed on Mazmo or
     already been added as a walk-in.
     """
     guest = make_guest(session, mazmo_user_id=603, username="already_rsvped")
     make_rsvp(session, meetup=meetup, guest=guest)
 
     resp = client.post(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/add-walkin",
         headers=staff_headers,
     )
 
     assert resp.status_code == status.HTTP_409_CONFLICT
 
 
-def test_add_walkin_returns_409_when_meetup_is_finalized(client: TestClient, staff_headers: dict, session: Session):
+def test_add_walkin_returns_409_when_meetup_is_finalized(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    org: Organization,
+    org_staff_member,
+):
     """
     Verify that adding a walk-in to a finalized meetup returns 409.
 
-    WHY: Finalization locks the meetup — no new arrivals (including walk-ins)
+    WHY: Finalization locks the meetup -- no new arrivals (including walk-ins)
     should be added after the event ends.
     """
     finalized = make_meetup(
         session,
+        org=org,
         name="Finalized Walkin",
         mazmo_meetup_url="https://mazmo.net/test/finalized-walkin-1",
     )
@@ -1000,7 +1360,7 @@ def test_add_walkin_returns_409_when_meetup_is_finalized(client: TestClient, sta
     session.flush()
 
     resp = client.post(
-        f"/meetups/{finalized.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        f"/organizations/{org.id}/meetups/{finalized.id}/guests/{guest.mazmo_user_id}/add-walkin",
         headers=staff_headers,
     )
 
@@ -1008,10 +1368,15 @@ def test_add_walkin_returns_409_when_meetup_is_finalized(client: TestClient, sta
     assert "finalized" in resp.json()["detail"].lower()
 
 
-# ── mazmo_user_id range validation ───────────────────────────────────────────
+# -- mazmo_user_id range validation -------------------------------------------
 
 
-def test_checkin_rejects_out_of_range_mazmo_user_id(client: TestClient, staff_headers: dict, meetup):
+def test_checkin_rejects_out_of_range_mazmo_user_id(
+    client: TestClient,
+    staff_headers: dict,
+    meetup,
+    org_staff_member,
+):
     """
     Verify that a mazmo_user_id larger than Postgres INTEGER max returns 422.
 
@@ -1020,22 +1385,27 @@ def test_checkin_rejects_out_of_range_mazmo_user_id(client: TestClient, staff_he
     error, which surfaces as an unhandled 500. We validate at the API boundary instead.
     """
     resp = client.post(
-        f"/meetups/{meetup.id}/guests/123123123123/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/123123123123/checkin",
         headers=staff_headers,
     )
 
     assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
-def test_undo_checkin_rejects_out_of_range_mazmo_user_id(client: TestClient, staff_headers: dict, meetup):
+def test_undo_checkin_rejects_out_of_range_mazmo_user_id(
+    client: TestClient,
+    staff_headers: dict,
+    meetup,
+    org_staff_member,
+):
     """
     Verify that a mazmo_user_id larger than Postgres INTEGER max returns 422.
 
-    WHY: Same reason as test_checkin_rejects_out_of_range_mazmo_user_id — all
+    WHY: Same reason as test_checkin_rejects_out_of_range_mazmo_user_id -- all
     endpoints that accept mazmo_user_id as a path parameter must enforce this limit.
     """
     resp = client.patch(
-        f"/meetups/{meetup.id}/guests/123123123123/undo-checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/123123123123/undo-checkin",
         headers=staff_headers,
         json={"reason": "test reason here"},
     )
@@ -1043,15 +1413,20 @@ def test_undo_checkin_rejects_out_of_range_mazmo_user_id(client: TestClient, sta
     assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
-def test_add_walkin_rejects_out_of_range_mazmo_user_id(client: TestClient, staff_headers: dict, meetup):
+def test_add_walkin_rejects_out_of_range_mazmo_user_id(
+    client: TestClient,
+    staff_headers: dict,
+    meetup,
+    org_staff_member,
+):
     """
     Verify that a mazmo_user_id larger than Postgres INTEGER max returns 422.
 
-    WHY: Same reason as test_checkin_rejects_out_of_range_mazmo_user_id — all
+    WHY: Same reason as test_checkin_rejects_out_of_range_mazmo_user_id -- all
     endpoints that accept mazmo_user_id as a path parameter must enforce this limit.
     """
     resp = client.post(
-        f"/meetups/{meetup.id}/guests/123123123123/add-walkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/123123123123/add-walkin",
         headers=staff_headers,
     )
 

@@ -53,8 +53,8 @@ async def register(
             detail=f"Username '{body.username}' is already taken.",
         )
 
-    # Look up the STAFF role row — must exist (seeded at startup)
-    staff_role = session.exec(select(Role).where(Role.name == PossibleRoles.STAFF)).first()
+    # Look up the USER role row — must exist (seeded at startup)
+    staff_role = session.exec(select(Role).where(Role.name == PossibleRoles.USER)).first()
     if not staff_role:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -115,7 +115,7 @@ async def login(
     token = create_access_token(
         JWTPayload(
             sub=user.username,
-            role=user.role.name if user.role else PossibleRoles.STAFF,
+            role=user.role.name if user.role else PossibleRoles.USER,
             exp=None,  # type: ignore[typeddict-item]  # set inside create_access_token
         )
     )

@@ -21,7 +21,7 @@ from app.models.models import PossibleRoles
 
 def _make_payload(username: str = "testuser") -> JWTPayload:
     """Create a valid JWTPayload for testing."""
-    return JWTPayload(sub=username, role=PossibleRoles.STAFF, exp=None)  # type: ignore[typeddict-item]
+    return JWTPayload(sub=username, role=PossibleRoles.USER, exp=None)  # type: ignore[typeddict-item]
 
 
 # ── Password hashing ──────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ def test_valid_token_decodes_to_correct_payload():
     payload = decode_access_token(token)
     assert payload is not None
     assert payload["sub"] == "testuser"
-    assert payload["role"] == PossibleRoles.STAFF
+    assert payload["role"] == PossibleRoles.USER
 
 
 def test_expired_token_returns_none():

@@ -13,7 +13,7 @@ from app.core.config import get_settings
 from app.domain_types import MazmoUserId
 from app.schemas import MazmoRsvpEntry, MazmoUserEntry
 from app.services.sync import GuestSyncer
-from tests.conftest import make_guest, make_meetup, make_rsvp
+from tests.conftest import make_guest, make_meetup, make_org, make_rsvp
 
 # ── _build_guests ─────────────────────────────────────────────────────────────
 
@@ -25,7 +25,8 @@ def test_build_guests_skips_rsvps_with_missing_user_detail(session: Session):
     WHY: Mazmo might return RSVPs where the user detail fetch failed.
     We skip them rather than crashing the entire sync.
     """
-    meetup = make_meetup(session)
+    org = make_org(session)
+    meetup = make_meetup(session, org=org)
     settings = get_settings()
     syncer = GuestSyncer(session, settings, meetup)
 
@@ -49,7 +50,8 @@ def test_build_guests_returns_empty_when_all_user_details_missing(session: Sessi
     """
     Verify that an empty list is returned when all user details are missing.
     """
-    meetup = make_meetup(session)
+    org = make_org(session, name="Org 2", slug="org-2")
+    meetup = make_meetup(session, org=org)
     settings = get_settings()
     syncer = GuestSyncer(session, settings, meetup)
 
@@ -68,7 +70,8 @@ def test_build_rsvps_skips_entries_without_user_details(session: Session):
     """
     Verify that _build_rsvps skips RSVPs with no user details (same logic as _build_guests).
     """
-    meetup = make_meetup(session)
+    org = make_org(session, name="Org 3", slug="org-3")
+    meetup = make_meetup(session, org=org)
     settings = get_settings()
     syncer = GuestSyncer(session, settings, meetup)
 
@@ -96,7 +99,8 @@ def test_update_cancelled_rsvps_marks_missing_guests_as_cancelled(session: Sessi
     the current list should be marked cancelled so staff knows they might
     not show up.
     """
-    meetup = make_meetup(session)
+    org = make_org(session, name="Org 4", slug="org-4")
+    meetup = make_meetup(session, org=org)
     alice = make_guest(session, mazmo_user_id=501, username="alice_cancel")
     bob = make_guest(session, mazmo_user_id=502, username="bob_cancel")
     alice_rsvp = make_rsvp(session, meetup=meetup, guest=alice)
@@ -122,7 +126,8 @@ def test_update_cancelled_rsvps_reinstates_returning_guests(session: Session):
     WHY: A guest might cancel and then re-RSVP. We should flip them back
     to active so they appear in the guest list again.
     """
-    meetup = make_meetup(session)
+    org = make_org(session, name="Org 5", slug="org-5")
+    meetup = make_meetup(session, org=org)
     alice = make_guest(session, mazmo_user_id=503, username="alice_return")
     rsvp = make_rsvp(session, meetup=meetup, guest=alice)
     rsvp.cancelled_rsvp = True
@@ -146,8 +151,9 @@ def test_update_cancelled_rsvps_only_affects_current_meetup(session: Session):
     WHY: A guest cancelling from one meetup must not affect their RSVP
     status at other meetups.
     """
-    meetup_a = make_meetup(session, name="Meetup A", mazmo_meetup_url="https://mazmo.net/test/meetup-a-601")
-    meetup_b = make_meetup(session, name="Meetup B", mazmo_meetup_url="https://mazmo.net/test/meetup-b-601")
+    org = make_org(session, name="Org 6", slug="org-6")
+    meetup_a = make_meetup(session, org=org, name="Meetup A", mazmo_meetup_url="https://mazmo.net/test/meetup-a-601")
+    meetup_b = make_meetup(session, org=org, name="Meetup B", mazmo_meetup_url="https://mazmo.net/test/meetup-b-601")
     alice = make_guest(session, mazmo_user_id=601, username="alice_scope")
     rsvp_a = make_rsvp(session, meetup=meetup_a, guest=alice)
     rsvp_b = make_rsvp(session, meetup=meetup_b, guest=alice)
@@ -177,7 +183,8 @@ async def test_sync_returns_skipped_count_when_all_user_details_missing(session:
     """
     from unittest.mock import AsyncMock, patch
 
-    meetup = make_meetup(session, mazmo_meetup_url="https://mazmo.net/test/partial-sync")
+    org = make_org(session, name="Org 7", slug="org-7")
+    meetup = make_meetup(session, org=org, mazmo_meetup_url="https://mazmo.net/test/partial-sync")
     settings = get_settings()
 
     now = datetime.now(UTC)
