@@ -49,6 +49,10 @@ resource "aws_instance" "app_server" {
   tags = {
     Name = "${local.project_name}-server"
   }
+
+  lifecycle {
+    ignore_changes = [ami, user_data]
+  }
 }
 
 resource "aws_security_group" "app_sg" {

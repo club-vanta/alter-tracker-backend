@@ -275,6 +275,92 @@
         ]
       }
     },
+    "/auth/verify-recovery-code": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Verify a 6-digit recovery code without consuming it",
+        "description": "Check that a recovery code is valid and not yet expired or used.\n\nDoes NOT mark the code as used, so closing the tab and retrying still works.\nReturns a generic error on invalid username to avoid user enumeration.",
+        "operationId": "verify_recovery_code_auth_verify_recovery_code_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyRecoveryCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Verify Recovery Code Auth Verify Recovery Code Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/reset-password": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Reset a user's password using a valid recovery code",
+        "description": "Reset the user's password if the provided recovery code is valid.\n\nMarks the code as used after a successful reset so it cannot be reused.\nReturns a generic error on invalid username to avoid user enumeration.",
+        "operationId": "reset_password_auth_reset_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetPasswordResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/organizations/": {
       "get": {
         "tags": [
@@ -2428,6 +2514,54 @@
                       "detail": "This account is not disabled."
                     }
                   }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/staff/{user_id}/recovery-code": {
+      "post": {
+        "tags": [
+          "staff"
+        ],
+        "summary": "Generate a 6-digit password recovery code for a staff account (admin only)",
+        "description": "Generate a one-time 6-digit recovery code for the given user.\n\nThe code expires after 72 hours and is invalidated once used.\nIf the user already had a code, it is overwritten (implicitly invalidated).\nThe admin is responsible for communicating the code to the user out-of-band.",
+        "operationId": "generate_recovery_code_staff__user_id__recovery_code_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryCodeResponse"
                 }
               }
             }
@@ -6643,6 +6777,62 @@
         "title": "PossibleRoles",
         "description": "Global roles stored in user_roles / users.role_id.\n\nUSER:       Regular approved account. Actual capabilities come from\n            user_organizations.role (per-org STAFF or ADMIN).\nSITE_ADMIN: Superadmin. Bypasses all org membership checks, can create\n            and manage organizations."
       },
+      "RecoveryCodeResponse": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "code"
+        ],
+        "title": "RecoveryCodeResponse"
+      },
+      "ResetPasswordRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "new_password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 15,
+            "title": "New Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "code",
+          "new_password"
+        ],
+        "title": "ResetPasswordRequest"
+      },
+      "ResetPasswordResponse": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username"
+        ],
+        "title": "ResetPasswordResponse"
+      },
       "RolePublic": {
         "properties": {
           "id": {
@@ -6948,6 +7138,24 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VerifyRecoveryCodeRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "code"
+        ],
+        "title": "VerifyRecoveryCodeRequest"
       }
     },
     "securitySchemes": {

@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Integer
+from sqlalchemy import Column, DateTime, Integer
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
@@ -97,6 +97,13 @@ class User(SQLModel, table=True):
     disabled_at: datetime | None = Field(default=None)
     disabled_by_id: int | None = Field(default=None, foreign_key="users.id")
     disabled_reason: str | None = Field(default=None, max_length=500)
+
+    # ── Password recovery ──
+    recovery_code: str | None = Field(default=None, max_length=6)
+    recovery_code_created_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    recovery_code_used: bool = Field(default=False)
 
     role: Role | None = Relationship(back_populates="users")
 

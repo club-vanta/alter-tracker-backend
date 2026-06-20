@@ -1,14 +1,16 @@
 """
 Staff / Admin management router
 
-GET    /staff/pending          -> list unapproved accounts (site admin only)
-GET    /staff/                 -> list all staff accounts (site admin only)
-PATCH  /staff/{id}/approve     -> approve or revoke a staff account (site admin only)
-PATCH  /staff/{id}/disable     -> disable a staff account (site admin only)
-PATCH  /staff/{id}/enable      -> re-enable a disabled staff account (site admin only)
-PATCH  /staff/{id}/role        -> promote / demote role (site admin only)
+GET    /staff/pending               -> list unapproved accounts (site admin only)
+GET    /staff/                      -> list all staff accounts (site admin only)
+PATCH  /staff/{id}/approve          -> approve or revoke a staff account (site admin only)
+PATCH  /staff/{id}/disable          -> disable a staff account (site admin only)
+PATCH  /staff/{id}/enable           -> re-enable a disabled staff account (site admin only)
+PATCH  /staff/{id}/role             -> promote / demote role (site admin only)
+POST   /staff/{id}/recovery-code    -> generate a 6-digit recovery code (site admin only)
 """
 
+import secrets
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -29,7 +31,7 @@ from app.openapi_examples.staff_examples import (
     ROLE_REQUEST_EXAMPLES,
     ROLE_RESPONSES,
 )
-from app.schemas import ApproveUserRequest, DisableUserRequest, RoleRequest, UserPublic
+from app.schemas import ApproveUserRequest, DisableUserRequest, RecoveryCodeResponse, RoleRequest, UserPublic
 
 router = APIRouter(prefix="/staff", tags=["staff"])
 
@@ -238,3 +240,36 @@ async def enable_staff(
     session.commit()
     session.refresh(user)
     return user
+
+
+# ── Generate recovery code ────────────────────────────────────────────────────
+
+
+@router.post(
+    "/{user_id}/recovery-code",
+    response_model=RecoveryCodeResponse,
+    summary="Generate a 6-digit password recovery code for a staff account (admin only)",
+    status_code=status.HTTP_200_OK,
+)
+async def generate_recovery_code(
+    user_id: int,
+    session: Session = Depends(get_session),
+    _admin: User = Depends(get_site_admin),
+) -> RecoveryCodeResponse:
+    """
+    Generate a one-time 6-digit recovery code for the given user.
+
+    The code expires after 72 hours and is invalidated once used.
+    If the user already had a code, it is overwritten (implicitly invalidated).
+    The admin is responsible for communicating the code to the user out-of-band.
+    """
+    user = _get_staff_or_404(user_id, session)
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    user.recovery_code = code
+    user.recovery_code_created_at = datetime.now(UTC)
+    user.recovery_code_used = False
+    session.add(user)
+    session.commit()
+
+    return RecoveryCodeResponse(username=user.username, code=code)
