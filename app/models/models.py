@@ -7,18 +7,31 @@ from sqlalchemy import Column, DateTime, Integer
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
-    pass  # For forward references
+    pass
 
 from app.domain_types import MazmoUserId
 
-# ── Python enum (validation only, not stored in Postgres as a type) ───────────
+# ── Global role enum (Python validation only, not a Postgres type) ────────────
 
 
 class PossibleRoles(StrEnum):
     """
-    Used for Python/Pydantic validation only.
-    The actual role name is stored as a VARCHAR in the `user_roles` table
-    and referenced via a foreign key from `users.role_id`.
+    Global roles stored in user_roles / users.role_id.
+
+    USER:       Regular approved account. Actual capabilities come from
+                user_organizations.role (per-org STAFF or ADMIN).
+    SITE_ADMIN: Superadmin. Bypasses all org membership checks, can create
+                and manage organizations.
+    """
+
+    USER = "USER"
+    SITE_ADMIN = "SITE_ADMIN"
+
+
+class OrgRole(StrEnum):
+    """
+    Per-organization roles stored as VARCHAR in user_organizations.role.
+    These are independent of the global PossibleRoles.
     """
 
     STAFF = "STAFF"
@@ -28,9 +41,6 @@ class PossibleRoles(StrEnum):
 class EventType(StrEnum):
     """
     Types of auditable events tracked in the event_log table.
-
-    These events create an audit trail for important actions that affect
-    guests, allowing admins to review what happened and when.
     """
 
     CHECK_IN = "CHECK_IN"
@@ -43,14 +53,13 @@ class EventType(StrEnum):
     GUEST_CREATED = "GUEST_CREATED"
 
 
-# ── Role table ────────────────────────────────────────────────────────────────
+# ── Role lookup table ─────────────────────────────────────────────────────────
 
 
 class Role(SQLModel, table=True):
     """
-    Lookup table for staff roles.
-    Seeded once with STAFF and ADMIN rows.
-    `users.role_id` is a foreign key to this table.
+    Lookup table for global staff roles (USER, SITE_ADMIN).
+    Seeded by migrations. users.role_id is a FK to this table.
     """
 
     __tablename__ = "user_roles"  # type: ignore[assignment]
@@ -58,7 +67,6 @@ class Role(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, max_length=32)
 
-    # Back-reference
     users: list["User"] = Relationship(back_populates="role")
 
 
@@ -67,15 +75,13 @@ class Role(SQLModel, table=True):
 
 class User(SQLModel, table=True):
     """
-    Represents an event staff member / volunteer account.
+    Staff/admin account.
 
-    New registrations start with `is_approved = False`.
-    An admin must flip this flag before the user can log in.
-    `role_id` is a FK to `user_roles`, defaulting to the STAFF row.
+    New registrations start with is_approved = False.
+    Global role is USER or SITE_ADMIN. Per-org capabilities (STAFF/ADMIN)
+    live in user_organizations.
 
-    Soft-delete: Instead of deleting users, we disable them to preserve
-    audit trails. A disabled user cannot log in but their data remains
-    for historical reference (e.g., "who checked in this guest?").
+    Soft-delete: disabled users cannot log in but their audit trail is preserved.
     """
 
     __tablename__ = "users"  # type: ignore[assignment]
@@ -87,7 +93,6 @@ class User(SQLModel, table=True):
     role_id: int = Field(foreign_key="user_roles.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
-    # ── Disable fields (soft-delete) ──
     is_disabled: bool = Field(default=False)
     disabled_at: datetime | None = Field(default=None)
     disabled_by_id: int | None = Field(default=None, foreign_key="users.id")
@@ -100,23 +105,71 @@ class User(SQLModel, table=True):
     )
     recovery_code_used: bool = Field(default=False)
 
-    # Relationship - loads the full Role object
     role: Role | None = Relationship(back_populates="users")
 
-    # Self-referential relationship to the admin who disabled this user
     disabled_by: Optional["User"] = Relationship(
         sa_relationship_kwargs={"remote_side": "User.id", "foreign_keys": "[User.disabled_by_id]"}
     )
+
+    org_memberships: list["UserOrganization"] = Relationship(back_populates="user")
+
+
+# ── Organization ──────────────────────────────────────────────────────────────
+
+
+class Organization(SQLModel, table=True):
+    """
+    An organization scopes meetups, events, and bans.
+
+    Each org has its own guest list (via meetup RSVPs), its own ban list,
+    and its own event log. Users access orgs via user_organizations with
+    a per-org role (STAFF or ADMIN).
+
+    Guests themselves are global - the same guest identity can appear in
+    multiple organizations.
+    """
+
+    __tablename__ = "organizations"  # type: ignore[assignment]
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str = Field(unique=True, max_length=128)
+    slug: str = Field(unique=True, max_length=64)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_by_id: int | None = Field(default=None, foreign_key="users.id")
+
+    memberships: list["UserOrganization"] = Relationship(back_populates="org")
+    meetups: list["Meetup"] = Relationship(back_populates="org")
+    bans: list["OrganizationBan"] = Relationship(back_populates="org")
+
+
+# ── UserOrganization (per-org membership + role) ──────────────────────────────
+
+
+class UserOrganization(SQLModel, table=True):
+    """
+    Membership of a user in an organization, with a per-org role.
+
+    role is OrgRole.STAFF or OrgRole.ADMIN (stored as VARCHAR).
+    A user can be ADMIN in one org and STAFF in another.
+    """
+
+    __tablename__ = "user_organizations"  # type: ignore[assignment]
+
+    user_id: int = Field(foreign_key="users.id", primary_key=True)
+    org_id: uuid.UUID = Field(foreign_key="organizations.id", primary_key=True)
+    role: str = Field(max_length=32)
+
+    user: User = Relationship(back_populates="org_memberships")
+    org: Organization = Relationship(back_populates="memberships")
 
 
 # ── Guests, meetups and RSVPs ─────────────────────────────────────────────────
 #
 # These three models form a many-to-many relationship:
 #
-#   Guest <──── MeetupRsvp ────> Meetup
+#   Guest <---- MeetupRsvp ----> Meetup
 #
-# MeetupRsvp is the "association table" but it's not just a dumb link table -
-# it stores RSVP-specific data (rsvp_time, has_arrived, etc.).
+# MeetupRsvp is the association table but it also stores RSVP-specific data.
 #
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -125,101 +178,52 @@ class MeetupRsvp(SQLModel, table=True):
     """
     Association object representing a Guest's attendance at a specific Meetup.
 
-    CRITICAL: The background sync upsert NEVER overwrites `has_arrived`,
-    `arrival_time`, `arrival_order`, or `checked_in_by_id`. These are set
+    CRITICAL: The background sync upsert NEVER overwrites has_arrived,
+    arrival_time, arrival_order, or checked_in_by_id. These are set
     ONLY by the door tracker check-in flow.
 
-    `arrival_order` represents the sequence of arrival for this specific meetup.
-    `checked_in_by_id` records which staff member performed the check-in.
+    arrival_order represents the sequence of arrival for this specific meetup.
     """
 
     __tablename__ = "meetup_rsvps"  # type: ignore[assignment]
 
-    # ── Composite Primary Key ──
-    # Both fields together form the PK: (meetup_id, guest_id)
-    # This means a guest can only RSVP once per meetup.
     meetup_id: uuid.UUID = Field(foreign_key="meetups.id", primary_key=True)
     guest_id: MazmoUserId = Field(foreign_key="guests.mazmo_user_id", primary_key=True, sa_type=Integer)
 
-    # ── RSVP state ──
     rsvp_time: datetime
     cancelled_rsvp: bool = Field(default=False)
 
-    # ── Door tracker fields (set by DB trigger on check-in) ──
     has_arrived: bool = Field(default=False, index=True)
     arrival_time: datetime | None = None
     arrival_order: int | None = Field(default=None)
 
-    # ── Walk-in flag ──
     is_walkin: bool = Field(default=False)
 
-    # ── Check-in attribution ──
     checked_in_by_id: int | None = Field(default=None, foreign_key="users.id")
 
-    # ── Relationships ──
-    # "Guest" and "Meetup" are in quotes because the classes are defined BELOW
-    # this one. Python hasn't seen them yet, so we use a forward reference string.
-    # SQLModel/SQLAlchemy resolves these strings to actual classes later.
     guest: "Guest" = Relationship(back_populates="rsvps")
     meetup: "Meetup" = Relationship(back_populates="rsvps")
-
-    # Staff member who checked in this guest
     checked_in_by: Optional["User"] = Relationship()
 
 
 class Guest(SQLModel, table=True):
     """
-    Represents the core identity of a user fetched from the Mazmo platform.
+    Core identity of a user fetched from the Mazmo platform.
 
-    Primary key is Mazmo's own user ID so that the Postgres upsert
-    (INSERT ... ON CONFLICT DO NOTHING) is idempotent.
+    PK is Mazmo's own user ID so that upserts are idempotent.
+    Ban information is now stored in organization_bans (per-org).
 
-    This table only holds static user data. Event-specific data (like RSVPs
-    and check-in times) is handled by the MeetupRsvp link table.
-
-    DOMAIN KNOWLEDGE: A guest's `displayname` is highly mutable and changes
-    frequently based on how they want to present themselves. However, their
-    `username` is effectively constant and serves as their unique social handle
-    (e.g., @username for tagging on the platform).
+    displayname is highly mutable; username is effectively constant.
     """
 
     __tablename__ = "guests"  # type: ignore[assignment]
 
-    # Using Mazmo's ID as our PK means we can do idempotent upserts:
-    # INSERT ... ON CONFLICT (mazmo_user_id) DO NOTHING
     mazmo_user_id: MazmoUserId = Field(primary_key=True, sa_type=Integer)
     username: str = Field(index=True)
     displayname: str
 
-    # ── Ban fields ──
-    # Index on is_banned speeds up the banned guests list query
-    is_banned: bool = Field(default=False, index=True)
-    banned_at: datetime | None = Field(default=None)
-    banned_by_id: int | None = Field(default=None, foreign_key="users.id")
-    banned_reason: str | None = Field(default=None, max_length=500)
-
-    # Relationship to the staff member who banned this guest
-    banned_by: Optional["User"] = Relationship()
-
-    # ── Why two relationships? ──
-    #
-    # We define BOTH `rsvps` and `meetups` because they serve different purposes:
-    #
-    # 1. `rsvps` - Direct access to MeetupRsvp records
-    #    Use when you need RSVP data: guest.rsvps[0].has_arrived
-    #    Good for: eager loading with selectinload(Guest.rsvps)
-    #
-    # 2. `meetups` - Convenience many-to-many, skips the association table
-    #    Use when you just want the meetups: guest.meetups
-    #    SQLAlchemy handles the JOIN internally via link_model=MeetupRsvp
-    #
-    # ── What's sa_relationship_kwargs={"overlaps": ...}? ──
-    #
-    # SQLAlchemy warns when multiple relationships write to the same FK columns.
-    # Both `rsvps` and `meetups` involve meetup_rsvps.guest_id, so SQLAlchemy
-    # says "hey, these overlap!" The overlaps parameter tells it:
-    # "Yes, I know they overlap. That's intentional. Stop warning me."
-
+    # See Guest/Meetup comment in models - both rsvps and meetups relationships
+    # are intentional (different use cases, same underlying data).
     rsvps: list["MeetupRsvp"] = Relationship(
         back_populates="guest",
         sa_relationship_kwargs={"overlaps": "meetups,guests"},
@@ -227,41 +231,34 @@ class Guest(SQLModel, table=True):
 
     meetups: list["Meetup"] = Relationship(
         back_populates="guests",
-        # link_model tells SQLAlchemy this is a many-to-many relationship
-        # and MeetupRsvp is the association table in the middle.
         link_model=MeetupRsvp,
         sa_relationship_kwargs={"overlaps": "guest,rsvps,meetup"},
     )
 
+    org_bans: list["OrganizationBan"] = Relationship(back_populates="guest")
+
 
 class Meetup(SQLModel, table=True):
     """
-    Represents an event tracked by the door tracker app.
+    An event tracked by the door tracker app, scoped to an organization.
 
-    Linked to a specific Mazmo URL, which the background sync service uses
-    to scrape the current RSVP list.
-
+    Linked to a specific Mazmo URL for syncing RSVPs.
     Once finalized, no further check-ins or syncs are allowed.
     """
 
     __tablename__ = "meetups"  # type: ignore[assignment]
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-
-    # The Mazmo frontend URL, e.g. https://mazmo.net/community/event-name-123
-    # Unique constraint prevents creating duplicate meetups for the same event.
+    org_id: uuid.UUID = Field(foreign_key="organizations.id", index=True)
     mazmo_meetup_url: str = Field(unique=True)
-
     name: str = Field(index=True)
     date: datetime
 
-    # Finalization — set once the event is over
     is_finalized: bool = Field(default=False)
     finalized_at: datetime | None = Field(default=None)
 
-    # Same dual-relationship pattern as Guest - see comments there for details.
-    # rsvps: for eager loading RSVP data
-    # guests: convenience many-to-many when you don't need RSVP details
+    org: Organization = Relationship(back_populates="meetups")
+
     rsvps: list["MeetupRsvp"] = Relationship(
         back_populates="meetup",
         sa_relationship_kwargs={"overlaps": "guests,meetups"},
@@ -274,32 +271,40 @@ class Meetup(SQLModel, table=True):
     )
 
 
+# ── OrganizationBan ───────────────────────────────────────────────────────────
+
+
+class OrganizationBan(SQLModel, table=True):
+    """
+    Records an active ban of a guest within a specific organization.
+
+    One row = one active ban. Unban deletes the row (history is in event_log).
+    Unique constraint on (org_id, guest_id) ensures one active ban per guest per org.
+    """
+
+    __tablename__ = "organization_bans"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True)
+    org_id: uuid.UUID = Field(foreign_key="organizations.id", index=True)
+    guest_id: MazmoUserId = Field(foreign_key="guests.mazmo_user_id", index=True, sa_type=Integer)
+    banned_by_id: int | None = Field(default=None, foreign_key="users.id")
+    banned_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    reason: str = Field(max_length=500)
+
+    org: Organization = Relationship(back_populates="bans")
+    guest: Guest = Relationship(back_populates="org_bans")
+    banned_by: Optional["User"] = Relationship()
+
+
 # ── Event Log ─────────────────────────────────────────────────────────────────
-#
-# Audit trail for important actions. Every CHECK_IN, UNDO_CHECK_IN, BAN, and
-# UNBAN is recorded here with who did it, when, and why.
-#
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 class EventLog(SQLModel, table=True):
     """
-    Audit log entry for trackable events.
+    Audit log entry for trackable events, scoped to an organization.
 
-    Records who performed an action, on which guest, at which meetup (if
-    applicable), and when. Used for accountability and investigation.
-
-    Event types:
-      - CHECK_IN: Staff checked in a guest at a meetup
-      - UNDO_CHECK_IN: Staff undid a check-in (mistake correction)
-      - BAN: Admin banned a guest
-      - UNBAN: Admin unbanned a guest
-
-    Query patterns:
-      - "What did staff X do?" → filter by actor_id
-      - "What happened to guest Y?" → filter by guest_id
-      - "Activity at meetup Z?" → filter by meetup_id
-      - "All bans?" → filter by event_type
+    org_id is NULL only for global events (GUEST_CREATED).
+    All other event types have an org_id.
     """
 
     __tablename__ = "event_log"  # type: ignore[assignment]
@@ -308,19 +313,13 @@ class EventLog(SQLModel, table=True):
     event_type: str = Field(max_length=32, index=True)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC), index=True)
 
-    # Who performed the action (staff/admin)
+    org_id: uuid.UUID | None = Field(default=None, foreign_key="organizations.id", index=True)
     actor_id: int | None = Field(default=None, foreign_key="users.id")
-
-    # Target guest (for guest-related events)
     guest_id: int | None = Field(default=None, foreign_key="guests.mazmo_user_id", index=True)
-
-    # Related meetup (for check-in events)
     meetup_id: uuid.UUID | None = Field(default=None, foreign_key="meetups.id", index=True)
-
-    # Additional context (e.g., ban reason, undo reason)
     reason: str | None = Field(default=None, max_length=500)
 
-    # ── Relationships ──
+    org: Optional["Organization"] = Relationship()
     actor: Optional["User"] = Relationship()
     guest: Optional["Guest"] = Relationship()
     meetup: Optional["Meetup"] = Relationship()

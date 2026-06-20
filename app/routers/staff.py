@@ -1,13 +1,13 @@
 """
 Staff / Admin management router
 
-GET    /staff/pending                → list unapproved accounts (admin only)
-GET    /staff/                       → list all staff accounts (admin only)
-PATCH  /staff/{id}/approve          → approve or revoke a staff account (admin only)
-PATCH  /staff/{id}/disable          → disable a staff account (admin only)
-PATCH  /staff/{id}/enable           → re-enable a disabled staff account (admin only)
-PATCH  /staff/{id}/role             → promote / demote role (admin only)
-POST   /staff/{id}/recovery-code    → generate a 6-digit recovery code (admin only)
+GET    /staff/pending               -> list unapproved accounts (site admin only)
+GET    /staff/                      -> list all staff accounts (site admin only)
+PATCH  /staff/{id}/approve          -> approve or revoke a staff account (site admin only)
+PATCH  /staff/{id}/disable          -> disable a staff account (site admin only)
+PATCH  /staff/{id}/enable           -> re-enable a disabled staff account (site admin only)
+PATCH  /staff/{id}/role             -> promote / demote role (site admin only)
+POST   /staff/{id}/recovery-code    -> generate a 6-digit recovery code (site admin only)
 """
 
 import secrets
@@ -18,7 +18,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlmodel import Session, col, select
 
 from app.core.database import get_session
-from app.core.deps import get_admin_user
+from app.core.deps import get_site_admin
 from app.models.models import PossibleRoles, Role, User
 from app.openapi_examples.staff_examples import (
     APPROVE_REQUEST_EXAMPLES,
@@ -36,7 +36,7 @@ from app.schemas import ApproveUserRequest, DisableUserRequest, RecoveryCodeResp
 router = APIRouter(prefix="/staff", tags=["staff"])
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# -- Helpers ------------------------------------------------------------------
 
 
 def _get_staff_or_404(user_id: int, session: Session) -> User:
@@ -56,34 +56,34 @@ def _get_role_or_404(role: PossibleRoles, session: Session) -> Role:
     return row
 
 
-# ── List all staff ────────────────────────────────────────────────────────────
+# -- List all staff -----------------------------------------------------------
 
 
 @router.get(
     "/",
     response_model=list[UserPublic],
-    summary="List all staff accounts (admin only)",
+    summary="List all staff accounts (site admin only)",
     responses=LIST_STAFF_RESPONSES,
 )
 async def list_staff(
     session: Session = Depends(get_session),
-    _admin: User = Depends(get_admin_user),
+    _admin: User = Depends(get_site_admin),
 ) -> list[User]:
     return list(session.exec(select(User).order_by(col(User.created_at))).all())
 
 
-# ── List pending approvals ────────────────────────────────────────────────────
+# -- List pending approvals ---------------------------------------------------
 
 
 @router.get(
     "/pending",
     response_model=list[UserPublic],
-    summary="List unapproved staff accounts (admin only)",
+    summary="List unapproved staff accounts (site admin only)",
     responses=LIST_PENDING_RESPONSES,
 )
 async def list_pending(
     session: Session = Depends(get_session),
-    _admin: User = Depends(get_admin_user),
+    _admin: User = Depends(get_site_admin),
 ) -> list[User]:
     return list(
         session.exec(
@@ -94,27 +94,27 @@ async def list_pending(
     )
 
 
-# ── Approve / revoke ──────────────────────────────────────────────────────────
+# -- Approve / revoke ---------------------------------------------------------
 
 
 @router.patch(
     "/{user_id}/approve",
     response_model=UserPublic,
-    summary="Approve or revoke a staff account (admin only)",
+    summary="Approve or revoke a staff account (site admin only)",
     responses=APPROVE_RESPONSES,
 )
 async def set_approval(
     user_id: int,
     body: Annotated[ApproveUserRequest, Body(openapi_examples=APPROVE_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
-    admin: User = Depends(get_admin_user),
+    admin: User = Depends(get_site_admin),
 ) -> User:
     user = _get_staff_or_404(user_id, session)
 
     if user.id == admin.id and not body.is_approved:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Admins cannot revoke their own approval.",
+            detail="Site admins cannot revoke their own approval.",
         )
 
     user.is_approved = body.is_approved
@@ -124,27 +124,27 @@ async def set_approval(
     return user
 
 
-# ── Change role ───────────────────────────────────────────────────────────────
+# -- Change role --------------------------------------------------------------
 
 
 @router.patch(
     "/{user_id}/role",
     response_model=UserPublic,
-    summary="Promote or demote a staff member's role (admin only)",
+    summary="Promote or demote a staff member's role (site admin only)",
     responses=ROLE_RESPONSES,
 )
 async def set_role(
     user_id: int,
     body: Annotated[RoleRequest, Body(openapi_examples=ROLE_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
-    admin: User = Depends(get_admin_user),
+    admin: User = Depends(get_site_admin),
 ) -> User:
     user = _get_staff_or_404(user_id, session)
 
-    if user.id == admin.id and body.role != PossibleRoles.ADMIN:
+    if user.id == admin.id and body.role != PossibleRoles.SITE_ADMIN:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Admins cannot demote themselves.",
+            detail="Site admins cannot demote themselves.",
         )
 
     role_row = _get_role_or_404(body.role, session)
@@ -160,20 +160,20 @@ async def set_role(
     return user
 
 
-# ── Disable staff user ────────────────────────────────────────────────────────
+# -- Disable staff user -------------------------------------------------------
 
 
 @router.patch(
     "/{user_id}/disable",
     response_model=UserPublic,
-    summary="Disable a staff account (admin only)",
+    summary="Disable a staff account (site admin only)",
     responses=DISABLE_RESPONSES,
 )
 async def disable_staff(
     user_id: int,
     body: Annotated[DisableUserRequest, Body(openapi_examples=DISABLE_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
-    admin: User = Depends(get_admin_user),
+    admin: User = Depends(get_site_admin),
 ) -> User:
     """
     Disable a staff account (soft-delete).
@@ -186,7 +186,7 @@ async def disable_staff(
     if user.id == admin.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Admins cannot disable their own account.",
+            detail="Site admins cannot disable their own account.",
         )
 
     if user.is_disabled:
@@ -205,19 +205,19 @@ async def disable_staff(
     return user
 
 
-# ── Enable staff user ─────────────────────────────────────────────────────────
+# -- Enable staff user --------------------------------------------------------
 
 
 @router.patch(
     "/{user_id}/enable",
     response_model=UserPublic,
-    summary="Re-enable a disabled staff account (admin only)",
+    summary="Re-enable a disabled staff account (site admin only)",
     responses=ENABLE_RESPONSES,
 )
 async def enable_staff(
     user_id: int,
     session: Session = Depends(get_session),
-    _admin: User = Depends(get_admin_user),
+    _admin: User = Depends(get_site_admin),
 ) -> User:
     """
     Re-enable a previously disabled staff account.
@@ -254,7 +254,7 @@ async def enable_staff(
 async def generate_recovery_code(
     user_id: int,
     session: Session = Depends(get_session),
-    _admin: User = Depends(get_admin_user),
+    _admin: User = Depends(get_site_admin),
 ) -> RecoveryCodeResponse:
     """
     Generate a one-time 6-digit recovery code for the given user.

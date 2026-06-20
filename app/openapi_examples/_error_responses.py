@@ -90,8 +90,27 @@ def error_403_admin_required() -> ResponsesDict:
                 "application/json": {
                     "examples": {
                         "admin_required": {
-                            "summary": "Admin privileges needed",
-                            "value": {"detail": "This operation requires admin privileges. Your role is STAFF."},
+                            "summary": "Org admin privileges needed",
+                            "value": {"detail": "Organization admin privileges required."},
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_403_site_admin_required() -> ResponsesDict:
+    """403 - Site admin role required for this operation."""
+    return {
+        403: {
+            "description": "Site admin role required",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "site_admin_required": {
+                            "summary": "Site admin privileges needed",
+                            "value": {"detail": "Site admin privileges required."},
                         },
                     }
                 }
@@ -323,6 +342,25 @@ def error_404_meetup() -> ResponsesDict:
                                     "List all meetups via GET /meetups/ to find the correct ID."
                                 )
                             },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_404_org() -> ResponsesDict:
+    """404 - Organization not found."""
+    return {
+        404: {
+            "description": "Organization not found",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "org_not_found": {
+                            "summary": "Organization UUID does not exist",
+                            "value": {"detail": "Organization c3d4e5f6-a7b8-9012-cdef-123456789012 not found."},
                         },
                     }
                 }

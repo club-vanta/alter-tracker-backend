@@ -49,7 +49,7 @@
                       "is_approved": false,
                       "role": {
                         "id": 1,
-                        "name": "STAFF"
+                        "name": "USER"
                       },
                       "created_at": "2024-03-22T21:15:00Z",
                       "is_disabled": false
@@ -134,7 +134,7 @@
                   "success": {
                     "summary": "JWT token returned",
                     "value": {
-                      "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJtYXJpYV9hZG1pbiIsInJvbGUiOiJBRE1JTiIsImV4cCI6MTcxMTIzNDU2N30.fake_signature_for_documentation_purposes_only",
+                      "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJtYXJpYV9hZG1pbiIsInJvbGUiOiJTSVRFX0FETUlOIiwiZXhwIjoxNzExMjM0NTY3fQ.fake_signature_for_documentation_purposes_only",
                       "token_type": "bearer"
                     }
                   }
@@ -215,7 +215,7 @@
                       "is_approved": true,
                       "role": {
                         "id": 2,
-                        "name": "ADMIN"
+                        "name": "SITE_ADMIN"
                       },
                       "created_at": "2024-03-15T20:00:00Z",
                       "is_disabled": false
@@ -361,12 +361,1323 @@
         }
       }
     },
+    "/organizations/": {
+      "get": {
+        "tags": [
+          "organizations"
+        ],
+        "summary": "List all organizations",
+        "description": "List all organizations. Only SITE_ADMIN can see all orgs.",
+        "operationId": "list_organizations_organizations__get",
+        "responses": {
+          "200": {
+            "description": "All organizations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgListResponse"
+                },
+                "examples": {
+                  "orgs_list": {
+                    "summary": "Multiple organizations",
+                    "value": {
+                      "total": 2,
+                      "organizations": [
+                        {
+                          "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+                          "name": "Alter Buenos Aires",
+                          "slug": "alter-bsas",
+                          "created_at": "2024-03-15T20:00:00Z"
+                        },
+                        {
+                          "id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+                          "name": "Club Vanta",
+                          "slug": "club-vanta",
+                          "created_at": "2024-03-15T20:00:00Z"
+                        }
+                      ]
+                    }
+                  },
+                  "empty": {
+                    "summary": "No organizations yet",
+                    "value": {
+                      "total": 0,
+                      "organizations": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Site admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "site_admin_required": {
+                    "summary": "Site admin privileges needed",
+                    "value": {
+                      "detail": "Site admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "organizations"
+        ],
+        "summary": "Create a new organization",
+        "description": "Create a new organization. Only SITE_ADMIN can do this.",
+        "operationId": "create_organization_organizations__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgCreate"
+              },
+              "examples": {
+                "new_org": {
+                  "summary": "Create a new organization",
+                  "value": {
+                    "name": "Alter Buenos Aires",
+                    "slug": "alter-bsas"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Organization created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgPublic"
+                },
+                "examples": {
+                  "created": {
+                    "summary": "Organization created successfully",
+                    "value": {
+                      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+                      "name": "Alter Buenos Aires",
+                      "slug": "alter-bsas",
+                      "created_at": "2024-03-15T20:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name or slug already taken",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "duplicate_name": {
+                    "summary": "Name already taken",
+                    "value": {
+                      "detail": "Cannot create organization: name 'Alter Buenos Aires' is already taken."
+                    }
+                  },
+                  "duplicate_slug": {
+                    "summary": "Slug already taken",
+                    "value": {
+                      "detail": "Cannot create organization: slug 'alter-bsas' is already taken."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Site admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "site_admin_required": {
+                    "summary": "Site admin privileges needed",
+                    "value": {
+                      "detail": "Site admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/organizations/{org_id}": {
+      "get": {
+        "tags": [
+          "organizations"
+        ],
+        "summary": "Get a single organization",
+        "description": "Get an organization. Available to members and SITE_ADMIN.",
+        "operationId": "get_organization_organizations__org_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Organization found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgPublic"
+                },
+                "examples": {
+                  "org": {
+                    "summary": "Single organization",
+                    "value": {
+                      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+                      "name": "Alter Buenos Aires",
+                      "slug": "alter-bsas",
+                      "created_at": "2024-03-15T20:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "org_not_found": {
+                    "summary": "Organization UUID does not exist",
+                    "value": {
+                      "detail": "Organization c3d4e5f6-a7b8-9012-cdef-123456789012 not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organizations/{org_id}/members": {
+      "get": {
+        "tags": [
+          "organizations"
+        ],
+        "summary": "List members of an organization",
+        "description": "List all members of an organization with their org roles.",
+        "operationId": "list_org_members_organizations__org_id__members_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Members of this organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgMemberListResponse"
+                },
+                "examples": {
+                  "members": {
+                    "summary": "Mix of staff and admin members",
+                    "value": {
+                      "total": 2,
+                      "members": [
+                        {
+                          "user_id": 1,
+                          "org_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+                          "role": "ADMIN"
+                        },
+                        {
+                          "user_id": 2,
+                          "org_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+                          "role": "STAFF"
+                        }
+                      ]
+                    }
+                  },
+                  "empty": {
+                    "summary": "No members yet",
+                    "value": {
+                      "total": 0,
+                      "members": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Site admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "site_admin_required": {
+                    "summary": "Site admin privileges needed",
+                    "value": {
+                      "detail": "Site admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "org_not_found": {
+                    "summary": "Organization UUID does not exist",
+                    "value": {
+                      "detail": "Organization c3d4e5f6-a7b8-9012-cdef-123456789012 not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organizations/{org_id}/members/{user_id}": {
+      "post": {
+        "tags": [
+          "organizations"
+        ],
+        "summary": "Add a user to an organization",
+        "description": "Add a user to an organization with a specified role (STAFF or ADMIN).",
+        "operationId": "add_org_member_organizations__org_id__members__user_id__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddOrgMemberRequest"
+              },
+              "examples": {
+                "add_staff": {
+                  "summary": "Add as staff",
+                  "value": {
+                    "role": "STAFF"
+                  }
+                },
+                "add_admin": {
+                  "summary": "Add as org admin",
+                  "value": {
+                    "role": "ADMIN"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Member added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgMemberPublic"
+                },
+                "examples": {
+                  "added_staff": {
+                    "summary": "Added as staff",
+                    "value": {
+                      "user_id": 2,
+                      "org_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+                      "role": "STAFF"
+                    }
+                  },
+                  "added_admin": {
+                    "summary": "Added as org admin",
+                    "value": {
+                      "user_id": 1,
+                      "org_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+                      "role": "ADMIN"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization or user not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "org_not_found": {
+                    "summary": "Organization not found",
+                    "value": {
+                      "detail": "Organization c3d4e5f6-a7b8-9012-cdef-123456789012 not found."
+                    }
+                  },
+                  "user_not_found": {
+                    "summary": "User not found",
+                    "value": {
+                      "detail": "User 99 not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "User is already a member",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "already_member": {
+                    "summary": "User already belongs to this org",
+                    "value": {
+                      "detail": "User 'carlos_staff' is already a member of this organization with role STAFF. Use PATCH to change their role."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Site admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "site_admin_required": {
+                    "summary": "Site admin privileges needed",
+                    "value": {
+                      "detail": "Site admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "organizations"
+        ],
+        "summary": "Change a member's org role",
+        "description": "Change a member's role within an organization (STAFF <-> ADMIN).",
+        "operationId": "update_org_member_role_organizations__org_id__members__user_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddOrgMemberRequest"
+              },
+              "examples": {
+                "promote_to_admin": {
+                  "summary": "Promote to org admin",
+                  "value": {
+                    "role": "ADMIN"
+                  }
+                },
+                "demote_to_staff": {
+                  "summary": "Demote back to staff",
+                  "value": {
+                    "role": "STAFF"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Role updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgMemberPublic"
+                },
+                "examples": {
+                  "promoted": {
+                    "summary": "Promoted to org admin",
+                    "value": {
+                      "user_id": 1,
+                      "org_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+                      "role": "ADMIN"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User is not a member of this organization",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "not_member": {
+                    "summary": "User not in this org",
+                    "value": {
+                      "detail": "User 99 is not a member of organization c3d4e5f6-a7b8-9012-cdef-123456789012."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Site admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "site_admin_required": {
+                    "summary": "Site admin privileges needed",
+                    "value": {
+                      "detail": "Site admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "organizations"
+        ],
+        "summary": "Remove a user from an organization",
+        "description": "Remove a user from an organization.",
+        "operationId": "remove_org_member_organizations__org_id__members__user_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Member removed"
+          },
+          "404": {
+            "description": "User is not a member of this organization",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "not_member": {
+                    "summary": "User not in this org",
+                    "value": {
+                      "detail": "User 99 is not a member of organization c3d4e5f6-a7b8-9012-cdef-123456789012."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Site admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "site_admin_required": {
+                    "summary": "Site admin privileges needed",
+                    "value": {
+                      "detail": "Site admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organizations/{org_id}/guests/banned": {
+      "get": {
+        "tags": [
+          "organizations"
+        ],
+        "summary": "List all banned guests in this organization",
+        "description": "List all guests currently banned in this organization.",
+        "operationId": "list_banned_guests_organizations__org_id__guests_banned_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Banned guests in this organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BannedGuestListResponse"
+                },
+                "examples": {
+                  "banned_list": {
+                    "summary": "Guests currently banned in this org",
+                    "value": {
+                      "total": 1,
+                      "guests": [
+                        {
+                          "mazmo_user_id": 99999,
+                          "username": "usuario_problematico",
+                          "displayname": "Persona Conflictiva",
+                          "banned_at": "2024-03-20T18:30:00Z",
+                          "banned_reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03",
+                          "banned_by_id": 1
+                        }
+                      ]
+                    }
+                  },
+                  "no_bans": {
+                    "summary": "No banned guests in this org",
+                    "value": {
+                      "total": 0,
+                      "guests": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "org_not_found": {
+                    "summary": "Organization UUID does not exist",
+                    "value": {
+                      "detail": "Organization c3d4e5f6-a7b8-9012-cdef-123456789012 not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organizations/{org_id}/guests/{mazmo_user_id}/ban": {
+      "patch": {
+        "tags": [
+          "organizations"
+        ],
+        "summary": "Ban a guest in this organization (org admin only)",
+        "description": "Ban a guest in this organization. Records the admin who performed the ban and the reason.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is already banned in this organization.",
+        "operationId": "ban_guest_organizations__org_id__guests__mazmo_user_id__ban_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "mazmo_user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Mazmo User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BanGuestRequest"
+              },
+              "examples": {
+                "ban_guest": {
+                  "summary": "Ban a problematic guest",
+                  "description": "Ban requires a reason for audit purposes (5-500 chars)",
+                  "value": {
+                    "reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Guest banned in this organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BannedGuestPublic"
+                },
+                "examples": {
+                  "banned": {
+                    "summary": "Guest now banned",
+                    "value": {
+                      "mazmo_user_id": 99999,
+                      "username": "usuario_problematico",
+                      "displayname": "Persona Conflictiva",
+                      "banned_at": "2024-03-20T18:30:00Z",
+                      "banned_reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03",
+                      "banned_by_id": 1
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Org admin privileges needed",
+                    "value": {
+                      "detail": "Organization admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "org_not_found": {
+                    "summary": "Organization UUID does not exist",
+                    "value": {
+                      "detail": "Organization c3d4e5f6-a7b8-9012-cdef-123456789012 not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Guest already banned",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "already_banned": {
+                    "summary": "Cannot ban twice",
+                    "value": {
+                      "detail": "Cannot ban guest: 'usuario_problematico' (mazmo_user_id=99999) is already banned. They were banned on 2024-03-20 18:30:00+00:00 for reason: 'Comportamiento agresivo'. To update the ban reason, unban first via PATCH /guests/99999/unban, then re-ban."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "reason_too_short": {
+                    "summary": "Reason too short",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "string_too_short",
+                          "loc": [
+                            "body",
+                            "reason"
+                          ],
+                          "msg": "String should have at least 5 characters",
+                          "input": "bad",
+                          "ctx": {
+                            "min_length": 5
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organizations/{org_id}/guests/{mazmo_user_id}/unban": {
+      "patch": {
+        "tags": [
+          "organizations"
+        ],
+        "summary": "Unban a guest in this organization (org admin only)",
+        "description": "Unban a guest in this organization. Removes the ban record (history stays in event log).\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is not currently banned in this organization.",
+        "operationId": "unban_guest_organizations__org_id__guests__mazmo_user_id__unban_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "mazmo_user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Mazmo User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guest unbanned in this organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestPublic"
+                },
+                "examples": {
+                  "unbanned": {
+                    "summary": "Guest now unbanned",
+                    "description": "Returns the guest's identity without ban data",
+                    "value": {
+                      "mazmo_user_id": 12345,
+                      "username": "fiestero_feliz",
+                      "displayname": "Juan El Fiestero"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Org admin privileges needed",
+                    "value": {
+                      "detail": "Organization admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "org_not_found": {
+                    "summary": "Organization UUID does not exist",
+                    "value": {
+                      "detail": "Organization c3d4e5f6-a7b8-9012-cdef-123456789012 not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Guest not banned",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "not_banned": {
+                    "summary": "Cannot unban a non-banned guest",
+                    "value": {
+                      "detail": "Cannot unban guest: 'fiestero_feliz' (mazmo_user_id=12345) is not currently banned. They may have been unbanned by another admin. Check audit trail at GET /events/guests/12345."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/staff/": {
       "get": {
         "tags": [
           "staff"
         ],
-        "summary": "List all staff accounts (admin only)",
+        "summary": "List all staff accounts (site admin only)",
         "operationId": "list_staff_staff__get",
         "responses": {
           "200": {
@@ -390,7 +1701,7 @@
                         "is_approved": true,
                         "role": {
                           "id": 2,
-                          "name": "ADMIN"
+                          "name": "SITE_ADMIN"
                         },
                         "created_at": "2024-03-15T20:00:00Z",
                         "is_disabled": false
@@ -401,7 +1712,7 @@
                         "is_approved": true,
                         "role": {
                           "id": 1,
-                          "name": "STAFF"
+                          "name": "USER"
                         },
                         "created_at": "2024-03-20T18:30:00Z",
                         "is_disabled": false
@@ -412,7 +1723,7 @@
                         "is_approved": false,
                         "role": {
                           "id": 1,
-                          "name": "STAFF"
+                          "name": "USER"
                         },
                         "created_at": "2024-03-22T21:15:00Z",
                         "is_disabled": false
@@ -423,7 +1734,7 @@
                         "is_approved": true,
                         "role": {
                           "id": 1,
-                          "name": "STAFF"
+                          "name": "USER"
                         },
                         "created_at": "2024-03-15T20:00:00Z",
                         "is_disabled": true,
@@ -463,9 +1774,9 @@
               "application/json": {
                 "examples": {
                   "admin_required": {
-                    "summary": "Admin privileges needed",
+                    "summary": "Org admin privileges needed",
                     "value": {
-                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                      "detail": "Organization admin privileges required."
                     }
                   }
                 }
@@ -485,7 +1796,7 @@
         "tags": [
           "staff"
         ],
-        "summary": "List unapproved staff accounts (admin only)",
+        "summary": "List unapproved staff accounts (site admin only)",
         "operationId": "list_pending_staff_pending_get",
         "responses": {
           "200": {
@@ -509,7 +1820,7 @@
                         "is_approved": false,
                         "role": {
                           "id": 1,
-                          "name": "STAFF"
+                          "name": "USER"
                         },
                         "created_at": "2024-03-22T21:15:00Z",
                         "is_disabled": false
@@ -551,9 +1862,9 @@
               "application/json": {
                 "examples": {
                   "admin_required": {
-                    "summary": "Admin privileges needed",
+                    "summary": "Org admin privileges needed",
                     "value": {
-                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                      "detail": "Organization admin privileges required."
                     }
                   }
                 }
@@ -573,7 +1884,7 @@
         "tags": [
           "staff"
         ],
-        "summary": "Approve or revoke a staff account (admin only)",
+        "summary": "Approve or revoke a staff account (site admin only)",
         "operationId": "set_approval_staff__user_id__approve_patch",
         "security": [
           {
@@ -634,7 +1945,7 @@
                       "is_approved": true,
                       "role": {
                         "id": 1,
-                        "name": "STAFF"
+                        "name": "USER"
                       },
                       "created_at": "2024-03-22T21:15:00Z",
                       "is_disabled": false
@@ -648,7 +1959,7 @@
                       "is_approved": false,
                       "role": {
                         "id": 1,
-                        "name": "STAFF"
+                        "name": "USER"
                       },
                       "created_at": "2024-03-20T18:30:00Z",
                       "is_disabled": false
@@ -700,9 +2011,9 @@
               "application/json": {
                 "examples": {
                   "admin_required": {
-                    "summary": "Admin privileges needed",
+                    "summary": "Org admin privileges needed",
                     "value": {
-                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                      "detail": "Organization admin privileges required."
                     }
                   }
                 }
@@ -742,7 +2053,7 @@
         "tags": [
           "staff"
         ],
-        "summary": "Promote or demote a staff member's role (admin only)",
+        "summary": "Promote or demote a staff member's role (site admin only)",
         "operationId": "set_role_staff__user_id__role_patch",
         "security": [
           {
@@ -817,7 +2128,7 @@
                       "is_approved": true,
                       "role": {
                         "id": 1,
-                        "name": "STAFF"
+                        "name": "USER"
                       },
                       "created_at": "2024-03-20T18:30:00Z",
                       "is_disabled": false
@@ -869,9 +2180,9 @@
               "application/json": {
                 "examples": {
                   "admin_required": {
-                    "summary": "Admin privileges needed",
+                    "summary": "Org admin privileges needed",
                     "value": {
-                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                      "detail": "Organization admin privileges required."
                     }
                   }
                 }
@@ -911,7 +2222,7 @@
         "tags": [
           "staff"
         ],
-        "summary": "Disable a staff account (admin only)",
+        "summary": "Disable a staff account (site admin only)",
         "description": "Disable a staff account (soft-delete).\n\nDisabled accounts cannot log in but their data is preserved for\naudit trails. Records who disabled the account, when, and why.",
         "operationId": "disable_staff_staff__user_id__disable_patch",
         "security": [
@@ -966,7 +2277,7 @@
                       "is_approved": true,
                       "role": {
                         "id": 1,
-                        "name": "STAFF"
+                        "name": "USER"
                       },
                       "created_at": "2024-03-15T20:00:00Z",
                       "is_disabled": true,
@@ -1020,9 +2331,9 @@
               "application/json": {
                 "examples": {
                   "admin_required": {
-                    "summary": "Admin privileges needed",
+                    "summary": "Org admin privileges needed",
                     "value": {
-                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                      "detail": "Organization admin privileges required."
                     }
                   }
                 }
@@ -1095,7 +2406,7 @@
         "tags": [
           "staff"
         ],
-        "summary": "Re-enable a disabled staff account (admin only)",
+        "summary": "Re-enable a disabled staff account (site admin only)",
         "description": "Re-enable a previously disabled staff account.\n\nClears the disable fields, allowing the user to log in again.",
         "operationId": "enable_staff_staff__user_id__enable_patch",
         "security": [
@@ -1131,7 +2442,7 @@
                       "is_approved": true,
                       "role": {
                         "id": 1,
-                        "name": "STAFF"
+                        "name": "USER"
                       },
                       "created_at": "2024-03-15T20:00:00Z",
                       "is_disabled": false
@@ -1168,9 +2479,9 @@
               "application/json": {
                 "examples": {
                   "admin_required": {
-                    "summary": "Admin privileges needed",
+                    "summary": "Org admin privileges needed",
                     "value": {
-                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                      "detail": "Organization admin privileges required."
                     }
                   }
                 }
@@ -1278,7 +2589,7 @@
         "operationId": "list_guests_guests__get",
         "responses": {
           "200": {
-            "description": "All known guests",
+            "description": "All known guests (global, no ban context)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1286,27 +2597,20 @@
                 },
                 "examples": {
                   "guests_list": {
-                    "summary": "Mix of normal and banned guests",
+                    "summary": "Known guests",
+                    "description": "Identity only - ban status is org-scoped and not included here",
                     "value": {
-                      "total": 3,
+                      "total": 2,
                       "guests": [
                         {
                           "mazmo_user_id": 12346,
                           "username": "bailarina_nocturna",
-                          "displayname": "Ana Bailarina",
-                          "is_banned": false
+                          "displayname": "Ana Bailarina"
                         },
                         {
                           "mazmo_user_id": 12345,
                           "username": "fiestero_feliz",
-                          "displayname": "Juan El Fiestero",
-                          "is_banned": false
-                        },
-                        {
-                          "mazmo_user_id": 99999,
-                          "username": "usuario_problematico",
-                          "displayname": "Persona Conflictiva",
-                          "is_banned": true
+                          "displayname": "Juan El Fiestero"
                         }
                       ]
                     }
@@ -1412,8 +2716,7 @@
                     "value": {
                       "mazmo_user_id": 39119,
                       "username": "cindydark",
-                      "displayname": "\u269c\ufe0fLissandra\u269c\ufe0f",
-                      "is_banned": false
+                      "displayname": "\u269c\ufe0fLissandra\u269c\ufe0f"
                     }
                   }
                 }
@@ -1543,101 +2846,6 @@
         ]
       }
     },
-    "/guests/banned": {
-      "get": {
-        "tags": [
-          "guests"
-        ],
-        "summary": "List all banned guests",
-        "description": "List all banned guests with their ban details.",
-        "operationId": "list_banned_guests_guests_banned_get",
-        "responses": {
-          "200": {
-            "description": "All banned guests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BannedGuestListResponse"
-                },
-                "examples": {
-                  "banned_list": {
-                    "summary": "Banned guests with details",
-                    "value": {
-                      "total": 1,
-                      "guests": [
-                        {
-                          "mazmo_user_id": 99999,
-                          "username": "usuario_problematico",
-                          "displayname": "Persona Conflictiva",
-                          "is_banned": true,
-                          "banned_at": "2024-03-20T18:30:00Z",
-                          "banned_reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03",
-                          "banned_by_id": 1
-                        }
-                      ]
-                    }
-                  },
-                  "no_bans": {
-                    "summary": "No banned guests",
-                    "value": {
-                      "total": 0,
-                      "guests": []
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Invalid or missing credentials",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "missing_token": {
-                    "summary": "No token provided",
-                    "value": {
-                      "detail": "Not authenticated"
-                    }
-                  },
-                  "invalid_token": {
-                    "summary": "Invalid or expired JWT",
-                    "value": {
-                      "detail": "Could not validate credentials"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Account not approved or disabled",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "pending_approval": {
-                    "summary": "Account pending approval",
-                    "value": {
-                      "detail": "Your account is pending admin approval. Please try again later."
-                    }
-                  },
-                  "account_disabled": {
-                    "summary": "Account disabled",
-                    "value": {
-                      "detail": "Your account has been disabled."
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
-      }
-    },
     "/guests/{mazmo_user_id}": {
       "get": {
         "tags": [
@@ -1671,23 +2879,13 @@
                   "$ref": "#/components/schemas/GuestPublic"
                 },
                 "examples": {
-                  "normal_guest": {
-                    "summary": "Regular guest",
+                  "guest": {
+                    "summary": "Guest identity",
+                    "description": "Ban status is not included - check org-scoped endpoints for ban info",
                     "value": {
                       "mazmo_user_id": 12345,
                       "username": "fiestero_feliz",
-                      "displayname": "Juan El Fiestero",
-                      "is_banned": false
-                    }
-                  },
-                  "banned_guest": {
-                    "summary": "Banned guest",
-                    "description": "is_banned=true indicates this guest is banned",
-                    "value": {
-                      "mazmo_user_id": 99999,
-                      "username": "usuario_problematico",
-                      "displayname": "Persona Conflictiva",
-                      "is_banned": true
+                      "displayname": "Juan El Fiestero"
                     }
                   }
                 }
@@ -1797,23 +2995,12 @@
                   "$ref": "#/components/schemas/GuestPublic"
                 },
                 "examples": {
-                  "normal_guest": {
-                    "summary": "Regular guest",
+                  "guest": {
+                    "summary": "Guest identity",
                     "value": {
                       "mazmo_user_id": 12345,
                       "username": "fiestero_feliz",
-                      "displayname": "Juan El Fiestero",
-                      "is_banned": false
-                    }
-                  },
-                  "banned_guest": {
-                    "summary": "Banned guest",
-                    "description": "is_banned=true indicates this guest is banned",
-                    "value": {
-                      "mazmo_user_id": 99999,
-                      "username": "usuario_problematico",
-                      "displayname": "Persona Conflictiva",
-                      "is_banned": true
+                      "displayname": "Juan El Fiestero"
                     }
                   }
                 }
@@ -1890,405 +3077,33 @@
         }
       }
     },
-    "/guests/{mazmo_user_id}/ban": {
-      "patch": {
-        "tags": [
-          "guests"
-        ],
-        "summary": "Ban a guest (admin only)",
-        "description": "Ban a guest. Records the admin who performed the ban and the reason.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is already banned.",
-        "operationId": "ban_guest_guests__mazmo_user_id__ban_patch",
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "mazmo_user_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Mazmo User Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BanGuestRequest"
-              },
-              "examples": {
-                "ban_guest": {
-                  "summary": "Ban a problematic guest",
-                  "description": "Ban requires a reason for audit purposes (5-500 chars)",
-                  "value": {
-                    "reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Guest banned",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BannedGuestPublic"
-                },
-                "examples": {
-                  "banned": {
-                    "summary": "Guest now banned",
-                    "value": {
-                      "mazmo_user_id": 99999,
-                      "username": "usuario_problematico",
-                      "displayname": "Persona Conflictiva",
-                      "is_banned": true,
-                      "banned_at": "2024-03-20T18:30:00Z",
-                      "banned_reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03",
-                      "banned_by_id": 1
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Invalid or missing credentials",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "missing_token": {
-                    "summary": "No token provided",
-                    "value": {
-                      "detail": "Not authenticated"
-                    }
-                  },
-                  "invalid_token": {
-                    "summary": "Invalid or expired JWT",
-                    "value": {
-                      "detail": "Could not validate credentials"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Admin role required",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "admin_required": {
-                    "summary": "Admin privileges needed",
-                    "value": {
-                      "detail": "This operation requires admin privileges. Your role is STAFF."
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Guest not found",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "guest_not_found": {
-                    "summary": "Guest not in system",
-                    "value": {
-                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/. Try POST /meetups/{meetup_id}/sync, POST /guests/, or verify the mazmo_user_id."
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Guest already banned",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "already_banned": {
-                    "summary": "Cannot ban twice",
-                    "value": {
-                      "detail": "Cannot ban guest: 'usuario_problematico' (mazmo_user_id=99999) is already banned. They were banned on 2024-03-20 18:30:00+00:00 for reason: 'Comportamiento agresivo'. To update the ban reason, unban first via PATCH /guests/99999/unban, then re-ban."
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation error",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "reason_too_short": {
-                    "summary": "Reason too short",
-                    "value": {
-                      "detail": [
-                        {
-                          "type": "string_too_short",
-                          "loc": [
-                            "body",
-                            "reason"
-                          ],
-                          "msg": "String should have at least 5 characters",
-                          "input": "bad",
-                          "ctx": {
-                            "min_length": 5
-                          }
-                        }
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/guests/{mazmo_user_id}/unban": {
-      "patch": {
-        "tags": [
-          "guests"
-        ],
-        "summary": "Unban a guest (admin only)",
-        "description": "Unban a guest. Clears all ban-related fields.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is not currently banned.",
-        "operationId": "unban_guest_guests__mazmo_user_id__unban_patch",
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "mazmo_user_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Mazmo User Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Guest unbanned",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GuestPublic"
-                },
-                "examples": {
-                  "unbanned": {
-                    "summary": "Guest now unbanned",
-                    "description": "All ban fields are cleared",
-                    "value": {
-                      "mazmo_user_id": 99999,
-                      "username": "usuario_problematico",
-                      "displayname": "Persona Conflictiva",
-                      "is_banned": false
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Invalid or missing credentials",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "missing_token": {
-                    "summary": "No token provided",
-                    "value": {
-                      "detail": "Not authenticated"
-                    }
-                  },
-                  "invalid_token": {
-                    "summary": "Invalid or expired JWT",
-                    "value": {
-                      "detail": "Could not validate credentials"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Admin role required",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "admin_required": {
-                    "summary": "Admin privileges needed",
-                    "value": {
-                      "detail": "This operation requires admin privileges. Your role is STAFF."
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Guest not found",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "guest_not_found": {
-                    "summary": "Guest not in system",
-                    "value": {
-                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/. Try POST /meetups/{meetup_id}/sync, POST /guests/, or verify the mazmo_user_id."
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Guest not banned",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "not_banned": {
-                    "summary": "Cannot unban a non-banned guest",
-                    "value": {
-                      "detail": "Cannot unban guest: 'fiestero_feliz' (mazmo_user_id=12345) is not currently banned. They may have been unbanned by another admin. Check audit trail at GET /events/guests/12345."
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/meetups/": {
-      "get": {
-        "tags": [
-          "meetups"
-        ],
-        "summary": "List all meetups",
-        "description": "List all meetups ordered by date descending.",
-        "operationId": "list_meetups_meetups__get",
-        "responses": {
-          "200": {
-            "description": "All meetups",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MeetupListResponse"
-                },
-                "examples": {
-                  "meetups_list": {
-                    "summary": "Multiple meetups",
-                    "description": "Ordered by date descending (newest first)",
-                    "value": {
-                      "total": 2,
-                      "meetups": [
-                        {
-                          "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-                          "name": "Alter Buenos Aires - Abril 2024",
-                          "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-bsas-4320",
-                          "date": "2024-04-15T20:00:00Z",
-                          "is_finalized": false
-                        },
-                        {
-                          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-                          "name": "Alter C\u00f3rdoba - Marzo 2024",
-                          "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217",
-                          "date": "2024-03-23T19:00:00Z",
-                          "is_finalized": false
-                        }
-                      ]
-                    }
-                  },
-                  "empty": {
-                    "summary": "No meetups yet",
-                    "value": {
-                      "total": 0,
-                      "meetups": []
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Invalid or missing credentials",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "missing_token": {
-                    "summary": "No token provided",
-                    "value": {
-                      "detail": "Not authenticated"
-                    }
-                  },
-                  "invalid_token": {
-                    "summary": "Invalid or expired JWT",
-                    "value": {
-                      "detail": "Could not validate credentials"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Account not approved or disabled",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "pending_approval": {
-                    "summary": "Account pending approval",
-                    "value": {
-                      "detail": "Your account is pending admin approval. Please try again later."
-                    }
-                  },
-                  "account_disabled": {
-                    "summary": "Account disabled",
-                    "value": {
-                      "detail": "Your account has been disabled."
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
-      },
+    "/organizations/{org_id}/meetups/": {
       "post": {
         "tags": [
           "meetups"
         ],
         "summary": "Create a new meetup",
         "description": "Create a new meetup linked to a Mazmo event thread.\n\nThe Mazmo URL is validated and the event date is fetched from Mazmo.\nReturns 422 if URL format is invalid, 502 if Mazmo returns an error,\n504 if Mazmo is unreachable.",
-        "operationId": "create_meetup_meetups__post",
+        "operationId": "create_meetup_organizations__org_id__meetups__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -2305,8 +3120,7 @@
                 }
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -2444,28 +3258,154 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
-      }
-    },
-    "/meetups/{meetup_id}": {
+        }
+      },
       "get": {
         "tags": [
           "meetups"
         ],
-        "summary": "Get a single meetup",
-        "description": "Get a single meetup by ID.",
-        "operationId": "get_meetup_meetups__meetup_id__get",
+        "summary": "List all meetups in this organization",
+        "description": "List all meetups for this org ordered by date descending.",
+        "operationId": "list_meetups_organizations__org_id__meetups__get",
         "security": [
           {
             "OAuth2PasswordBearer": []
           }
         ],
         "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "All meetups",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetupListResponse"
+                },
+                "examples": {
+                  "meetups_list": {
+                    "summary": "Multiple meetups",
+                    "description": "Ordered by date descending (newest first)",
+                    "value": {
+                      "total": 2,
+                      "meetups": [
+                        {
+                          "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+                          "name": "Alter Buenos Aires - Abril 2024",
+                          "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-bsas-4320",
+                          "date": "2024-04-15T20:00:00Z",
+                          "is_finalized": false
+                        },
+                        {
+                          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                          "name": "Alter C\u00f3rdoba - Marzo 2024",
+                          "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217",
+                          "date": "2024-03-23T19:00:00Z",
+                          "is_finalized": false
+                        }
+                      ]
+                    }
+                  },
+                  "empty": {
+                    "summary": "No meetups yet",
+                    "value": {
+                      "total": 0,
+                      "meetups": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organizations/{org_id}/meetups/{meetup_id}": {
+      "get": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Get a single meetup",
+        "description": "Get a single meetup by ID.",
+        "operationId": "get_meetup_organizations__org_id__meetups__meetup_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
           {
             "name": "meetup_id",
             "in": "path",
@@ -2570,20 +3510,30 @@
         }
       }
     },
-    "/meetups/{meetup_id}/sync": {
+    "/organizations/{org_id}/meetups/{meetup_id}/sync": {
       "post": {
         "tags": [
           "meetups"
         ],
         "summary": "Sync guest list from Mazmo for this meetup",
         "description": "Fetches the latest RSVP list from Mazmo and upserts it into the local DB.\n\nSafe to call at any time:\n  - New guests are inserted.\n  - Existing RSVPs have their rsvp_time updated.\n  - `has_arrived`, `arrival_time`, and `arrival_order` are NEVER modified.",
-        "operationId": "sync_meetup_guests_meetups__meetup_id__sync_post",
+        "operationId": "sync_meetup_guests_organizations__org_id__meetups__meetup_id__sync_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
           }
         ],
         "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
           {
             "name": "meetup_id",
             "in": "path",
@@ -2756,20 +3706,30 @@
         }
       }
     },
-    "/meetups/{meetup_id}/guests": {
+    "/organizations/{org_id}/meetups/{meetup_id}/guests": {
       "get": {
         "tags": [
           "meetups"
         ],
         "summary": "List guests RSVPed to this meetup",
-        "description": "List all guests who have RSVPed to this meetup with their RSVP state.",
-        "operationId": "list_meetup_guests_meetups__meetup_id__guests_get",
+        "description": "List all guests who have RSVPed to this meetup with their RSVP state and org ban status.",
+        "operationId": "list_meetup_guests_organizations__org_id__meetups__meetup_id__guests_get",
         "security": [
           {
             "OAuth2PasswordBearer": []
           }
         ],
         "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
           {
             "name": "meetup_id",
             "in": "path",
@@ -2792,6 +3752,7 @@
                 "examples": {
                   "guests_list": {
                     "summary": "Mix of arrived and not arrived",
+                    "description": "guest.is_banned reflects org-scoped ban status for this event",
                     "value": {
                       "total": 2,
                       "guests": [
@@ -2807,7 +3768,8 @@
                             "cancelled_rsvp": false,
                             "has_arrived": true,
                             "arrival_time": "2024-03-23T20:05:32Z",
-                            "arrival_order": 1
+                            "arrival_order": 1,
+                            "is_walkin": false
                           }
                         },
                         {
@@ -2820,7 +3782,47 @@
                           "rsvp": {
                             "rsvp_time": "2024-03-20T18:30:00Z",
                             "cancelled_rsvp": false,
-                            "has_arrived": false
+                            "has_arrived": false,
+                            "is_walkin": false
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "with_banned_guest": {
+                    "summary": "Guest list with a banned attendee",
+                    "description": "is_banned=true lets the frontend show a warning at check-in",
+                    "value": {
+                      "total": 2,
+                      "guests": [
+                        {
+                          "guest": {
+                            "mazmo_user_id": 12345,
+                            "username": "fiestero_feliz",
+                            "displayname": "Juan El Fiestero",
+                            "is_banned": false
+                          },
+                          "rsvp": {
+                            "rsvp_time": "2024-03-20T18:30:00Z",
+                            "cancelled_rsvp": false,
+                            "has_arrived": true,
+                            "arrival_time": "2024-03-23T20:05:32Z",
+                            "arrival_order": 1,
+                            "is_walkin": false
+                          }
+                        },
+                        {
+                          "guest": {
+                            "mazmo_user_id": 99999,
+                            "username": "usuario_problematico",
+                            "displayname": "Persona Conflictiva",
+                            "is_banned": true
+                          },
+                          "rsvp": {
+                            "rsvp_time": "2024-03-20T18:30:00Z",
+                            "cancelled_rsvp": false,
+                            "has_arrived": false,
+                            "is_walkin": false
                           }
                         }
                       ]
@@ -2908,20 +3910,30 @@
         }
       }
     },
-    "/meetups/{meetup_id}/guests/{mazmo_user_id}/add-walkin": {
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{mazmo_user_id}/add-walkin": {
       "post": {
         "tags": [
           "meetups"
         ],
         "summary": "Add a walk-in guest to this meetup",
         "description": "Manually add a guest who has a Mazmo profile but didn't RSVP to this event.\n\nCreates a MeetupRsvp row with the current time as rsvp_time.\nThe guest must already exist in the system (fetched via a previous sync\nfor any meetup, or visible in GET /guests/).\n\nReturns 404 if the guest doesn't exist in the system.\nReturns 409 if the guest already has an RSVP for this meetup.\nReturns 409 if the meetup is finalized.",
-        "operationId": "add_walkin_guest_meetups__meetup_id__guests__mazmo_user_id__add_walkin_post",
+        "operationId": "add_walkin_guest_organizations__org_id__meetups__meetup_id__guests__mazmo_user_id__add_walkin_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
           }
         ],
         "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
           {
             "name": "meetup_id",
             "in": "path",
@@ -3060,20 +4072,30 @@
         }
       }
     },
-    "/meetups/{meetup_id}/guests/{mazmo_user_id}/checkin": {
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{mazmo_user_id}/checkin": {
       "post": {
         "tags": [
           "meetups"
         ],
         "summary": "Check in a guest at this meetup",
         "description": "Mark a guest as arrived at this meetup.\n\nThe arrival_order and arrival_time are set automatically by a database trigger.\nThe staff member performing the check-in is recorded for audit purposes.\nReturns 404 if guest not RSVPed, 409 if already checked in or meetup finalized.",
-        "operationId": "checkin_guest_meetups__meetup_id__guests__mazmo_user_id__checkin_post",
+        "operationId": "checkin_guest_organizations__org_id__meetups__meetup_id__guests__mazmo_user_id__checkin_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
           }
         ],
         "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
           {
             "name": "meetup_id",
             "in": "path",
@@ -3112,8 +4134,7 @@
                       "guest": {
                         "mazmo_user_id": 12345,
                         "username": "fiestero_feliz",
-                        "displayname": "Juan El Fiestero",
-                        "is_banned": false
+                        "displayname": "Juan El Fiestero"
                       },
                       "arrival_order": 1,
                       "arrival_time": "2024-03-23T20:05:32Z",
@@ -3212,20 +4233,30 @@
         }
       }
     },
-    "/meetups/{meetup_id}/guests/{mazmo_user_id}/undo-checkin": {
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{mazmo_user_id}/undo-checkin": {
       "patch": {
         "tags": [
           "meetups"
         ],
         "summary": "Undo a guest check-in at this meetup",
         "description": "Undo a check-in for a guest at this meetup.\n\nUse this when a guest was checked in by mistake. Requires a reason\nfor the audit trail. Clears has_arrived, arrival_time, arrival_order,\nand checked_in_by_id.\n\nReturns 404 if guest not RSVPed to this meetup.\nReturns 409 if guest is not currently checked in.",
-        "operationId": "undo_checkin_guest_meetups__meetup_id__guests__mazmo_user_id__undo_checkin_patch",
+        "operationId": "undo_checkin_guest_organizations__org_id__meetups__meetup_id__guests__mazmo_user_id__undo_checkin_patch",
         "security": [
           {
             "OAuth2PasswordBearer": []
           }
         ],
         "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
           {
             "name": "meetup_id",
             "in": "path",
@@ -3393,20 +4424,30 @@
         }
       }
     },
-    "/meetups/{meetup_id}/finalize": {
+    "/organizations/{org_id}/meetups/{meetup_id}/finalize": {
       "patch": {
         "tags": [
           "meetups"
         ],
-        "summary": "Finalize a meetup",
+        "summary": "Finalize a meetup (org admin only)",
         "description": "Mark a meetup as finalized. No further check-ins or syncs will be allowed.\n\nReturns 409 if the meetup is already finalized.",
-        "operationId": "finalize_meetup_meetups__meetup_id__finalize_patch",
+        "operationId": "finalize_meetup_organizations__org_id__meetups__meetup_id__finalize_patch",
         "security": [
           {
             "OAuth2PasswordBearer": []
           }
         ],
         "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
           {
             "name": "meetup_id",
             "in": "path",
@@ -3528,20 +4569,30 @@
         }
       }
     },
-    "/meetups/{meetup_id}/unfinalize": {
+    "/organizations/{org_id}/meetups/{meetup_id}/unfinalize": {
       "patch": {
         "tags": [
           "meetups"
         ],
-        "summary": "Un-finalize a meetup",
+        "summary": "Un-finalize a meetup (org admin only)",
         "description": "Revert a meetup's finalized status (e.g., finalized by accident).\n\nReturns 409 if the meetup is not finalized.",
-        "operationId": "unfinalize_meetup_meetups__meetup_id__unfinalize_patch",
+        "operationId": "unfinalize_meetup_organizations__org_id__meetups__meetup_id__unfinalize_patch",
         "security": [
           {
             "OAuth2PasswordBearer": []
           }
         ],
         "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
           {
             "name": "meetup_id",
             "in": "path",
@@ -3662,20 +4713,30 @@
         }
       }
     },
-    "/events/": {
+    "/organizations/{org_id}/events/": {
       "get": {
         "tags": [
           "events"
         ],
-        "summary": "List all events (admin only)",
-        "description": "List all events in the system with optional filtering.\n\nAdmin-only endpoint for full audit trail access. Supports filtering\nby event type, timestamp range, guest, meetup, and actor.\n\nReturns paginated results ordered by timestamp descending (newest first).",
-        "operationId": "list_all_events_events__get",
+        "summary": "List all events in this organization (org admin only)",
+        "description": "List all events in the organization with optional filtering.\n\nOrg admin-only endpoint for full audit trail access. Supports filtering\nby event type, timestamp range, guest, meetup, and actor.\n\nReturns paginated results ordered by timestamp descending (newest first).",
+        "operationId": "list_all_events_organizations__org_id__events__get",
         "security": [
           {
             "OAuth2PasswordBearer": []
           }
         ],
         "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
           {
             "name": "type",
             "in": "query",
@@ -3970,9 +5031,9 @@
               "application/json": {
                 "examples": {
                   "admin_required": {
-                    "summary": "Admin privileges needed",
+                    "summary": "Org admin privileges needed",
                     "value": {
-                      "detail": "This operation requires admin privileges. Your role is STAFF."
+                      "detail": "Organization admin privileges required."
                     }
                   }
                 }
@@ -3992,20 +5053,30 @@
         }
       }
     },
-    "/events/meetups/{meetup_id}": {
+    "/organizations/{org_id}/events/meetups/{meetup_id}": {
       "get": {
         "tags": [
           "events"
         ],
         "summary": "List events at a specific meetup",
-        "description": "List events at a specific meetup.\n\nAll staff can view meetup events to see check-in activity,\nwho checked in guests, and any undone check-ins.\n\nCommonly used filters:\n  - ?type=CHECK_IN,UNDO_CHECK_IN \u2192 check-in activity only",
-        "operationId": "list_meetup_events_events_meetups__meetup_id__get",
+        "description": "List events at a specific meetup.\n\nAll org members can view meetup events to see check-in activity,\nwho checked in guests, and any undone check-ins.",
+        "operationId": "list_meetup_events_organizations__org_id__events_meetups__meetup_id__get",
         "security": [
           {
             "OAuth2PasswordBearer": []
           }
         ],
         "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
           {
             "name": "meetup_id",
             "in": "path",
@@ -4232,20 +5303,30 @@
         }
       }
     },
-    "/events/guests/{guest_id}": {
+    "/organizations/{org_id}/events/guests/{guest_id}": {
       "get": {
         "tags": [
           "events"
         ],
-        "summary": "List events for a specific guest",
-        "description": "List events for a specific guest.\n\nAuthorization:\n  - Staff: Can only see BAN/UNBAN events (need to know who's banned)\n  - Admin: Can see all events for this guest\n\nCommon use case: Staff checking why a guest is on the banned list.",
-        "operationId": "list_guest_events_events_guests__guest_id__get",
+        "summary": "List events for a specific guest in this organization",
+        "description": "List events for a specific guest in this organization.\n\nAuthorization:\n  - Staff (org member): Can only see BAN/UNBAN events (need to know who's banned)\n  - Org admin / SITE_ADMIN: Can see all events for this guest in this org",
+        "operationId": "list_guest_events_organizations__org_id__events_guests__guest_id__get",
         "security": [
           {
             "OAuth2PasswordBearer": []
           }
         ],
         "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
           {
             "name": "guest_id",
             "in": "path",
@@ -4531,20 +5612,30 @@
         }
       }
     },
-    "/events/staff/{staff_id}": {
+    "/organizations/{org_id}/events/staff/{staff_id}": {
       "get": {
         "tags": [
           "events"
         ],
-        "summary": "List events by a specific staff member",
-        "description": "List events performed by a specific staff member.\n\nAuthorization:\n  - Staff: Can only view their own events (staff_id must match current user)\n  - Admin: Can view any staff member's events\n\nUse case: Staff reviewing their own activity, or admin auditing staff actions.",
-        "operationId": "list_staff_events_events_staff__staff_id__get",
+        "summary": "List events by a specific staff member in this organization",
+        "description": "List events performed by a specific staff member in this organization.\n\nAuthorization:\n  - Staff: Can only view their own events (staff_id must match current user)\n  - Org admin / SITE_ADMIN: Can view any staff member's events in this org",
+        "operationId": "list_staff_events_organizations__org_id__events_staff__staff_id__get",
         "security": [
           {
             "OAuth2PasswordBearer": []
           }
         ],
         "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
           {
             "name": "staff_id",
             "in": "path",
@@ -4913,6 +6004,21 @@
   },
   "components": {
     "schemas": {
+      "AddOrgMemberRequest": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "pattern": "^(STAFF|ADMIN)$",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "title": "AddOrgMemberRequest",
+        "description": "Request body to add a user to an organization."
+      },
       "ApproveUserRequest": {
         "properties": {
           "is_approved": {
@@ -4941,7 +6047,7 @@
           "reason"
         ],
         "title": "BanGuestRequest",
-        "description": "Request body for banning a guest."
+        "description": "Request body for banning a guest within an organization."
       },
       "BannedGuestListResponse": {
         "properties": {
@@ -4963,7 +6069,7 @@
           "guests"
         ],
         "title": "BannedGuestListResponse",
-        "description": "Response for listing all banned guests."
+        "description": "Response for listing all banned guests in an organization."
       },
       "BannedGuestPublic": {
         "properties": {
@@ -4979,31 +6085,13 @@
             "type": "string",
             "title": "Displayname"
           },
-          "is_banned": {
-            "type": "boolean",
-            "title": "Is Banned"
-          },
           "banned_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date-time",
             "title": "Banned At"
           },
           "banned_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Banned Reason"
           },
           "banned_by_id": {
@@ -5023,13 +6111,12 @@
           "mazmo_user_id",
           "username",
           "displayname",
-          "is_banned",
           "banned_at",
           "banned_reason",
           "banned_by_id"
         ],
         "title": "BannedGuestPublic",
-        "description": "Extended guest info including ban details for the banned list.\n\nUsed in the banned guests list endpoint where admins need to see\nthe full audit trail (when banned, why, by whom)."
+        "description": "Guest info with ban details, sourced from organization_bans.\n\nUsed in the org-scoped banned guests list endpoint."
       },
       "Body_login_auth_token_post": {
         "properties": {
@@ -5116,7 +6203,7 @@
           "checked_in_by"
         ],
         "title": "CheckInResponse",
-        "description": "Response after successfully checking in a guest.\n\nConfirms the check-in with the guest's identity and their assigned\narrival order for this meetup. arrival_order is gap-free per meetup.\nIncludes the staff member who performed the check-in for audit purposes."
+        "description": "Response after successfully checking in a guest."
       },
       "CheckedInByPublic": {
         "properties": {
@@ -5135,7 +6222,7 @@
           "username"
         ],
         "title": "CheckedInByPublic",
-        "description": "Minimal staff representation for check-in attribution.\n\nOnly includes the essential fields needed to identify who performed\na check-in, without exposing sensitive fields like approval status."
+        "description": "Minimal staff representation for check-in attribution."
       },
       "CreateGuestRequest": {
         "properties": {
@@ -5152,7 +6239,7 @@
           "username"
         ],
         "title": "CreateGuestRequest",
-        "description": "Request body for creating a guest by Mazmo username.\n\nStaff only need to know the handle (e.g. \"cindydark\"). The endpoint looks\nup the canonical ID and profile data from Mazmo automatically."
+        "description": "Request body for creating a guest by Mazmo username."
       },
       "DisableUserRequest": {
         "properties": {
@@ -5332,9 +6419,33 @@
           "guests"
         ],
         "title": "GuestListResponse",
-        "description": "Response for listing all known guests.\n\nReturns identity-only data. For RSVP state at a specific meetup,\nuse the /meetups/{id}/guests endpoint instead."
+        "description": "Response for listing all known guests (global, no org context).\n\nReturns identity-only data. For RSVP state at a specific meetup,\nuse the /organizations/{org_id}/meetups/{id}/guests endpoint instead."
       },
       "GuestPublic": {
+        "properties": {
+          "mazmo_user_id": {
+            "type": "integer",
+            "title": "Mazmo User Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "displayname": {
+            "type": "string",
+            "title": "Displayname"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mazmo_user_id",
+          "username",
+          "displayname"
+        ],
+        "title": "GuestPublic",
+        "description": "A Mazmo user's identity (cached locally).\n\nIdentity-only - no RSVP or ban state. Bans are per-org and are\nincluded only in org-scoped endpoints via GuestWithBanPublic."
+      },
+      "GuestWithBanPublic": {
         "properties": {
           "mazmo_user_id": {
             "type": "integer",
@@ -5360,8 +6471,8 @@
           "username",
           "displayname"
         ],
-        "title": "GuestPublic",
-        "description": "A Mazmo user's identity (cached locally).\n\nThis is identity-only data - no RSVP or check-in state.\nThe same guest can appear at multiple meetups with different RSVP states.\nMaps directly to the Guest model via from_attributes.\n\nIncludes is_banned so the frontend can render banned guests differently\n(e.g., name in red)."
+        "title": "GuestWithBanPublic",
+        "description": "Guest identity with org-scoped ban status.\n\nUsed in meetup guest lists and org-specific guest endpoints where\nthe frontend needs to know if this guest is banned in the current org."
       },
       "HTTPValidationError": {
         "properties": {
@@ -5445,12 +6556,12 @@
           "guests"
         ],
         "title": "MeetupGuestListResponse",
-        "description": "Response for listing guests at a specific meetup.\n\nEach entry includes both the guest's identity and their RSVP state\nfor this particular meetup."
+        "description": "Response for listing guests at a specific meetup."
       },
       "MeetupGuestPublic": {
         "properties": {
           "guest": {
-            "$ref": "#/components/schemas/GuestPublic"
+            "$ref": "#/components/schemas/GuestWithBanPublic"
           },
           "rsvp": {
             "$ref": "#/components/schemas/RsvpPublic"
@@ -5462,7 +6573,7 @@
           "rsvp"
         ],
         "title": "MeetupGuestPublic",
-        "description": "Combined view of a guest at a specific meetup.\n\nNests the guest identity and their RSVP state separately for clarity.\nFrontend can access guest.displayname vs rsvp.has_arrived."
+        "description": "Combined view of a guest at a specific meetup.\n\nguest includes ban status for this org (is_banned) so the frontend\ncan render warnings at the door."
       },
       "MeetupListResponse": {
         "properties": {
@@ -5535,14 +6646,136 @@
         "title": "MeetupPublic",
         "description": "Public representation of a meetup.\n\nReturned when fetching meetup details. The mazmo_meetup_url is the\nsource URL used for syncing RSVPs from the Mazmo platform."
       },
+      "OrgCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 2,
+            "title": "Name"
+          },
+          "slug": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 2,
+            "pattern": "^[a-z0-9-]+$",
+            "title": "Slug"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "slug"
+        ],
+        "title": "OrgCreate",
+        "description": "Request body to create a new organization."
+      },
+      "OrgListResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "organizations": {
+            "items": {
+              "$ref": "#/components/schemas/OrgPublic"
+            },
+            "type": "array",
+            "title": "Organizations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "organizations"
+        ],
+        "title": "OrgListResponse"
+      },
+      "OrgMemberListResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/OrgMemberPublic"
+            },
+            "type": "array",
+            "title": "Members"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "members"
+        ],
+        "title": "OrgMemberListResponse"
+      },
+      "OrgMemberPublic": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Org Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "org_id",
+          "role"
+        ],
+        "title": "OrgMemberPublic",
+        "description": "A user's membership in an organization."
+      },
+      "OrgPublic": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "created_at"
+        ],
+        "title": "OrgPublic",
+        "description": "Public representation of an organization."
+      },
       "PossibleRoles": {
         "type": "string",
         "enum": [
-          "STAFF",
-          "ADMIN"
+          "USER",
+          "SITE_ADMIN"
         ],
         "title": "PossibleRoles",
-        "description": "Used for Python/Pydantic validation only.\nThe actual role name is stored as a VARCHAR in the `user_roles` table\nand referenced via a foreign key from `users.role_id`."
+        "description": "Global roles stored in user_roles / users.role_id.\n\nUSER:       Regular approved account. Actual capabilities come from\n            user_organizations.role (per-org STAFF or ADMIN).\nSITE_ADMIN: Superadmin. Bypasses all org membership checks, can create\n            and manage organizations."
       },
       "RecoveryCodeResponse": {
         "properties": {
@@ -5682,7 +6915,7 @@
           "has_arrived"
         ],
         "title": "RsvpPublic",
-        "description": "Event-specific RSVP state for a guest at a meetup.\n\nThis data lives in the MeetupRsvp association table, not on the Guest.\narrival_time and arrival_order are set by a database trigger when\nhas_arrived flips to True during check-in."
+        "description": "Event-specific RSVP state for a guest at a meetup.\n\narrival_time and arrival_order are set by a database trigger when\nhas_arrived flips to True during check-in."
       },
       "ServiceCheck": {
         "properties": {
@@ -5943,8 +7176,12 @@
       "description": "Authentication endpoints. Create an account with `POST /auth/register`, then ask an admin to approve it via `PATCH /staff/{id}/approve`. Once approved, login with `POST /auth/token` to get a JWT."
     },
     {
+      "name": "organizations",
+      "description": "Organization management. Create orgs, manage memberships, and handle org-scoped guest bans. Most operations require SITE_ADMIN or org admin privileges."
+    },
+    {
       "name": "staff",
-      "description": "Staff and admin management. List, approve, disable, and manage roles for staff accounts. Most operations require admin privileges."
+      "description": "Staff and admin management. List, approve, disable, and manage roles for staff accounts. Most operations require SITE_ADMIN privileges."
     },
     {
       "name": "guests",

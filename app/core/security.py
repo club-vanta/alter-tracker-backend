@@ -22,7 +22,7 @@ class JWTPayload(TypedDict):
     """
 
     sub: str  # username
-    role: str  # PossibleRoles value
+    role: str  # PossibleRoles.USER or PossibleRoles.SITE_ADMIN
     exp: NotRequired[datetime]  # set automatically by create_access_token
 
 

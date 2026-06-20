@@ -43,11 +43,11 @@ def seed_admin() -> bool:
             log.info("Admin user already exists", username=username)
             return False
 
-        # Get admin role
-        admin_role = session.exec(select(Role).where(Role.name == PossibleRoles.ADMIN)).first()
+        # Get site admin role
+        admin_role = session.exec(select(Role).where(Role.name == PossibleRoles.SITE_ADMIN)).first()
         if not admin_role or admin_role.id is None:
             log.error(
-                "Admin role not found - run migrations first",
+                "SITE_ADMIN role not found - run migrations first",
                 hint="uv run alembic upgrade head",
             )
             sys.exit(1)

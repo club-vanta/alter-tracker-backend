@@ -38,6 +38,7 @@ from app.schemas.guests import (
     CreateGuestRequest,
     GuestListResponse,
     GuestPublic,
+    GuestWithBanPublic,
     MeetupGuestListResponse,
     MeetupGuestPublic,
     RsvpPublic,
@@ -50,9 +51,18 @@ from app.schemas.meetups import (
     MeetupPublic,
     SyncResponse,
 )
+from app.schemas.organizations import (
+    AddOrgMemberRequest,
+    OrgCreate,
+    OrgListResponse,
+    OrgMemberListResponse,
+    OrgMemberPublic,
+    OrgPublic,
+)
 
 __all__ = [
     "MAZMO_URL_PATTERN",
+    "AddOrgMemberRequest",
     "ApproveUserRequest",
     "BanGuestRequest",
     "BannedGuestListResponse",
@@ -69,6 +79,7 @@ __all__ = [
     "EventTypeFilter",
     "GuestListResponse",
     "GuestPublic",
+    "GuestWithBanPublic",
     "MazmoRsvpEntry",
     "MazmoUserEntry",
     "MeetupCreate",
@@ -76,6 +87,11 @@ __all__ = [
     "MeetupGuestPublic",
     "MeetupListResponse",
     "MeetupPublic",
+    "OrgCreate",
+    "OrgListResponse",
+    "OrgMemberListResponse",
+    "OrgMemberPublic",
+    "OrgPublic",
     "RecoveryCodeResponse",
     "ResetPasswordRequest",
     "ResetPasswordResponse",

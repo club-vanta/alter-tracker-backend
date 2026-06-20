@@ -2,22 +2,24 @@
 OpenAPI examples for meetups router endpoints.
 
 Endpoints:
-  POST  /meetups/                                             - Create a new meetup
-  GET   /meetups/                                             - List all meetups
-  GET   /meetups/{id}                                         - Get a single meetup
-  POST  /meetups/{id}/sync                                    - Sync guests from Mazmo
-  GET   /meetups/{id}/guests                                  - List guests at meetup
-  POST  /meetups/{id}/guests/{mazmo_user_id}/add-walkin       - Add a walk-in guest
-  POST  /meetups/{id}/guests/{mazmo_user_id}/checkin          - Check in a guest
-  PATCH /meetups/{id}/guests/{mazmo_user_id}/undo-checkin     - Undo check-in
-  PATCH /meetups/{id}/finalize                                - Finalize a meetup
+  POST  /organizations/{org_id}/meetups/
+  GET   /organizations/{org_id}/meetups/
+  GET   /organizations/{org_id}/meetups/{id}
+  POST  /organizations/{org_id}/meetups/{id}/sync
+  GET   /organizations/{org_id}/meetups/{id}/guests
+  POST  /organizations/{org_id}/meetups/{id}/guests/{mazmo_user_id}/add-walkin
+  POST  /organizations/{org_id}/meetups/{id}/guests/{mazmo_user_id}/checkin
+  PATCH /organizations/{org_id}/meetups/{id}/guests/{mazmo_user_id}/undo-checkin
+  PATCH /organizations/{org_id}/meetups/{id}/finalize
+  PATCH /organizations/{org_id}/meetups/{id}/unfinalize
 """
 
 from typing import Any
 
 from app.openapi_examples._constants import (
     CHECKIN_RESPONSE_EXAMPLE,
-    GUEST_NORMAL,
+    GUEST_IN_ORG_BANNED,
+    GUEST_IN_ORG_NOT_BANNED,
     GUEST_NORMAL_2,
     MEETUP_EXAMPLE,
     MEETUP_EXAMPLE_2,
@@ -177,11 +179,23 @@ LIST_MEETUP_GUESTS_RESPONSES: dict[int | str, dict[str, Any]] = {
                 "examples": {
                     "guests_list": {
                         "summary": "Mix of arrived and not arrived",
+                        "description": "guest.is_banned reflects org-scoped ban status for this event",
                         "value": {
                             "total": 2,
                             "guests": [
-                                {"guest": GUEST_NORMAL, "rsvp": RSVP_ARRIVED},
-                                {"guest": GUEST_NORMAL_2, "rsvp": RSVP_NOT_ARRIVED},
+                                {"guest": GUEST_IN_ORG_NOT_BANNED, "rsvp": RSVP_ARRIVED},
+                                {"guest": {**GUEST_NORMAL_2, "is_banned": False}, "rsvp": RSVP_NOT_ARRIVED},
+                            ],
+                        },
+                    },
+                    "with_banned_guest": {
+                        "summary": "Guest list with a banned attendee",
+                        "description": "is_banned=true lets the frontend show a warning at check-in",
+                        "value": {
+                            "total": 2,
+                            "guests": [
+                                {"guest": GUEST_IN_ORG_NOT_BANNED, "rsvp": RSVP_ARRIVED},
+                                {"guest": GUEST_IN_ORG_BANNED, "rsvp": RSVP_NOT_ARRIVED},
                             ],
                         },
                     },
@@ -270,7 +284,7 @@ UNDO_CHECKIN_RESPONSES: dict[int | str, dict[str, Any]] = {
                     "undone": {
                         "summary": "Check-in reversed",
                         "description": "Guest is back to not-arrived state",
-                        "value": GUEST_NORMAL,
+                        "value": GUEST_IN_ORG_NOT_BANNED,
                     },
                 }
             }

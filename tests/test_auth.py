@@ -21,7 +21,7 @@ def test_register_new_account_success(client: TestClient, session: Session):
 
     WHY: This is the happy path for onboarding new staff members. We check that:
     - The account is created but NOT approved (security: requires admin review)
-    - The default role is STAFF (least privilege principle)
+    - The default role is USER (least privilege principle)
     - The password hash is never exposed in the response (security)
     """
     payload = {
@@ -35,7 +35,7 @@ def test_register_new_account_success(client: TestClient, session: Session):
     assert resp.status_code == status.HTTP_201_CREATED
     assert data["username"] == "newuser", "Username should match payload"
     assert data["is_approved"] is False, "New accounts should not be approved by default"
-    assert data["role"]["name"] == "STAFF", "Default role should be STAFF"
+    assert data["role"]["name"] == "USER", "Default role should be USER"
     assert "hashed_password" not in data, "Hashed password must not leak in response"
 
     db_user = session.exec(select(User).where(User.username == "newuser")).first()

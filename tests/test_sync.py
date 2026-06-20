@@ -16,10 +16,10 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from app.models.models import Guest, Meetup, MeetupRsvp
-from tests.conftest import make_guest, make_rsvp
+from app.models.models import Guest, Meetup, MeetupRsvp, Organization, OrgRole
+from tests.conftest import make_guest, make_org_member, make_rsvp
 
-# ── Sync behaviour ────────────────────────────────────────────────────────────
+# -- Sync behaviour ------------------------------------------------------------
 
 
 def test_sync_inserts_all_rsvpd_guests_returns_200_ok(
@@ -32,7 +32,7 @@ def test_sync_inserts_all_rsvpd_guests_returns_200_ok(
     RSVP list from Mazmo and create local Guest records so we can track
     check-ins offline.
     """
-    resp = client.post(f"/meetups/{meetup.id}/sync", headers=admin_headers)
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
 
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
@@ -51,7 +51,7 @@ def test_sync_creates_rsvp_records_for_meetup(
     WHY: The MeetupRsvp table tracks RSVP state per-meetup. A guest can RSVP
     to multiple meetups, so we need these association records.
     """
-    resp = client.post(f"/meetups/{meetup.id}/sync", headers=admin_headers)
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
 
     assert resp.status_code == status.HTTP_200_OK
     rsvps = session.exec(select(MeetupRsvp).where(MeetupRsvp.meetup_id == meetup.id)).all()
@@ -76,7 +76,7 @@ def test_sync_updates_existing_rsvp_on_re_rsvp(
     session.add(rsvp)
     session.flush()
 
-    resp = client.post(f"/meetups/{meetup.id}/sync", headers=admin_headers)
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
 
     assert resp.status_code == status.HTTP_200_OK
     session.refresh(rsvp)
@@ -103,7 +103,7 @@ def test_sync_does_not_overwrite_checkin_data_of_arrived_guests_returns_200_ok(
         arrival_time=datetime(2026, 3, 17, 22, 0, tzinfo=UTC),
     )
 
-    resp = client.post(f"/meetups/{meetup.id}/sync", headers=admin_headers)
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
 
     assert resp.status_code == status.HTTP_200_OK
     session.refresh(rsvp)
@@ -122,7 +122,7 @@ def test_sync_with_empty_rsvp_list_returns_200_ok_with_zero_counts(
     """
     mock_mazmo.fetch_rsvps.return_value = {}
 
-    resp = client.post(f"/meetups/{meetup.id}/sync", headers=admin_headers)
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
 
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
@@ -131,7 +131,13 @@ def test_sync_with_empty_rsvp_list_returns_200_ok_with_zero_counts(
 
 
 def test_sync_is_accessible_by_regular_staff_returns_200_ok(
-    client: TestClient, staff_headers: dict, meetup: Meetup, mock_mazmo: AsyncMock
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup: Meetup,
+    org: Organization,
+    staff_user,
+    mock_mazmo: AsyncMock,
 ):
     """
     Verify that regular staff (not just admins) can trigger sync.
@@ -140,11 +146,15 @@ def test_sync_is_accessible_by_regular_staff_returns_200_ok(
     read-heavy operation that doesn't modify sensitive data, so we allow
     all approved staff to trigger it.
     """
-    resp = client.post(f"/meetups/{meetup.id}/sync", headers=staff_headers)
+    make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
+
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=staff_headers)
     assert resp.status_code == status.HTTP_200_OK
 
 
-def test_sync_returns_404_for_nonexistent_meetup(client: TestClient, admin_headers: dict, mock_mazmo: AsyncMock):
+def test_sync_returns_404_for_nonexistent_meetup(
+    client: TestClient, admin_headers: dict, meetup: Meetup, mock_mazmo: AsyncMock
+):
     """
     Verify that syncing a nonexistent meetup returns 404.
 
@@ -154,11 +164,11 @@ def test_sync_returns_404_for_nonexistent_meetup(client: TestClient, admin_heade
     import uuid
 
     fake_id = uuid.uuid4()
-    resp = client.post(f"/meetups/{fake_id}/sync", headers=admin_headers)
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{fake_id}/sync", headers=admin_headers)
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
-# ── Auth guards ───────────────────────────────────────────────────────────────
+# -- Auth guards ---------------------------------------------------------------
 
 
 def test_sync_without_token_returns_401_unauthorized(client: TestClient, meetup: Meetup):
@@ -168,11 +178,11 @@ def test_sync_without_token_returns_401_unauthorized(client: TestClient, meetup:
     WHY: Only logged-in staff should be able to sync. Anonymous users
     shouldn't be able to trigger API calls to Mazmo.
     """
-    resp = client.post(f"/meetups/{meetup.id}/sync")
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync")
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-# ── Mazmo API error handling ──────────────────────────────────────────────────
+# -- Mazmo API error handling --------------------------------------------------
 
 
 def test_sync_when_mazmo_returns_503_responds_with_502_bad_gateway(
@@ -190,7 +200,7 @@ def test_sync_when_mazmo_returns_503_responds_with_502_bad_gateway(
     error = httpx.HTTPStatusError("503", request=request, response=response)
     mock_mazmo.fetch_rsvps.side_effect = error
 
-    resp = client.post(f"/meetups/{meetup.id}/sync", headers=admin_headers)
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
 
     assert resp.status_code == status.HTTP_502_BAD_GATEWAY
 
@@ -210,7 +220,7 @@ def test_sync_when_mazmo_is_unreachable_responds_with_504_gateway_timeout(
 
     mock_mazmo.fetch_rsvps.side_effect = error
 
-    resp = client.post(f"/meetups/{meetup.id}/sync", headers=admin_headers)
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
 
     assert resp.status_code == status.HTTP_504_GATEWAY_TIMEOUT
 
@@ -227,16 +237,21 @@ def test_sync_when_mazmo_returns_unexpected_shape_responds_with_502_bad_gateway(
     """
     mock_mazmo.fetch_rsvps.side_effect = ValueError("Missing 'joinedAt' key in response")
 
-    resp = client.post(f"/meetups/{meetup.id}/sync", headers=admin_headers)
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
 
     assert resp.status_code == status.HTTP_502_BAD_GATEWAY
 
 
-# ── Check-in attribution ──────────────────────────────────────────────────────
+# -- Check-in attribution ------------------------------------------------------
 
 
 def test_checkin_stores_staff_id_who_performed_checkin(
-    client: TestClient, staff_headers: dict, session: Session, meetup: Meetup, staff_user
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup: Meetup,
+    org: Organization,
+    staff_user,
 ):
     """
     Verify that check-in records which staff member performed the check-in.
@@ -245,11 +260,13 @@ def test_checkin_stores_staff_id_who_performed_checkin(
     for accountability and troubleshooting. If there's a dispute about
     whether someone attended, we can verify who performed the check-in.
     """
+    make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
+
     guest = make_guest(session, mazmo_user_id=999, username="checkintest")
     make_rsvp(session, meetup=meetup, guest=guest)
 
     resp = client.post(
-        f"/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
         headers=staff_headers,
     )
 

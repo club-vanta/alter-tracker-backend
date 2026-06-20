@@ -20,6 +20,10 @@ npm run generate:api   # reads from ../alter-tracker-backend/openapi.json
 npx openapi-typescript http://localhost:8000/openapi.json -o src/api/types.ts
 ```
 
+## Documentation
+
+- [docs.club-vanta.com](https://docs.club-vanta.com) - staff and admin guide, database schema, API reference
+
 ---
 
 ## Quick Start
@@ -44,139 +48,6 @@ dev-backend
 ```
 
 Server runs at http://localhost:8000/docs
-
----
-
-## Domain Knowledge
-
-### Mazmo and Meetups
-
-- Alter organizes meetups through [mazmo.net](https://mazmo.net), where people
-  RSVP to events
-- This app does not create events on Mazmo - it syncs guest lists and tracks
-  door check-ins
-- Each meetup is linked to a Mazmo URL (e.g.,
-  `https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217`)
-- When creating a meetup, the event date is fetched automatically from Mazmo
-- Syncing pulls all RSVPs from Mazmo and stores them locally
-- Sync is idempotent: it adds new guests and updates RSVP timestamps, but never
-  modifies check-in data
-
-### Guests
-
-- A Guest is someone who has RSVPed to at least one meetup
-- Guests are added when they RSVP to a meetup and staff syncs from Mazmo, or
-  manually via `POST /guests/`
-- Each guest has:
-  - `mazmo_user_id` - Their ID on Mazmo's platform (used as primary key)
-  - `username` - Their @handle (rarely changes)
-  - `displayname` - Display name (changes frequently)
-- Guests can be banned globally by admins
-- Ban records: who banned them, when, and why
-- Staff can view the banned list to know who shouldn't be let in
-
-### Staff and Roles
-
-- Staff are the volunteers who use this app at meetup doors
-- Two roles exist:
-
-| Role      | Capabilities                                                                                              |
-| --------- | --------------------------------------------------------------------------------------------------------- |
-| **STAFF** | View guest lists, check people in, view banned list                                                       |
-| **ADMIN** | Everything STAFF can do, plus: ban/unban guests, approve new accounts, disable accounts, promote to admin |
-
-- New registrations start as "unapproved" - admin approval required before login
-- Accounts are disabled (not deleted) to preserve audit trails
-
-### Password Recovery
-
-The app has no email-based password reset. Recovery is handled manually by an admin who generates a one-time code and communicates it out-of-band (WhatsApp, Slack, etc.).
-
-**Admin side:**
-
-An admin generates a 6-digit numeric recovery code for any staff user via `POST /staff/{user_id}/recovery-code`. The code is returned once and never shown again. If the user already had a pending code, it is immediately invalidated and replaced by the new one — a user can only have one active code at a time.
-
-**User side:**
-
-The user submits their username and the code to `POST /auth/verify-recovery-code`. If valid, they proceed to `POST /auth/reset-password` with the same username, code, and their new password.
-
-**Rules:**
-
-- The code does **not** grant login access — it only unlocks the password change form.
-- The code expires 72 hours after generation.
-- The code is invalidated **only when the password change completes successfully**, not when the user first submits it. This means a user can enter the code, navigate away accidentally, and re-enter it later to continue.
-- Validation fails if the code is missing, expired, or already used.
-
-**Endpoints:**
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/staff/{user_id}/recovery-code` | Admin | Generate code, returns `{ username, code }` |
-| `POST` | `/auth/verify-recovery-code` | None | Check `{ username, code }` → 200 or 400 |
-| `POST` | `/auth/reset-password` | None | Submit `{ username, code, new_password }` → changes password, invalidates code |
-
-**Debugging an invalid code:**
-
-Connect to the production DB (see Troubleshooting) and run:
-
-```sql
-SELECT
-    username,
-    recovery_code,
-    recovery_code_used,
-    recovery_code_created_at,
-    recovery_code_created_at + INTERVAL '72 hours' AS expires_at,
-    now() AS now_utc,
-    now() > recovery_code_created_at + INTERVAL '72 hours' AS is_expired
-FROM users;
-```
-
-| Column | What it means |
-|--------|---------------|
-| `recovery_code IS NULL` | No code has been generated for this user |
-| `recovery_code_used = true` | Code was already consumed by a completed reset |
-| `is_expired = true` | 72-hour TTL has passed |
-| Code looks valid but still fails | The username lookup is a case-sensitive exact match — verify the frontend is submitting it exactly as stored (e.g. `Vananita Dolca` with correct casing and spaces) |
-
-If the code is expired or used, an admin regenerates it via `POST /staff/{user_id}/recovery-code`.
-
-### Check-in Flow
-
-1. Create meetup using Mazmo URL
-2. Sync guest list from Mazmo
-3. When guest arrives, staff searches and checks them in
-4. System records: arrival timestamp, arrival order (1st, 2nd, 3rd...), which
-   staff member performed check-in
-5. Undo requires a reason (for audit trail)
-
-### Event Log (Audit Trail)
-
-The EventLog tracks important actions for accountability and investigation.
-
-**Event Types:**
-
-| Type            | Description                         |
-| --------------- | ----------------------------------- |
-| `CHECK_IN`      | Guest marked as arrived at a meetup |
-| `UNDO_CHECK_IN` | Check-in reversed (includes reason) |
-| `BAN`           | Guest banned (includes reason)      |
-| `UNBAN`         | Guest unbanned                      |
-
-**Each event records:**
-
-- Actor (staff/admin who performed the action)
-- Timestamp
-- Target guest
-- Related meetup (for check-in events)
-- Reason (for undo/ban events)
-
-**Access control:**
-
-- Staff can view: meetup events (check-ins, undos), ban/unban history for any
-  guest
-- Admins can view: complete audit log, query by staff member
-
-Note: "Events" here refers to audit log entries, not Mazmo "eventos" (meetups).
 
 ---
 
@@ -273,51 +144,7 @@ All commands are defined in `devenv.nix` and available in the dev shell:
 
 ## Database
 
-### Schema Overview
-
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  user_roles  │     │    users     │     │   guests     │
-├──────────────┤     ├──────────────┤     ├──────────────┤
-│ id           │◄────│ role_id      │     │ mazmo_user_id│ (PK - from Mazmo)
-│ name         │     │ username     │     │ username     │
-│ (STAFF,ADMIN)│     │ hashed_pass  │     │ displayname  │
-└──────────────┘     │ is_approved  │     │ is_banned    │
-                     │ is_disabled  │     │ banned_by_id │──►users.id
-                     └──────────────┘     └──────────────┘
-                            │                    │
-                            ▼                    │
-                     ┌──────────────┐            │
-                     │   meetups    │            │
-                     ├──────────────┤            │
-                     │ id (UUID)    │            │
-                     │ name         │            │
-                     │ date         │            │
-                     │ mazmo_url    │            │
-                     └──────────────┘            │
-                            │                    │
-                            ▼                    ▼
-                     ┌────────────────────────────────┐
-                     │         meetup_rsvps           │
-                     ├────────────────────────────────┤
-                     │ meetup_id + guest_id (PK)      │
-                     │ rsvp_time                      │
-                     │ cancelled_rsvp                 │
-                     │ has_arrived                    │
-                     │ arrival_time, arrival_order    │
-                     │ checked_in_by_id ──────────────┼──► users.id
-                     └────────────────────────────────┘
-
-┌──────────────────────────────────┐
-│           event_log              │  (Audit trail)
-├──────────────────────────────────┤
-│ id, event_type, timestamp        │
-│ actor_id ────────────────────────┼──► users.id
-│ guest_id ────────────────────────┼──► guests.mazmo_user_id
-│ meetup_id ───────────────────────┼──► meetups.id
-│ reason                           │
-└──────────────────────────────────┘
-```
+For the current database schema see [docs.club-vanta.com](https://docs.club-vanta.com).
 
 ### Migrations
 
@@ -334,27 +161,6 @@ db-migrate
 
 Migration files live in `alembic/versions/` with sequential prefixes (0001_,
 0002_, etc.).
-
----
-
-## Mazmo Integration
-
-**URL Transformation:**
-
-```
-Frontend: https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217
-API:      https://prod.mazmoapi.net/communities/eventos-reuniones-argentina/threads/alter-cordoba-4217
-```
-
-**Two-step fetch:**
-
-1. `GET /threads/{slug}` → Returns RSVP list with user IDs and timestamps
-2. `GET /users?ids=123,456,...` → Returns user details (username, displayname)
-
-**Error handling:**
-
-- `MazmoNetworkError` → HTTP 504 (Mazmo unreachable)
-- `MazmoAPIError` → HTTP 502 (Mazmo returned error)
 
 ---
 
@@ -563,6 +369,29 @@ gh secret set TF_VAR_cloudflare_account_id --repo club-vanta/alter-tracker-backe
 2. Generate migration: `db-revision "add field_name to table_name"`
 3. Review generated migration in `alembic/versions/`
 4. Apply: `db-migrate`
+
+### Promote a User to SITE_ADMIN
+
+`seed-admin` creates the initial admin already as `SITE_ADMIN`. For any other
+user, connect to the database and run:
+
+```sql
+UPDATE users
+SET role_id = (SELECT id FROM user_roles WHERE name = 'SITE_ADMIN')
+WHERE username = 'their_username';
+```
+
+The user must re-login after the change — the role is embedded in the JWT at
+login time and won't update until a new token is issued.
+
+To verify:
+
+```sql
+SELECT u.username, r.name AS role
+FROM users u
+JOIN user_roles r ON u.role_id = r.id
+WHERE u.username = 'their_username';
+```
 
 ### Add a New Configuration Variable
 

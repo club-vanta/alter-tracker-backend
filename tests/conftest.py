@@ -2,7 +2,7 @@
 Shared pytest fixtures.
 
 Architecture
-────────────
+------------
 - A single test database (`alter_event_tracker_test`) is created once per
   session and Alembic migrations are run against it.
 - Each test runs inside a transaction that is rolled back at the end, so
@@ -13,6 +13,7 @@ Architecture
 - `client` is a synchronous TestClient (no async needed in tests).
 """
 
+import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -27,17 +28,28 @@ from app.core.database import get_session
 from app.core.security import get_password_hash
 from app.domain_types import MazmoUserId
 from app.main import app
-from app.models.models import Guest, Meetup, MeetupRsvp, PossibleRoles, Role, User
+from app.models.models import (
+    Guest,
+    Meetup,
+    MeetupRsvp,
+    Organization,
+    OrganizationBan,
+    OrgRole,
+    PossibleRoles,
+    Role,
+    User,
+    UserOrganization,
+)
 
 settings = get_settings()
 
-# ── Test database URL ─────────────────────────────────────────────────────────
+# -- Test database URL --------------------------------------------------------
 TEST_DATABASE_URL = settings.database_url.replace("/alter_event_tracker", "/alter_event_tracker_test")
 
 # URL to connect to the default postgres DB (needed to CREATE DATABASE)
 ADMIN_DATABASE_URL = settings.database_url.replace("/alter_event_tracker", "/postgres")
 
-# ── Engine (module-level, created once) ───────────────────────────────────────
+# -- Engine (module-level, created once) --------------------------------------
 test_engine = create_engine(TEST_DATABASE_URL, echo=False)
 
 
@@ -59,7 +71,7 @@ def _ensure_test_database_exists() -> None:
     admin_engine.dispose()
 
 
-# ── Session-scoped: create DB schema once ────────────────────────────────────
+# -- Session-scoped: create DB schema once ------------------------------------
 
 
 @pytest.fixture(scope="session", autouse=False)
@@ -69,7 +81,7 @@ def setup_test_database():
       1. Create the test DB if it doesn't exist.
       2. Drop all tables (clean slate).
       3. Recreate schema via SQLModel metadata.
-      4. Seed the user_roles lookup rows and arrival_order sequence.
+      4. Seed the user_roles lookup rows and arrival_order trigger.
     """
     _ensure_test_database_exists()
     SQLModel.metadata.drop_all(test_engine)
@@ -77,7 +89,7 @@ def setup_test_database():
 
     # Seed roles and create the arrival_order trigger function
     with test_engine.connect() as conn:
-        conn.execute(text("INSERT INTO user_roles (name) VALUES ('STAFF'), ('ADMIN') ON CONFLICT DO NOTHING"))
+        conn.execute(text("INSERT INTO user_roles (name) VALUES ('USER'), ('SITE_ADMIN') ON CONFLICT DO NOTHING"))
         # Create the trigger function for arrival_order (same as in migration)
         conn.execute(
             text("""
@@ -114,11 +126,11 @@ def setup_test_database():
 
     yield
 
-    # Teardown — drop everything after the session
+    # Teardown -- drop everything after the session
     SQLModel.metadata.drop_all(test_engine)
 
 
-# ── Function-scoped: each test gets a rolled-back transaction ─────────────────
+# -- Function-scoped: each test gets a rolled-back transaction ----------------
 
 
 @pytest.fixture()
@@ -142,7 +154,7 @@ def session(setup_test_database):
 def client(session: Session):
     """
     FastAPI TestClient with the `get_session` dependency overridden to use
-    the test session — so the app and the test share the same transaction.
+    the test session -- so the app and the test share the same transaction.
     """
 
     def override_get_session():
@@ -154,7 +166,7 @@ def client(session: Session):
     app.dependency_overrides.clear()
 
 
-# ── Helpers to create model instances directly ────────────────────────────────
+# -- Helpers to create model instances directly -------------------------------
 
 
 def _get_role(session: Session, role: PossibleRoles) -> Role:
@@ -164,13 +176,13 @@ def _get_role(session: Session, role: PossibleRoles) -> Role:
 
 
 @pytest.fixture()
-def staff_role(session: Session) -> Role:
-    return _get_role(session, PossibleRoles.STAFF)
+def user_role(session: Session) -> Role:
+    return _get_role(session, PossibleRoles.USER)
 
 
 @pytest.fixture()
-def admin_role(session: Session) -> Role:
-    return _get_role(session, PossibleRoles.ADMIN)
+def site_admin_role(session: Session) -> Role:
+    return _get_role(session, PossibleRoles.SITE_ADMIN)
 
 
 def make_user(
@@ -179,7 +191,7 @@ def make_user(
     username: str = "testuser",
     password: str = "a-very-secure-passphrase",
     is_approved: bool = True,
-    role: PossibleRoles = PossibleRoles.STAFF,
+    role: PossibleRoles = PossibleRoles.USER,
 ) -> User:
     """Helper to create a User directly in the test session."""
     from sqlmodel import select
@@ -188,8 +200,8 @@ def make_user(
 
     if role_row.id is None:
         raise Exception(
-            "When making a user, the Role table had no STAFF role. \
-            That is an error, the STAFF role should exist before a new user is made"
+            "When making a user, the Role table had no matching role. "
+            "That is an error, the role should exist before a new user is made"
         )
     user = User(
         username=username,
@@ -201,6 +213,45 @@ def make_user(
     session.flush()  # get the ID without committing
     session.refresh(user)
     return user
+
+
+def make_org(
+    session: Session,
+    *,
+    name: str = "Test Org",
+    slug: str = "test-org",
+    created_by_id: int | None = None,
+) -> Organization:
+    """Helper to create an Organization directly in the test session."""
+    org = Organization(
+        id=uuid.uuid4(),
+        name=name,
+        slug=slug,
+        created_by_id=created_by_id,
+    )
+    session.add(org)
+    session.flush()
+    session.refresh(org)
+    return org
+
+
+def make_org_member(
+    session: Session,
+    *,
+    org: Organization,
+    user: User,
+    role: OrgRole = OrgRole.STAFF,
+) -> UserOrganization:
+    """Helper to add a user as a member of an organization."""
+    membership = UserOrganization(
+        user_id=user.id,
+        org_id=org.id,
+        role=role,
+    )
+    session.add(membership)
+    session.flush()
+    session.refresh(membership)
+    return membership
 
 
 def make_guest(
@@ -225,12 +276,14 @@ def make_guest(
 def make_meetup(
     session: Session,
     *,
+    org: Organization,
     name: str = "Test Meetup",
     mazmo_meetup_url: str = "https://mazmo.net/test-community/test-meetup-123",
     date: datetime | None = None,
 ) -> Meetup:
     """Helper to create a Meetup directly in the test session."""
     meetup = Meetup(
+        org_id=org.id,
         name=name,
         mazmo_meetup_url=mazmo_meetup_url,
         date=date or datetime.now(UTC),
@@ -265,6 +318,27 @@ def make_rsvp(
     return rsvp
 
 
+def make_ban(
+    session: Session,
+    *,
+    org: Organization,
+    guest: Guest,
+    banned_by: User,
+    reason: str = "Test ban reason for isolation testing",
+) -> OrganizationBan:
+    """Helper to create an OrganizationBan directly in the test session."""
+    ban = OrganizationBan(
+        org_id=org.id,
+        guest_id=MazmoUserId(guest.mazmo_user_id),
+        banned_by_id=banned_by.id,
+        banned_at=datetime.now(UTC),
+        reason=reason,
+    )
+    session.add(ban)
+    session.flush()
+    return ban
+
+
 def get_auth_headers(client: TestClient, username: str, password: str) -> dict:
     """Login and return Authorization headers."""
     resp = client.post(
@@ -276,22 +350,45 @@ def get_auth_headers(client: TestClient, username: str, password: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-# ── Common fixtures for admin and staff users ─────────────────────────────────
+# -- Common fixtures for site admin and regular users -------------------------
 
 
 @pytest.fixture()
-def admin_user(session: Session) -> User:
-    return make_user(session, username="admin", role=PossibleRoles.ADMIN)
+def site_admin_user(session: Session) -> User:
+    return make_user(session, username="site_admin", role=PossibleRoles.SITE_ADMIN)
 
 
 @pytest.fixture()
-def staff_user(session: Session) -> User:
-    return make_user(session, username="staff", role=PossibleRoles.STAFF)
+def regular_user(session: Session) -> User:
+    return make_user(session, username="user", role=PossibleRoles.USER)
 
 
 @pytest.fixture()
 def pending_user(session: Session) -> User:
-    return make_user(session, username="pending", is_approved=False, role=PossibleRoles.STAFF)
+    return make_user(session, username="pending", is_approved=False, role=PossibleRoles.USER)
+
+
+@pytest.fixture()
+def org(session: Session) -> Organization:
+    """Create a default test organization."""
+    return make_org(session)
+
+
+@pytest.fixture()
+def staff_user(session: Session) -> User:
+    """Regular user (staff capabilities come from org membership)."""
+    return make_user(session, username="staff", role=PossibleRoles.USER)
+
+
+@pytest.fixture()
+def admin_user(session: Session) -> User:
+    """Site admin user (bypasses all org checks)."""
+    return make_user(session, username="admin", role=PossibleRoles.SITE_ADMIN)
+
+
+@pytest.fixture()
+def site_admin_headers(client: TestClient, site_admin_user: User) -> dict:
+    return get_auth_headers(client, "site_admin", "a-very-secure-passphrase")
 
 
 @pytest.fixture()
@@ -305,12 +402,12 @@ def staff_headers(client: TestClient, staff_user: User) -> dict:
 
 
 @pytest.fixture()
-def meetup(session: Session) -> Meetup:
-    """Create a default test meetup."""
-    return make_meetup(session)
+def meetup(session: Session, org: Organization) -> Meetup:
+    """Create a default test meetup in the default test org."""
+    return make_meetup(session, org=org)
 
 
-# ── Shared Mock Data ──────────────────────────────────────────────────────────
+# -- Shared Mock Data ---------------------------------------------------------
 
 FAKE_RSVPS = {
     111: SimpleNamespace(userId=111, joinedAt=datetime(2026, 3, 17, tzinfo=UTC)),

@@ -51,9 +51,7 @@ def test_admin_generates_recovery_code_returns_200_with_six_digit_code(
     assert code.isdigit()
 
 
-def test_generating_code_stores_it_on_the_user_model(
-    client: TestClient, session: Session, admin_headers: dict
-):
+def test_generating_code_stores_it_on_the_user_model(client: TestClient, session: Session, admin_headers: dict):
     """
     Verify the generated code is persisted and the used flag is reset to False.
 
@@ -69,9 +67,7 @@ def test_generating_code_stores_it_on_the_user_model(
     assert target.recovery_code_created_at is not None
 
 
-def test_generating_new_code_overwrites_previous_code(
-    client: TestClient, session: Session, admin_headers: dict
-):
+def test_generating_new_code_overwrites_previous_code(client: TestClient, session: Session, admin_headers: dict):
     """
     Verify that a second generation invalidates the first code.
 
@@ -108,9 +104,7 @@ def test_generating_code_for_nonexistent_user_returns_404(client: TestClient, ad
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_generating_code_by_non_admin_returns_403(
-    client: TestClient, session: Session, staff_headers: dict
-):
+def test_generating_code_by_non_admin_returns_403(client: TestClient, session: Session, staff_headers: dict):
     """
     Verify that regular staff cannot generate recovery codes.
 
@@ -136,9 +130,7 @@ def test_generating_code_without_auth_returns_401(client: TestClient, session: S
 # ── POST /auth/verify-recovery-code ──────────────────────────────────────────
 
 
-def test_verify_valid_code_returns_200_ok(
-    client: TestClient, session: Session, admin_headers: dict
-):
+def test_verify_valid_code_returns_200_ok(client: TestClient, session: Session, admin_headers: dict):
     """
     Verify that a freshly generated, unused code is accepted.
 
@@ -156,9 +148,7 @@ def test_verify_valid_code_returns_200_ok(
     assert resp.json()["ok"] is True
 
 
-def test_verify_does_not_consume_the_code(
-    client: TestClient, session: Session, admin_headers: dict
-):
+def test_verify_does_not_consume_the_code(client: TestClient, session: Session, admin_headers: dict):
     """
     Verify that calling verify-recovery-code twice still works the second time.
 
@@ -179,9 +169,7 @@ def test_verify_does_not_consume_the_code(
     assert target.recovery_code_used is False
 
 
-def test_verify_wrong_code_returns_400(
-    client: TestClient, session: Session, admin_headers: dict
-):
+def test_verify_wrong_code_returns_400(client: TestClient, session: Session, admin_headers: dict):
     """
     Verify that an incorrect code is rejected.
 
@@ -299,9 +287,7 @@ def test_reset_password_with_valid_code_returns_200_with_username(
     assert resp.json()["username"] == "resetok"
 
 
-def test_reset_password_actually_changes_the_password(
-    client: TestClient, session: Session, admin_headers: dict
-):
+def test_reset_password_actually_changes_the_password(client: TestClient, session: Session, admin_headers: dict):
     """
     Verify that the user can log in with the new password after a reset.
 
@@ -325,9 +311,7 @@ def test_reset_password_actually_changes_the_password(
     assert resp_new.status_code == status.HTTP_200_OK
 
 
-def test_reset_password_marks_code_as_used(
-    client: TestClient, session: Session, admin_headers: dict
-):
+def test_reset_password_marks_code_as_used(client: TestClient, session: Session, admin_headers: dict):
     """
     Verify that recovery_code_used is True after a successful reset.
 
@@ -345,9 +329,7 @@ def test_reset_password_marks_code_as_used(
     assert target.recovery_code_used is True
 
 
-def test_reset_password_code_cannot_be_reused(
-    client: TestClient, session: Session, admin_headers: dict
-):
+def test_reset_password_code_cannot_be_reused(client: TestClient, session: Session, admin_headers: dict):
     """
     Verify that the same code cannot be used to reset the password twice.
 
@@ -370,9 +352,7 @@ def test_reset_password_code_cannot_be_reused(
     assert resp.json()["detail"] == _GENERIC_ERROR
 
 
-def test_reset_password_with_wrong_code_returns_400(
-    client: TestClient, session: Session, admin_headers: dict
-):
+def test_reset_password_with_wrong_code_returns_400(client: TestClient, session: Session, admin_headers: dict):
     """
     Verify that an incorrect code is rejected at the reset step.
 
@@ -392,9 +372,7 @@ def test_reset_password_with_wrong_code_returns_400(
     assert resp.json()["detail"] == _GENERIC_ERROR
 
 
-def test_reset_password_with_expired_code_returns_400(
-    client: TestClient, session: Session, admin_headers: dict
-):
+def test_reset_password_with_expired_code_returns_400(client: TestClient, session: Session, admin_headers: dict):
     """
     Verify that an expired code is rejected at the reset step.
 
@@ -430,9 +408,7 @@ def test_reset_password_unknown_username_returns_same_400_as_bad_code(client: Te
     assert resp.json()["detail"] == _GENERIC_ERROR
 
 
-def test_reset_password_too_short_returns_422(
-    client: TestClient, session: Session, admin_headers: dict
-):
+def test_reset_password_too_short_returns_422(client: TestClient, session: Session, admin_headers: dict):
     """
     Verify that passwords shorter than 15 characters are rejected.
 
@@ -449,9 +425,7 @@ def test_reset_password_too_short_returns_422(
     assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
-def test_reset_password_too_long_returns_422(
-    client: TestClient, session: Session, admin_headers: dict
-):
+def test_reset_password_too_long_returns_422(client: TestClient, session: Session, admin_headers: dict):
     """
     Verify that passwords longer than 128 characters are rejected.
 

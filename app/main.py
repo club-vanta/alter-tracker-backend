@@ -7,7 +7,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.middleware import RequestContextMiddleware
-from app.routers import auth, events, guests, meetups, meta, staff
+from app.routers import auth, events, guests, meetups, meta, organizations, staff
 
 settings = get_settings()
 
@@ -48,10 +48,17 @@ tags_metadata = [
         ),
     },
     {
+        "name": "organizations",
+        "description": (
+            "Organization management. Create orgs, manage memberships, and handle "
+            "org-scoped guest bans. Most operations require SITE_ADMIN or org admin privileges."
+        ),
+    },
+    {
         "name": "staff",
         "description": (
             "Staff and admin management. List, approve, disable, and manage roles "
-            "for staff accounts. Most operations require admin privileges."
+            "for staff accounts. Most operations require SITE_ADMIN privileges."
         ),
     },
     {
@@ -125,6 +132,7 @@ app.add_middleware(RequestContextMiddleware)
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(auth.router)
+app.include_router(organizations.router)
 app.include_router(staff.router)
 app.include_router(guests.router)
 app.include_router(meetups.router)

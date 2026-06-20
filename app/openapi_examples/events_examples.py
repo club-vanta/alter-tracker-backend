@@ -2,10 +2,10 @@
 OpenAPI examples for events router endpoints.
 
 Endpoints:
-  GET /events/                - List all events (admin only)
-  GET /events/meetups/{id}    - Events at a specific meetup (staff+)
-  GET /events/guests/{id}     - Events for a specific guest (staff: bans only, admin: all)
-  GET /events/staff/{id}      - Events by a staff member (staff: own only, admin: any)
+  GET /organizations/{org_id}/events/               - List all events in org (org admin only)
+  GET /organizations/{org_id}/events/meetups/{id}   - Events at a specific meetup (org member+)
+  GET /organizations/{org_id}/events/guests/{id}    - Events for a guest (staff: bans only, admin: all)
+  GET /organizations/{org_id}/events/staff/{id}     - Events by a staff member (staff: own only)
 """
 
 from typing import Any
