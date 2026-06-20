@@ -218,7 +218,19 @@
                         "name": "SITE_ADMIN"
                       },
                       "created_at": "2024-03-15T20:00:00Z",
-                      "is_disabled": false
+                      "is_disabled": false,
+                      "org_memberships": [
+                        {
+                          "org_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+                          "org_name": "Alter Buenos Aires",
+                          "role": "ADMIN"
+                        },
+                        {
+                          "org_id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+                          "org_name": "Club Vanta",
+                          "role": "ADMIN"
+                        }
+                      ]
                     }
                   }
                 }
@@ -658,6 +670,167 @@
                     "summary": "Account disabled",
                     "value": {
                       "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "org_not_found": {
+                    "summary": "Organization UUID does not exist",
+                    "value": {
+                      "detail": "Organization c3d4e5f6-a7b8-9012-cdef-123456789012 not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "organizations"
+        ],
+        "summary": "Update an organization's name and/or slug",
+        "description": "Update name and/or slug of an organization. Only SITE_ADMIN can do this.",
+        "operationId": "update_organization_organizations__org_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgUpdate"
+              },
+              "examples": {
+                "rename": {
+                  "summary": "Rename the organization",
+                  "value": {
+                    "name": "Alter BA"
+                  }
+                },
+                "reslug": {
+                  "summary": "Change the slug",
+                  "value": {
+                    "slug": "alter-ba"
+                  }
+                },
+                "both": {
+                  "summary": "Update both name and slug",
+                  "value": {
+                    "name": "Alter BA",
+                    "slug": "alter-ba"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Organization updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgPublic"
+                },
+                "examples": {
+                  "updated": {
+                    "summary": "Organization updated successfully",
+                    "value": {
+                      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+                      "name": "Alter BA",
+                      "slug": "alter-ba",
+                      "created_at": "2024-03-15T20:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name or slug already taken by another organization",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "duplicate_name": {
+                    "summary": "Name already taken",
+                    "value": {
+                      "detail": "Cannot update organization: name 'Club Vanta' is already taken."
+                    }
+                  },
+                  "duplicate_slug": {
+                    "summary": "Slug already taken",
+                    "value": {
+                      "detail": "Cannot update organization: slug 'club-vanta' is already taken."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Site admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "site_admin_required": {
+                    "summary": "Site admin privileges needed",
+                    "value": {
+                      "detail": "Site admin privileges required."
                     }
                   }
                 }
@@ -1704,7 +1877,19 @@
                           "name": "SITE_ADMIN"
                         },
                         "created_at": "2024-03-15T20:00:00Z",
-                        "is_disabled": false
+                        "is_disabled": false,
+                        "org_memberships": [
+                          {
+                            "org_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+                            "org_name": "Alter Buenos Aires",
+                            "role": "ADMIN"
+                          },
+                          {
+                            "org_id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+                            "org_name": "Club Vanta",
+                            "role": "ADMIN"
+                          }
+                        ]
                       },
                       {
                         "id": 2,
@@ -6737,6 +6922,31 @@
         "title": "OrgMemberPublic",
         "description": "A user's membership in an organization."
       },
+      "OrgMembershipPublic": {
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Org Id"
+          },
+          "org_name": {
+            "type": "string",
+            "title": "Org Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "org_id",
+          "org_name",
+          "role"
+        ],
+        "title": "OrgMembershipPublic",
+        "description": "A user's membership in an org, flattened for the userinfo response."
+      },
       "OrgPublic": {
         "properties": {
           "id": {
@@ -6767,6 +6977,40 @@
         ],
         "title": "OrgPublic",
         "description": "Public representation of an organization."
+      },
+      "OrgUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 2,
+                "pattern": "^[a-z0-9-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          }
+        },
+        "type": "object",
+        "title": "OrgUpdate",
+        "description": "Request body to partially update an organization's name and/or slug."
       },
       "PossibleRoles": {
         "type": "string",
@@ -7086,6 +7330,14 @@
               }
             ],
             "title": "Disabled Reason"
+          },
+          "org_memberships": {
+            "items": {
+              "$ref": "#/components/schemas/OrgMembershipPublic"
+            },
+            "type": "array",
+            "title": "Org Memberships",
+            "default": []
           }
         },
         "type": "object",

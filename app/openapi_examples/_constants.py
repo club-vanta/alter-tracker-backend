@@ -26,6 +26,11 @@ EXAMPLE_JWT = (
     "fake_signature_for_documentation_purposes_only"
 )
 
+# -- Organization UUIDs (referenced in user examples below) ------------------
+
+ORG_UUID = "c3d4e5f6-a7b8-9012-cdef-123456789012"
+ORG_UUID_2 = "d4e5f6a7-b8c9-0123-defa-234567890123"
+
 # -- Staff Users --------------------------------------------------------------
 
 ADMIN_USER = {
@@ -37,6 +42,10 @@ ADMIN_USER = {
     "is_disabled": False,
     "disabled_at": None,
     "disabled_reason": None,
+    "org_memberships": [
+        {"org_id": ORG_UUID, "org_name": "Alter Buenos Aires", "role": "ADMIN"},
+        {"org_id": ORG_UUID_2, "org_name": "Club Vanta", "role": "ADMIN"},
+    ],
 }
 
 STAFF_USER_APPROVED = {
@@ -111,9 +120,6 @@ GUEST_BANNED_FULL = {
 }
 
 # -- Organizations ------------------------------------------------------------
-
-ORG_UUID = "c3d4e5f6-a7b8-9012-cdef-123456789012"
-ORG_UUID_2 = "d4e5f6a7-b8c9-0123-defa-234567890123"
 
 ORG_EXAMPLE = {
     "id": ORG_UUID,

@@ -12,6 +12,7 @@ the submodules directly or from this package:
 
 from app.schemas.admin import ApproveUserRequest, DisableUserRequest, RoleRequest
 from app.schemas.auth import (
+    OrgMembershipPublic,
     RecoveryCodeResponse,
     ResetPasswordRequest,
     ResetPasswordResponse,
@@ -58,6 +59,7 @@ from app.schemas.organizations import (
     OrgMemberListResponse,
     OrgMemberPublic,
     OrgPublic,
+    OrgUpdate,
 )
 
 __all__ = [
@@ -91,7 +93,9 @@ __all__ = [
     "OrgListResponse",
     "OrgMemberListResponse",
     "OrgMemberPublic",
+    "OrgMembershipPublic",
     "OrgPublic",
+    "OrgUpdate",
     "RecoveryCodeResponse",
     "ResetPasswordRequest",
     "ResetPasswordResponse",

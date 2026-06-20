@@ -39,6 +39,13 @@ class OrgMemberPublic(BaseModel):
     role: str
 
 
+class OrgUpdate(BaseModel):
+    """Request body to partially update an organization's name and/or slug."""
+
+    name: str | None = Field(default=None, min_length=2, max_length=128)
+    slug: str | None = Field(default=None, min_length=2, max_length=64, pattern=r"^[a-z0-9-]+$")
+
+
 class AddOrgMemberRequest(BaseModel):
     """Request body to add a user to an organization."""
 

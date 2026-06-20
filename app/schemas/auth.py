@@ -4,11 +4,30 @@ Authentication and user-related schemas.
 These schemas handle user registration, login responses, and user representation.
 """
 
+import uuid
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.models import PossibleRoles
+
+
+class OrgMembershipPublic(BaseModel):
+    """A user's membership in an org, flattened for the userinfo response."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    org_id: uuid.UUID
+    org_name: str
+    role: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _flatten_org(cls, data: Any) -> Any:
+        if hasattr(data, "org"):
+            return {"org_id": data.org_id, "org_name": data.org.name, "role": data.role}
+        return data
 
 
 class RolePublic(BaseModel):
@@ -71,6 +90,8 @@ class UserPublic(BaseModel):
     is_disabled: bool = False
     disabled_at: datetime | None = None
     disabled_reason: str | None = None
+
+    org_memberships: list[OrgMembershipPublic] = []
 
 
 class VerifyRecoveryCodeRequest(BaseModel):

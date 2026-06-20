@@ -5,6 +5,7 @@ Endpoints:
   POST   /organizations/                              - Create org (SITE_ADMIN)
   GET    /organizations/                              - List orgs (SITE_ADMIN)
   GET    /organizations/{org_id}                      - Get org (member or SITE_ADMIN)
+  PATCH  /organizations/{org_id}                      - Update org name/slug (SITE_ADMIN)
   GET    /organizations/{org_id}/members              - List members (SITE_ADMIN)
   POST   /organizations/{org_id}/members/{user_id}    - Add member (SITE_ADMIN)
   PATCH  /organizations/{org_id}/members/{user_id}    - Change member role (SITE_ADMIN)
@@ -128,6 +129,59 @@ GET_ORG_RESPONSES: dict[int | str, dict[str, Any]] = {
     },
     **error_401_invalid_credentials(),
     **error_403_not_approved(),
+    **error_404_org(),
+}
+
+# -- PATCH /organizations/{org_id} --------------------------------------------
+
+UPDATE_ORG_REQUEST_EXAMPLES: dict[str, Any] = {
+    "rename": {
+        "summary": "Rename the organization",
+        "value": {"name": "Alter BA"},
+    },
+    "reslug": {
+        "summary": "Change the slug",
+        "value": {"slug": "alter-ba"},
+    },
+    "both": {
+        "summary": "Update both name and slug",
+        "value": {"name": "Alter BA", "slug": "alter-ba"},
+    },
+}
+
+UPDATE_ORG_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Organization updated",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "updated": {
+                        "summary": "Organization updated successfully",
+                        "value": {**ORG_EXAMPLE, "name": "Alter BA", "slug": "alter-ba"},
+                    },
+                }
+            }
+        },
+    },
+    409: {
+        "description": "Name or slug already taken by another organization",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "duplicate_name": {
+                        "summary": "Name already taken",
+                        "value": {"detail": "Cannot update organization: name 'Club Vanta' is already taken."},
+                    },
+                    "duplicate_slug": {
+                        "summary": "Slug already taken",
+                        "value": {"detail": "Cannot update organization: slug 'club-vanta' is already taken."},
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_site_admin_required(),
     **error_404_org(),
 }
 

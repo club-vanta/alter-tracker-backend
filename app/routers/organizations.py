@@ -4,6 +4,7 @@ Organizations router
 POST   /organizations/                                   -> create org (SITE_ADMIN)
 GET    /organizations/                                   -> list orgs (SITE_ADMIN)
 GET    /organizations/{org_id}                           -> get org (site_admin or member)
+PATCH  /organizations/{org_id}                           -> update org name/slug (SITE_ADMIN)
 POST   /organizations/{org_id}/members/{user_id}         -> add member (SITE_ADMIN)
 PATCH  /organizations/{org_id}/members/{user_id}         -> change member role (SITE_ADMIN)
 DELETE /organizations/{org_id}/members/{user_id}         -> remove member (SITE_ADMIN)
@@ -40,6 +41,8 @@ from app.openapi_examples.organizations_examples import (
     UNBAN_GUEST_RESPONSES,
     UPDATE_MEMBER_ROLE_REQUEST_EXAMPLES,
     UPDATE_MEMBER_ROLE_RESPONSES,
+    UPDATE_ORG_REQUEST_EXAMPLES,
+    UPDATE_ORG_RESPONSES,
 )
 from app.schemas import (
     AddOrgMemberRequest,
@@ -52,6 +55,7 @@ from app.schemas import (
     OrgMemberListResponse,
     OrgMemberPublic,
     OrgPublic,
+    OrgUpdate,
 )
 
 log = structlog.get_logger(__name__)
@@ -136,6 +140,50 @@ async def get_organization(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Organization {org_id} not found.",
         )
+    return org
+
+
+# ── Update org ───────────────────────────────────────────────────────────────
+
+
+@router.patch(
+    "/organizations/{org_id}",
+    response_model=OrgPublic,
+    summary="Update an organization's name and/or slug",
+    responses=UPDATE_ORG_RESPONSES,
+)
+async def update_organization(
+    org_id: uuid.UUID,
+    payload: Annotated[OrgUpdate, Body(openapi_examples=UPDATE_ORG_REQUEST_EXAMPLES)],
+    session: Session = Depends(get_session),
+    admin: User = Depends(get_site_admin),
+) -> Organization:
+    """Update name and/or slug of an organization. Only SITE_ADMIN can do this."""
+    org = _get_org_or_404(session, org_id)
+
+    if payload.name is not None and payload.name != org.name:
+        existing = session.exec(select(Organization).where(Organization.name == payload.name)).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cannot update organization: name '{payload.name}' is already taken.",
+            )
+        org.name = payload.name
+
+    if payload.slug is not None and payload.slug != org.slug:
+        existing = session.exec(select(Organization).where(Organization.slug == payload.slug)).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cannot update organization: slug '{payload.slug}' is already taken.",
+            )
+        org.slug = payload.slug
+
+    session.add(org)
+    session.commit()
+    session.refresh(org)
+
+    log.info("Organization updated", org_id=str(org_id), name=org.name, slug=org.slug, admin=admin.username)
     return org
 
 

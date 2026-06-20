@@ -13,6 +13,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from app.core.database import get_session
@@ -23,7 +24,7 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
-from app.models.models import PossibleRoles, Role, User
+from app.models.models import PossibleRoles, Role, User, UserOrganization
 from app.openapi_examples.auth_examples import (
     REGISTER_REQUEST_EXAMPLES,
     REGISTER_RESPONSES,
@@ -143,8 +144,17 @@ async def login(
 )
 async def get_me(
     current_user: User = Depends(get_approved_user),
-) -> User:
-    return current_user
+    session: Session = Depends(get_session),
+) -> UserPublic:
+    user = session.exec(
+        select(User)
+        .where(User.id == current_user.id)
+        .options(selectinload(User.org_memberships).selectinload(UserOrganization.org))  # type: ignore[arg-type]
+    ).one()
+    result = UserPublic.model_validate(user)
+    if user.role and user.role.name == PossibleRoles.SITE_ADMIN:
+        result.org_memberships = []
+    return result
 
 
 # ── Recovery code helpers ─────────────────────────────────────────────────────
