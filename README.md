@@ -77,15 +77,24 @@ Server runs at http://localhost:8000/docs
 
 ### Staff and Roles
 
-- Staff are the volunteers who use this app at meetup doors
-- Two roles exist:
+The app uses a two-tier role system.
 
-| Role      | Capabilities                                                                                              |
-| --------- | --------------------------------------------------------------------------------------------------------- |
-| **STAFF** | View guest lists, check people in, view banned list                                                       |
-| **ADMIN** | Everything STAFF can do, plus: ban/unban guests, approve new accounts, disable accounts, promote to admin |
+**Global roles** (stored on the `users` row):
 
-- New registrations start as "unapproved" - admin approval required before login
+| Role           | Who has it | What it means |
+| -------------- | ---------- | ------------- |
+| `USER`         | All regular staff | Account is approved. Actual capabilities come from org membership. |
+| `SITE_ADMIN`   | Superadmins only | Bypasses all org checks. Can create orgs, approve users, and do anything in any org. |
+
+**Per-org roles** (stored in `user_organizations`, one row per user per org):
+
+| Role    | Capabilities |
+| ------- | ------------ |
+| `STAFF` | View guest lists, check people in, view banned list, sync meetups |
+| `ADMIN` | Everything STAFF can do, plus: ban/unban guests, finalize meetups |
+
+- A user can be ADMIN in one org and STAFF in another
+- New registrations start as "unapproved" — SITE_ADMIN approval required before login
 - Accounts are disabled (not deleted) to preserve audit trails
 
 ### Password Recovery
@@ -563,6 +572,29 @@ gh secret set TF_VAR_cloudflare_account_id --repo club-vanta/alter-tracker-backe
 2. Generate migration: `db-revision "add field_name to table_name"`
 3. Review generated migration in `alembic/versions/`
 4. Apply: `db-migrate`
+
+### Promote a User to SITE_ADMIN
+
+`seed-admin` creates the initial admin already as `SITE_ADMIN`. For any other
+user, connect to the database and run:
+
+```sql
+UPDATE users
+SET role_id = (SELECT id FROM user_roles WHERE name = 'SITE_ADMIN')
+WHERE username = 'their_username';
+```
+
+The user must re-login after the change — the role is embedded in the JWT at
+login time and won't update until a new token is issued.
+
+To verify:
+
+```sql
+SELECT u.username, r.name AS role
+FROM users u
+JOIN user_roles r ON u.role_id = r.id
+WHERE u.username = 'their_username';
+```
 
 ### Add a New Configuration Variable
 

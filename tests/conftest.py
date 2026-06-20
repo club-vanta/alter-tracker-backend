@@ -33,6 +33,7 @@ from app.models.models import (
     Meetup,
     MeetupRsvp,
     Organization,
+    OrganizationBan,
     OrgRole,
     PossibleRoles,
     Role,
@@ -315,6 +316,27 @@ def make_rsvp(
     session.flush()
     session.refresh(rsvp)
     return rsvp
+
+
+def make_ban(
+    session: Session,
+    *,
+    org: Organization,
+    guest: Guest,
+    banned_by: User,
+    reason: str = "Test ban reason for isolation testing",
+) -> OrganizationBan:
+    """Helper to create an OrganizationBan directly in the test session."""
+    ban = OrganizationBan(
+        org_id=org.id,
+        guest_id=MazmoUserId(guest.mazmo_user_id),
+        banned_by_id=banned_by.id,
+        banned_at=datetime.now(UTC),
+        reason=reason,
+    )
+    session.add(ban)
+    session.flush()
+    return ban
 
 
 def get_auth_headers(client: TestClient, username: str, password: str) -> dict:
