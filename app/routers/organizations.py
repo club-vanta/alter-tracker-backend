@@ -20,6 +20,7 @@ from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Body, Depends, HTTPException, status
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from app.core.database import get_session
@@ -203,10 +204,15 @@ async def list_org_members(
 ) -> OrgMemberListResponse:
     """List all members of an organization with their org roles."""
     _get_org_or_404(session, org_id)
-    memberships = session.exec(select(UserOrganization).where(UserOrganization.org_id == org_id)).all()
+    memberships = session.exec(
+        select(UserOrganization).where(UserOrganization.org_id == org_id).options(selectinload(UserOrganization.user))  # type: ignore[arg-type]
+    ).all()
     return OrgMemberListResponse(
         total=len(memberships),
-        members=[OrgMemberPublic.model_validate(m) for m in memberships],
+        members=[
+            OrgMemberPublic(user_id=m.user_id, org_id=m.org_id, role=m.role, username=m.user.username)
+            for m in memberships
+        ],
     )
 
 
@@ -226,7 +232,7 @@ async def add_org_member(
     payload: Annotated[AddOrgMemberRequest, Body(openapi_examples=ADD_MEMBER_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
     admin: User = Depends(get_org_admin),
-) -> UserOrganization:
+) -> OrgMemberPublic:
     """Add a user to an organization with a specified role (STAFF or ADMIN)."""
     _get_org_or_404(session, org_id)
 
@@ -261,7 +267,9 @@ async def add_org_member(
         role=payload.role,
         admin=admin.username,
     )
-    return membership
+    return OrgMemberPublic(
+        user_id=membership.user_id, org_id=membership.org_id, role=membership.role, username=target.username
+    )
 
 
 # ── Change member role ────────────────────────────────────────────────────────
@@ -279,7 +287,7 @@ async def update_org_member_role(
     payload: Annotated[AddOrgMemberRequest, Body(openapi_examples=UPDATE_MEMBER_ROLE_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
     admin: User = Depends(get_org_admin),
-) -> UserOrganization:
+) -> OrgMemberPublic:
     """Change a member's role within an organization (STAFF <-> ADMIN)."""
     membership = session.exec(
         select(UserOrganization).where(UserOrganization.user_id == user_id).where(UserOrganization.org_id == org_id)
@@ -296,6 +304,9 @@ async def update_org_member_role(
     session.commit()
     session.refresh(membership)
 
+    target = session.get(User, user_id)
+    username = target.username if target else str(user_id)
+
     log.info(
         "Org member role updated",
         org_id=str(org_id),
@@ -303,7 +314,9 @@ async def update_org_member_role(
         new_role=payload.role,
         admin=admin.username,
     )
-    return membership
+    return OrgMemberPublic(
+        user_id=membership.user_id, org_id=membership.org_id, role=membership.role, username=username
+    )
 
 
 # ── Remove member ─────────────────────────────────────────────────────────────

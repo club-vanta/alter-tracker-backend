@@ -37,6 +37,7 @@ class OrgMemberPublic(BaseModel):
     user_id: int
     org_id: uuid.UUID
     role: str
+    username: str
 
 
 class OrgUpdate(BaseModel):

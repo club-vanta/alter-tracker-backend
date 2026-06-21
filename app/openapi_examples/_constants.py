@@ -139,12 +139,14 @@ ORG_MEMBER_STAFF = {
     "user_id": 2,
     "org_id": ORG_UUID,
     "role": "STAFF",
+    "username": "carlos_staff",
 }
 
 ORG_MEMBER_ADMIN = {
     "user_id": 1,
     "org_id": ORG_UUID,
     "role": "ADMIN",
+    "username": "ana_admin",
 }
 
 # -- Meetups ------------------------------------------------------------------

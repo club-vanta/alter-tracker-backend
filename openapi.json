@@ -907,12 +907,14 @@
                         {
                           "user_id": 1,
                           "org_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
-                          "role": "ADMIN"
+                          "role": "ADMIN",
+                          "username": "ana_admin"
                         },
                         {
                           "user_id": 2,
                           "org_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
-                          "role": "STAFF"
+                          "role": "STAFF",
+                          "username": "carlos_staff"
                         }
                       ]
                     }
@@ -1064,7 +1066,8 @@
                     "value": {
                       "user_id": 2,
                       "org_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
-                      "role": "STAFF"
+                      "role": "STAFF",
+                      "username": "carlos_staff"
                     }
                   },
                   "added_admin": {
@@ -1072,7 +1075,8 @@
                     "value": {
                       "user_id": 1,
                       "org_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
-                      "role": "ADMIN"
+                      "role": "ADMIN",
+                      "username": "ana_admin"
                     }
                   }
                 }
@@ -1234,7 +1238,8 @@
                     "value": {
                       "user_id": 1,
                       "org_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
-                      "role": "ADMIN"
+                      "role": "ADMIN",
+                      "username": "ana_admin"
                     }
                   }
                 }
@@ -6966,13 +6971,18 @@
           "role": {
             "type": "string",
             "title": "Role"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
           }
         },
         "type": "object",
         "required": [
           "user_id",
           "org_id",
-          "role"
+          "role",
+          "username"
         ],
         "title": "OrgMemberPublic",
         "description": "A user's membership in an organization."
