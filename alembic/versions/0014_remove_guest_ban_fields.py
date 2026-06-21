@@ -1,7 +1,7 @@
 """migrate existing bans to organization_bans and drop ban fields from guests
 
-Revision ID: 0013
-Revises: 0012
+Revision ID: 0014
+Revises: 0013
 Create Date: 2026-06-20
 
 Ban data that was stored directly on the guests table is moved to
@@ -13,8 +13,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0013"
-down_revision: str = "0012"
+revision: str = "0014"
+down_revision: str = "0013"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

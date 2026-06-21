@@ -1,7 +1,7 @@
 """update global roles: add USER and SITE_ADMIN, retire STAFF and ADMIN
 
-Revision ID: 0012
-Revises: 0011
+Revision ID: 0013
+Revises: 0012
 Create Date: 2026-06-20
 
 Global roles now represent only the two extremes:
@@ -9,18 +9,18 @@ Global roles now represent only the two extremes:
   - SITE_ADMIN: superadmin, bypasses all org checks, can create organizations.
 
 STAFF and ADMIN are removed from user_roles because they are now per-org roles
-stored as VARCHAR in user_organizations.role (already migrated in 0010).
+stored as VARCHAR in user_organizations.role (already migrated in 0011).
 
 All existing users (both former STAFF and ADMIN) become USER globally.
-Their per-org privileges were already set up in migration 0010.
+Their per-org privileges were already set up in migration 0011.
 """
 
 from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0012"
-down_revision: str = "0011"
+revision: str = "0013"
+down_revision: str = "0012"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

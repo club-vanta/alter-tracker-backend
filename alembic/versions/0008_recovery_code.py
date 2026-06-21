@@ -1,7 +1,7 @@
 """add recovery code fields to users
 
-Revision ID: 0014
-Revises: 0013
+Revision ID: 0008
+Revises: 0007
 Create Date: 2026-04-16 00:00:00.000000
 
 Adds three columns to support the admin-generated 6-digit password recovery flow:
@@ -16,8 +16,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "0014"
-down_revision: str = "0013"
+revision: str = "0008"
+down_revision: str = "0007"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

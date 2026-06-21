@@ -1,11 +1,11 @@
 """create organization_bans table and add org_id to event_log
 
-Revision ID: 0011
-Revises: 0010
+Revision ID: 0012
+Revises: 0011
 Create Date: 2026-06-20
 
 Bans are now per-organization. The organization_bans table replaces the
-ban fields on the guests table (removed in migration 0013).
+ban fields on the guests table (removed in migration 0014).
 
 event_log also gets org_id:
   - Events tied to a meetup inherit the meetup's org_id.
@@ -20,14 +20,14 @@ from sqlalchemy.dialects.postgresql import UUID
 
 from alembic import op
 
-revision: str = "0011"
-down_revision: str = "0010"
+revision: str = "0012"
+down_revision: str = "0011"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # ── organization_bans ─────────────────────────────────────────────────────
+    # -- organization_bans -----------------------------------------------------
     op.create_table(
         "organization_bans",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -45,7 +45,7 @@ def upgrade() -> None:
     op.create_index("ix_organization_bans_org_id", "organization_bans", ["org_id"])
     op.create_index("ix_organization_bans_guest_id", "organization_bans", ["guest_id"])
 
-    # ── org_id on event_log ───────────────────────────────────────────────────
+    # -- org_id on event_log ---------------------------------------------------
     op.add_column("event_log", sa.Column("org_id", UUID(as_uuid=True), nullable=True))
     op.create_foreign_key("fk_event_log_org_id", "event_log", "organizations", ["org_id"], ["id"])
     op.create_index("ix_event_log_org_id", "event_log", ["org_id"])
