@@ -161,6 +161,7 @@ MEETUP_EXAMPLE = {
     "date": TIMESTAMP_2024_03_23,
     "is_finalized": False,
     "finalized_at": None,
+    "requires_payment": False,
 }
 
 MEETUP_EXAMPLE_2 = {
@@ -170,6 +171,7 @@ MEETUP_EXAMPLE_2 = {
     "date": "2024-04-15T20:00:00Z",
     "is_finalized": False,
     "finalized_at": None,
+    "requires_payment": False,
 }
 
 MEETUP_EXAMPLE_FINALIZED = {
@@ -179,6 +181,17 @@ MEETUP_EXAMPLE_FINALIZED = {
     "date": TIMESTAMP_2024_03_23,
     "is_finalized": True,
     "finalized_at": "2024-03-23T23:59:00Z",
+    "requires_payment": False,
+}
+
+MEETUP_EXAMPLE_PAID = {
+    "id": MEETUP_UUID_2,
+    "name": "Alter Buenos Aires - Abril 2024 (Pago)",
+    "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-bsas-paid-4321",
+    "date": "2024-04-15T20:00:00Z",
+    "is_finalized": False,
+    "finalized_at": None,
+    "requires_payment": True,
 }
 
 # -- RSVP Data ----------------------------------------------------------------
@@ -190,6 +203,8 @@ RSVP_NOT_ARRIVED = {
     "arrival_time": None,
     "arrival_order": None,
     "is_walkin": False,
+    "has_paid": False,
+    "paid_at": None,
 }
 
 RSVP_ARRIVED = {
@@ -199,6 +214,8 @@ RSVP_ARRIVED = {
     "arrival_time": TIMESTAMP_2024_03_23_CHECKIN,
     "arrival_order": 1,
     "is_walkin": False,
+    "has_paid": False,
+    "paid_at": None,
 }
 
 # -- Event Log Entries --------------------------------------------------------
@@ -240,6 +257,8 @@ RSVP_WALKIN = {
     "arrival_time": None,
     "arrival_order": None,
     "is_walkin": True,
+    "has_paid": False,
+    "paid_at": None,
 }
 
 MEETUP_GUEST_WALKIN = {
@@ -261,6 +280,12 @@ SYNC_RESPONSE_EXAMPLE = {
 }
 
 # -- Check-in Response --------------------------------------------------------
+
+PAYMENT_RESPONSE_EXAMPLE = {
+    "guest": GUEST_NORMAL,
+    "paid_at": TIMESTAMP_2024_03_23_CHECKIN,
+    "paid_by": {"id": 1, "username": "ana_admin"},
+}
 
 CHECKIN_RESPONSE_EXAMPLE = {
     "guest": GUEST_NORMAL,

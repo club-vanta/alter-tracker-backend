@@ -65,6 +65,8 @@ class RsvpPublic(BaseModel):
     arrival_time: datetime | None = None
     arrival_order: int | None = None
     is_walkin: bool = False
+    has_paid: bool = False
+    paid_at: datetime | None = None
 
 
 class MeetupGuestPublic(BaseModel):
@@ -102,6 +104,14 @@ class CheckInResponse(BaseModel):
     arrival_order: int
     arrival_time: datetime
     checked_in_by: CheckedInByPublic
+
+
+class PaymentResponse(BaseModel):
+    """Response after successfully marking a guest's entrance as paid."""
+
+    guest: GuestPublic
+    paid_at: datetime
+    paid_by: CheckedInByPublic
 
 
 # ── Manual guest creation ─────────────────────────────────────────────────────

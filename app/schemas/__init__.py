@@ -42,6 +42,7 @@ from app.schemas.guests import (
     GuestWithBanPublic,
     MeetupGuestListResponse,
     MeetupGuestPublic,
+    PaymentResponse,
     RsvpPublic,
 )
 from app.schemas.mazmo import MazmoRsvpEntry, MazmoUserEntry
@@ -97,6 +98,7 @@ __all__ = [
     "OrgMembershipPublic",
     "OrgPublic",
     "OrgUpdate",
+    "PaymentResponse",
     "RecoveryCodeResponse",
     "ResetPasswordRequest",
     "ResetPasswordResponse",

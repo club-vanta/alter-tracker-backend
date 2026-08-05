@@ -395,6 +395,56 @@ def error_404_rsvp() -> ResponsesDict:
     }
 
 
+def error_404_rsvp_for_payment() -> ResponsesDict:
+    """404 - Guest not RSVPed to this meetup. Only for PATCH .../payment."""
+    return {
+        404: {
+            "description": "Guest not RSVPed to meetup",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "not_rsvped": {
+                            "summary": "Guest didn't RSVP to this meetup",
+                            "value": {
+                                "detail": (
+                                    "Cannot mark payment: guest mazmo_user_id=12345 is not RSVPed. "
+                                    "Either: (1) they haven't RSVPed on Mazmo yet, "
+                                    "(2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, "
+                                    "or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_404_rsvp_for_undo_payment() -> ResponsesDict:
+    """404 - Guest not RSVPed to this meetup. Only for PATCH .../payment/undo."""
+    return {
+        404: {
+            "description": "Guest not RSVPed to meetup",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "not_rsvped": {
+                            "summary": "Guest didn't RSVP to this meetup",
+                            "value": {
+                                "detail": (
+                                    "Cannot undo payment: guest mazmo_user_id=12345 is not RSVPed "
+                                    "to this meetup. Verify the guest ID via GET /meetups/{meetup_id}/guests."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
 # ── 409 Conflict Errors ───────────────────────────────────────────────────────
 
 
@@ -548,6 +598,106 @@ def error_409_not_checked_in() -> ResponsesDict:
                                     "(mazmo_user_id=12345) is not currently checked in. "
                                     "They may have been un-checked by someone else. "
                                     "See event log: GET /events/meetups/{meetup_id}?type=CHECK_IN,UNDO_CHECK_IN"
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_payment_not_required() -> ResponsesDict:
+    """409 - Meetup does not require payment."""
+    return {
+        409: {
+            "description": "Meetup does not require payment",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "payment_not_required": {
+                            "summary": "Cannot mark payment on a free event",
+                            "value": {
+                                "detail": (
+                                    "Cannot mark payment: meetup 'Alter Córdoba - Marzo 2024' does not require payment."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_already_paid() -> ResponsesDict:
+    """409 - Guest already marked as paid."""
+    return {
+        409: {
+            "description": "Guest already paid",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "already_paid": {
+                            "summary": "Cannot mark payment twice",
+                            "value": {
+                                "detail": (
+                                    "Cannot mark payment: guest 'fiestero_feliz' (mazmo_user_id=12345) "
+                                    "already paid at 2024-03-23 19:30:00+00:00. "
+                                    "To undo this, use PATCH /meetups/{meetup_id}/guests/12345/payment/undo."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_not_paid() -> ResponsesDict:
+    """409 - Guest is not currently marked as paid."""
+    return {
+        409: {
+            "description": "Guest not marked as paid",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "not_paid": {
+                            "summary": "Cannot undo a non-existent payment mark",
+                            "value": {
+                                "detail": (
+                                    "Cannot undo payment: guest 'fiestero_feliz' "
+                                    "(mazmo_user_id=12345) is not currently marked as paid. "
+                                    "They may have had their payment undone by someone else. "
+                                    "See event log: GET /events/meetups/{meetup_id}"
+                                    "?type=PAYMENT_RECORDED,PAYMENT_REVOKED"
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_checkin_payment_required() -> ResponsesDict:
+    """409 - Guest hasn't paid the entrance fee for a paid meetup. Only for POST .../checkin."""
+    return {
+        409: {
+            "description": "Guest has not paid",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "payment_required": {
+                            "summary": "Cannot check in an unpaid guest at a paid event",
+                            "value": {
+                                "detail": (
+                                    "Cannot check in: guest 'fiestero_feliz' (mazmo_user_id=12345) "
+                                    "has not paid the entrance fee for 'Alter Buenos Aires - Abril 2024 (Pago)'. "
+                                    "Mark the payment first via PATCH /meetups/{meetup_id}/guests/12345/payment."
                                 )
                             },
                         },

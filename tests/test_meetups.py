@@ -15,7 +15,7 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from app.models.models import EventLog, EventType, Organization, OrgRole, User
+from app.models.models import EventLog, EventType, MeetupRsvp, Organization, OrgRole, User
 from app.services.mazmo import MazmoAPIError, MazmoNetworkError
 from tests.conftest import make_guest, make_meetup, make_org_member, make_rsvp
 
@@ -79,6 +79,53 @@ def test_create_meetup_accessible_by_org_staff(
     )
 
     assert resp.status_code == status.HTTP_201_CREATED
+
+
+def test_create_meetup_persists_requires_payment_flag(
+    client: TestClient,
+    admin_headers: dict,
+    org: Organization,
+    mock_mazmo_for_meetups: AsyncMock,
+):
+    """
+    Verify that requires_payment=true is persisted when creating a meetup.
+
+    WHY: Paid events need this flag set at creation time so check-in can
+    later enforce that guests paid before being let in.
+    """
+    resp = client.post(
+        f"/organizations/{org.id}/meetups/",
+        json={
+            "name": "Alter Paid Event",
+            "mazmo_meetup_url": "https://mazmo.net/test/alter-paid-1",
+            "requires_payment": True,
+        },
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_201_CREATED
+    assert resp.json()["requires_payment"] is True
+
+
+def test_create_meetup_defaults_requires_payment_to_false(
+    client: TestClient,
+    admin_headers: dict,
+    org: Organization,
+    mock_mazmo_for_meetups: AsyncMock,
+):
+    """
+    Verify that requires_payment defaults to false when omitted.
+
+    WHY: Most events are free; the field must not need to be set explicitly.
+    """
+    resp = client.post(
+        f"/organizations/{org.id}/meetups/",
+        json={"name": "Alter Free Event", "mazmo_meetup_url": "https://mazmo.net/test/alter-free-1"},
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_201_CREATED
+    assert resp.json()["requires_payment"] is False
 
 
 def test_create_meetup_returns_409_for_duplicate_url(
@@ -1431,3 +1478,359 @@ def test_add_walkin_rejects_out_of_range_mazmo_user_id(
     )
 
     assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+# -- Payment tracking (paid events) --------------------------------------------
+#
+# requires_payment is set on the meetup at creation time. When true, check-in
+# is hard-blocked (409) until an org admin marks the guest's RSVP as paid via
+# PATCH .../payment. Only org admins can mark/undo payment (get_org_admin),
+# unlike check-in itself which any org member can do.
+
+
+@pytest.fixture()
+def paid_meetup(session: Session, org: Organization):
+    """A meetup that requires payment before check-in."""
+    return make_meetup(
+        session,
+        org=org,
+        name="Alter Paid Event",
+        mazmo_meetup_url="https://mazmo.net/test/alter-paid-fixture",
+        requires_payment=True,
+    )
+
+
+def test_mark_payment_sets_has_paid_and_writes_event_log(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    paid_meetup,
+    admin_user: User,
+):
+    """
+    Verify that marking payment sets has_paid/paid_at/paid_by and logs it.
+
+    WHY: The organizer needs a record of who confirmed each guest's payment
+    and when, since the actual money changes hands outside the system.
+    """
+    guest = make_guest(session, mazmo_user_id=401, username="payer")
+    make_rsvp(session, meetup=paid_meetup, guest=guest)
+
+    resp = client.patch(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment",
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()
+    assert data["guest"]["username"] == "payer"
+    assert data["paid_at"] is not None
+    assert data["paid_by"]["username"] == "admin"
+
+    event = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.mazmo_user_id)
+        .where(EventLog.event_type == EventType.PAYMENT_RECORDED)
+    ).first()
+    assert event is not None
+    assert event.actor_id == admin_user.id
+    assert event.meetup_id == paid_meetup.id
+
+
+def test_mark_payment_returns_409_when_meetup_does_not_require_payment(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    meetup,
+):
+    """
+    Verify that marking payment on a free event returns 409.
+
+    WHY: Payment tracking is opt-in per meetup; marking it on a free event
+    would be a no-op that could confuse the audit trail.
+    """
+    guest = make_guest(session, mazmo_user_id=402, username="free_event_guest")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/payment",
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_mark_payment_returns_409_when_already_paid(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    paid_meetup,
+):
+    """
+    Verify that marking an already-paid guest returns 409.
+
+    WHY: Prevents accidentally double-recording a payment.
+    """
+    guest = make_guest(session, mazmo_user_id=403, username="already_paid")
+    make_rsvp(session, meetup=paid_meetup, guest=guest, has_paid=True, paid_at=datetime.now(UTC))
+
+    resp = client.patch(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment",
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_mark_payment_returns_404_when_guest_not_rsvped(
+    client: TestClient,
+    admin_headers: dict,
+    paid_meetup,
+):
+    """
+    Verify that marking payment for a non-RSVPed guest returns 404.
+    """
+    resp = client.patch(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/99999/payment",
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_mark_payment_returns_403_for_org_staff_without_admin_role(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    paid_meetup,
+    org_staff_member,
+):
+    """
+    Verify that a STAFF-role org member cannot mark payment.
+
+    WHY: Payment confirmation is admin-only, same permission level as
+    finalize/bans -- staff can check guests in but not confirm payment.
+    """
+    guest = make_guest(session, mazmo_user_id=404, username="staff_blocked")
+    make_rsvp(session, meetup=paid_meetup, guest=guest)
+
+    resp = client.patch(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_mark_payment_returns_409_when_meetup_finalized(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    paid_meetup,
+):
+    """
+    Verify that marking payment on a finalized meetup returns 409.
+
+    WHY: A finalized meetup is frozen -- same rule as check-in, sync, and
+    walk-ins, which are also blocked once the event is closed out.
+    """
+    guest = make_guest(session, mazmo_user_id=405, username="finalized_event_guest")
+    make_rsvp(session, meetup=paid_meetup, guest=guest)
+    paid_meetup.is_finalized = True
+    paid_meetup.finalized_at = datetime.now(UTC)
+    session.add(paid_meetup)
+    session.flush()
+
+    resp = client.patch(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment",
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+# -- Undo payment ---------------------------------------------------------
+
+
+def test_undo_payment_clears_has_paid_and_writes_event_log_with_reason(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    paid_meetup,
+    admin_user: User,
+):
+    """
+    Verify that undoing payment clears has_paid/paid_at/paid_by_id and logs
+    the reason.
+
+    WHY: Same pattern as undo-checkin -- reverting a payment mark is a
+    sensitive action that needs a reason for the audit trail.
+    """
+    guest = make_guest(session, mazmo_user_id=406, username="undo_payment_guest")
+    make_rsvp(session, meetup=paid_meetup, guest=guest, has_paid=True, paid_at=datetime.now(UTC))
+
+    resp = client.patch(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment/undo",
+        headers=admin_headers,
+        json={"reason": "Marked the wrong guest as paid"},
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+
+    rsvp = session.exec(
+        select(MeetupRsvp)
+        .where(MeetupRsvp.meetup_id == paid_meetup.id)
+        .where(MeetupRsvp.guest_id == guest.mazmo_user_id)
+    ).one()
+    assert rsvp.has_paid is False
+    assert rsvp.paid_at is None
+    assert rsvp.paid_by_id is None
+
+    event = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.mazmo_user_id)
+        .where(EventLog.event_type == EventType.PAYMENT_REVOKED)
+    ).first()
+    assert event is not None
+    assert event.actor_id == admin_user.id
+    assert event.reason == "Marked the wrong guest as paid"
+
+
+def test_undo_payment_returns_409_when_not_paid(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    paid_meetup,
+):
+    """
+    Verify that undoing payment for a guest who hasn't paid returns 409.
+    """
+    guest = make_guest(session, mazmo_user_id=407, username="never_paid")
+    make_rsvp(session, meetup=paid_meetup, guest=guest)
+
+    resp = client.patch(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment/undo",
+        headers=admin_headers,
+        json={"reason": "Trying to undo a non-existent payment"},
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_undo_payment_rejects_reason_that_is_too_short(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    paid_meetup,
+):
+    """
+    Verify that a too-short reason is rejected with 422.
+
+    WHY: Same 5-500 char validation as undo-checkin, enforced at the
+    schema level via Field(min_length=5, max_length=500).
+    """
+    guest = make_guest(session, mazmo_user_id=408, username="short_reason_guest")
+    make_rsvp(session, meetup=paid_meetup, guest=guest, has_paid=True, paid_at=datetime.now(UTC))
+
+    resp = client.patch(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment/undo",
+        headers=admin_headers,
+        json={"reason": "bad"},
+    )
+
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_undo_payment_returns_403_for_org_staff_without_admin_role(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    paid_meetup,
+    org_staff_member,
+):
+    """
+    Verify that a STAFF-role org member cannot undo a payment mark.
+    """
+    guest = make_guest(session, mazmo_user_id=409, username="staff_undo_blocked")
+    make_rsvp(session, meetup=paid_meetup, guest=guest, has_paid=True, paid_at=datetime.now(UTC))
+
+    resp = client.patch(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment/undo",
+        headers=staff_headers,
+        json={"reason": "Testing staff cannot undo payment"},
+    )
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+# -- Check-in enforcement of payment requirement -------------------------------
+
+
+def test_checkin_returns_409_when_meetup_requires_payment_and_guest_unpaid(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    paid_meetup,
+    org_staff_member,
+):
+    """
+    Verify that check-in is hard-blocked when the meetup requires payment
+    and the guest hasn't paid.
+
+    WHY: This is the core requirement of the feature -- a guest cannot
+    physically enter a paid event without having paid first.
+    """
+    guest = make_guest(session, mazmo_user_id=410, username="unpaid_at_door")
+    make_rsvp(session, meetup=paid_meetup, guest=guest)
+
+    resp = client.post(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_checkin_succeeds_when_meetup_requires_payment_and_guest_paid(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    paid_meetup,
+    org_staff_member,
+):
+    """
+    Verify that check-in succeeds once the guest is marked as paid.
+    """
+    guest = make_guest(session, mazmo_user_id=411, username="paid_at_door")
+    make_rsvp(session, meetup=paid_meetup, guest=guest, has_paid=True, paid_at=datetime.now(UTC))
+
+    resp = client.post(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+
+
+def test_checkin_ignores_payment_requirement_when_meetup_does_not_require_it(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
+    """
+    Verify that check-in on a free event never checks has_paid.
+
+    WHY: Regression guard -- the payment enforcement must not leak into
+    the existing free-event check-in flow that every other test relies on.
+    """
+    guest = make_guest(session, mazmo_user_id=412, username="free_event_checkin")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    resp = client.post(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK

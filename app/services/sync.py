@@ -12,7 +12,8 @@ Guest table:
 MeetupRsvp table:
   INSERT ... ON CONFLICT (meetup_id, guest_id) DO UPDATE - updates rsvp_time and
   reactivates cancelled RSVPs. NEVER touches check-in fields (has_arrived,
-  arrival_time, arrival_order).
+  arrival_time, arrival_order) or payment fields (has_paid, paid_at,
+  paid_by_id).
 """
 
 import structlog
@@ -168,13 +169,25 @@ class GuestSyncer:
         """
         Upsert RSVPs via Postgres ON CONFLICT DO UPDATE.
         Updates rsvp_time and reactivates cancelled RSVPs.
-        NEVER touches check-in fields.
+        NEVER touches check-in or payment fields.
         """
         if not rsvps:
             return 0
 
         rows = [
-            r.model_dump(exclude={"guest", "meetup", "has_arrived", "arrival_time", "arrival_order"}) for r in rsvps
+            r.model_dump(
+                exclude={
+                    "guest",
+                    "meetup",
+                    "has_arrived",
+                    "arrival_time",
+                    "arrival_order",
+                    "has_paid",
+                    "paid_at",
+                    "paid_by_id",
+                }
+            )
+            for r in rsvps
         ]
         count_before = self._count_rsvps()
 

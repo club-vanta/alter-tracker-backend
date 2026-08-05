@@ -9,6 +9,8 @@ GET   /organizations/{org_id}/meetups/{meetup_id}/guests         -> list RSVP gu
 POST  /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/add-walkin  -> add walk-in (org member)
 POST  /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/checkin     -> check in (org member)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/undo-checkin -> undo check-in (org member)
+PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/payment      -> mark paid (org admin)
+PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/payment/undo -> undo payment mark (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/finalize       -> finalize (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/unfinalize     -> unfinalize (org admin)
 """
@@ -39,9 +41,12 @@ from app.openapi_examples.meetups_examples import (
     GET_MEETUP_RESPONSES,
     LIST_MEETUP_GUESTS_RESPONSES,
     LIST_MEETUPS_RESPONSES,
+    MARK_PAYMENT_RESPONSES,
     SYNC_MEETUP_RESPONSES,
     UNDO_CHECKIN_REQUEST_EXAMPLES,
     UNDO_CHECKIN_RESPONSES,
+    UNDO_PAYMENT_REQUEST_EXAMPLES,
+    UNDO_PAYMENT_RESPONSES,
     UNFINALIZE_MEETUP_RESPONSES,
 )
 from app.schemas import (
@@ -54,6 +59,7 @@ from app.schemas import (
     MeetupGuestPublic,
     MeetupListResponse,
     MeetupPublic,
+    PaymentResponse,
     RsvpPublic,
     SyncResponse,
 )
@@ -108,7 +114,7 @@ async def create_meetup(
     org_id: uuid.UUID,
     payload: Annotated[MeetupCreate, Body(openapi_examples=CREATE_MEETUP_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
-    _staff: User = Depends(get_org_member),
+    staff: User = Depends(get_org_member),
     settings: Settings = Depends(get_settings),
 ) -> Meetup:
     """
@@ -161,10 +167,21 @@ async def create_meetup(
         name=payload.name,
         mazmo_meetup_url=mazmo_url,
         date=event_date,
+        requires_payment=payload.requires_payment,
     )
     session.add(meetup)
     session.commit()
     session.refresh(meetup)
+
+    log.info(
+        "Meetup created",
+        staff=staff.username,
+        meetup_id=str(meetup.id),
+        meetup_name=meetup.name,
+        org_id=str(org_id),
+        requires_payment=meetup.requires_payment,
+    )
+
     return meetup
 
 
@@ -505,6 +522,17 @@ async def checkin_guest(
             ),
         )
 
+    if meetup.requires_payment and not rsvp.has_paid:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot check in: guest '{rsvp.guest.username}' (mazmo_user_id={mazmo_user_id}) "
+                f"has not paid the entrance fee for '{meetup.name}'. "
+                f"Mark the payment first via PATCH /organizations/{org_id}/meetups/{meetup_id}"
+                f"/guests/{mazmo_user_id}/payment."
+            ),
+        )
+
     rsvp.has_arrived = True
     rsvp.checked_in_by_id = staff.id
 
@@ -532,6 +560,16 @@ async def checkin_guest(
                 f"The check-in WAS recorded in the database."
             ),
         )
+
+    log.info(
+        "Check-in recorded",
+        staff=staff.username,
+        guest=guest.username,
+        guest_id=mazmo_user_id,
+        meetup_id=str(meetup_id),
+        org_id=str(org_id),
+        arrival_order=rsvp.arrival_order,
+    )
 
     return CheckInResponse(
         guest=GuestPublic.model_validate(guest),
@@ -636,6 +674,206 @@ async def undo_checkin_guest(
     log.info(
         "Check-in undone",
         staff=staff.username,
+        guest=guest.username,
+        guest_id=guest.mazmo_user_id,
+        meetup_id=str(meetup_id),
+        org_id=str(org_id),
+        reason=request.reason,
+    )
+    return guest
+
+
+# -- Mark payment ---------------------------------------------------------
+
+
+@router.patch(
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{mazmo_user_id}/payment",
+    response_model=PaymentResponse,
+    summary="Mark a guest's entrance as paid for this meetup (org admin only)",
+    responses=MARK_PAYMENT_RESPONSES,
+)
+async def mark_guest_paid(
+    org_id: uuid.UUID,
+    meetup_id: uuid.UUID,
+    mazmo_user_id: Annotated[int, Field(gt=0, le=2_147_483_647)],
+    session: Session = Depends(get_session),
+    admin: User = Depends(get_org_admin),
+) -> PaymentResponse:
+    """
+    Mark a guest's entrance fee as paid for this specific meetup.
+
+    Payment is handled externally by the organizer (cash, transfer, etc.);
+    this just records that it happened so check-in can be enforced.
+
+    Returns 409 if the meetup doesn't require payment, if the guest already
+    paid, or if the meetup is finalized. Returns 404 if not RSVPed.
+    """
+    meetup = _get_meetup_or_404_in_org(session, meetup_id, org_id)
+    _raise_if_finalized(meetup)
+
+    if not meetup.requires_payment:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(f"Cannot mark payment: meetup '{meetup.name}' does not require payment."),
+        )
+
+    rsvp = session.exec(
+        select(MeetupRsvp)
+        .where(MeetupRsvp.meetup_id == meetup_id)
+        .where(MeetupRsvp.guest_id == mazmo_user_id)
+        .with_for_update()
+        .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
+    ).first()
+
+    if not rsvp:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Cannot mark payment: guest mazmo_user_id={mazmo_user_id} is not RSVPed. "
+                f"Either: (1) they haven't RSVPed on Mazmo yet, "
+                f"(2) RSVP list needs syncing - try POST /organizations/{org_id}/meetups/{meetup_id}/sync, "
+                f"or (3) wrong ID - check GET /organizations/{org_id}/meetups/{meetup_id}/guests."
+            ),
+        )
+
+    if rsvp.has_paid:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot mark payment: guest '{rsvp.guest.username}' (mazmo_user_id={mazmo_user_id}) "
+                f"already paid at {rsvp.paid_at}. "
+                f"To undo this, use PATCH /organizations/{org_id}/meetups/{meetup_id}"
+                f"/guests/{mazmo_user_id}/payment/undo."
+            ),
+        )
+
+    rsvp.has_paid = True
+    rsvp.paid_at = datetime.now(UTC)
+    rsvp.paid_by_id = admin.id
+
+    event = EventLog(
+        event_type=EventType.PAYMENT_RECORDED,
+        actor_id=admin.id,
+        guest_id=mazmo_user_id,
+        meetup_id=meetup_id,
+        org_id=org_id,
+    )
+
+    session.add(rsvp)
+    session.add(event)
+    session.commit()
+    session.refresh(rsvp)
+
+    log.info(
+        "Payment recorded",
+        admin=admin.username,
+        guest=rsvp.guest.username,
+        guest_id=mazmo_user_id,
+        meetup_id=str(meetup_id),
+        org_id=str(org_id),
+    )
+
+    return PaymentResponse(
+        guest=GuestPublic.model_validate(rsvp.guest),
+        paid_at=rsvp.paid_at,
+        paid_by=CheckedInByPublic.model_validate(admin),
+    )
+
+
+# -- Undo payment ---------------------------------------------------------
+
+
+class UndoPaymentRequest(BaseModel):
+    """Request body for undoing a payment mark."""
+
+    reason: str = Field(min_length=5, max_length=500)
+
+
+@router.patch(
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{mazmo_user_id}/payment/undo",
+    response_model=GuestPublic,
+    summary="Undo a guest's payment mark for this meetup (org admin only)",
+    responses=UNDO_PAYMENT_RESPONSES,
+)
+async def undo_guest_payment(
+    org_id: uuid.UUID,
+    meetup_id: uuid.UUID,
+    mazmo_user_id: Annotated[int, Field(gt=0, le=2_147_483_647)],
+    request: Annotated[UndoPaymentRequest, Body(openapi_examples=UNDO_PAYMENT_REQUEST_EXAMPLES)],
+    session: Session = Depends(get_session),
+    admin: User = Depends(get_org_admin),
+) -> Guest:
+    """
+    Undo a payment mark for a guest at this meetup.
+
+    Use this when a payment was marked by mistake. Requires a reason for
+    the audit trail. Clears has_paid, paid_at, and paid_by_id.
+
+    Returns 404 if guest not RSVPed to this meetup.
+    Returns 409 if the guest is not currently marked as paid.
+    """
+    _get_meetup_or_404_in_org(session, meetup_id, org_id)
+
+    rsvp = session.exec(
+        select(MeetupRsvp)
+        .where(MeetupRsvp.meetup_id == meetup_id)
+        .where(MeetupRsvp.guest_id == mazmo_user_id)
+        .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
+    ).first()
+
+    if not rsvp:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Cannot undo payment: guest mazmo_user_id={mazmo_user_id} is not RSVPed "
+                f"to this meetup. Verify the guest ID via GET /organizations/{org_id}/meetups/{meetup_id}/guests."
+            ),
+        )
+
+    if not rsvp.has_paid:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot undo payment: guest '{rsvp.guest.username}' "
+                f"(mazmo_user_id={mazmo_user_id}) is not currently marked as paid. "
+                f"They may have had their payment undone by someone else. "
+                f"See event log: GET /organizations/{org_id}/events/meetups/{meetup_id}"
+                f"?type=PAYMENT_RECORDED,PAYMENT_REVOKED"
+            ),
+        )
+
+    rsvp.has_paid = False
+    rsvp.paid_at = None
+    rsvp.paid_by_id = None
+
+    event = EventLog(
+        event_type=EventType.PAYMENT_REVOKED,
+        actor_id=admin.id,
+        guest_id=mazmo_user_id,
+        meetup_id=meetup_id,
+        org_id=org_id,
+        reason=request.reason,
+    )
+
+    session.add(rsvp)
+    session.add(event)
+    session.commit()
+
+    guest = session.get(Guest, mazmo_user_id)
+    if not guest:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                f"Internal error: undo succeeded but guest record "
+                f"(mazmo_user_id={mazmo_user_id}) could not be fetched. "
+                f"This should never happen - please report this bug. "
+                f"The undo WAS recorded in the database."
+            ),
+        )
+
+    log.info(
+        "Payment undone",
+        admin=admin.username,
         guest=guest.username,
         guest_id=guest.mazmo_user_id,
         meetup_id=str(meetup_id),

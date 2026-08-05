@@ -25,6 +25,7 @@ from app.openapi_examples._constants import (
     MEETUP_EXAMPLE_2,
     MEETUP_EXAMPLE_FINALIZED,
     MEETUP_GUEST_WALKIN,
+    PAYMENT_RESPONSE_EXAMPLE,
     RSVP_ARRIVED,
     RSVP_NOT_ARRIVED,
     SYNC_RESPONSE_EXAMPLE,
@@ -34,12 +35,18 @@ from app.openapi_examples._error_responses import (
     error_403_not_approved,
     error_404_meetup,
     error_404_rsvp,
+    error_404_rsvp_for_payment,
+    error_404_rsvp_for_undo_payment,
     error_404_walkin_guest_not_in_system,
     error_409_already_checked_in,
+    error_409_already_paid,
+    error_409_checkin_payment_required,
     error_409_duplicate_meetup,
     error_409_meetup_finalized,
     error_409_meetup_not_finalized,
     error_409_not_checked_in,
+    error_409_not_paid,
+    error_409_payment_not_required,
     error_409_walkin_already_rsvped,
     error_422_validation_reason,
     error_422_validation_url,
@@ -58,6 +65,15 @@ CREATE_MEETUP_REQUEST_EXAMPLES: dict[str, Any] = {
         "value": {
             "name": "Alter Córdoba - Marzo 2024",
             "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217",
+        },
+    },
+    "new_paid_meetup": {
+        "summary": "Create a new paid-entrance meetup",
+        "description": "requires_payment=true blocks check-in until an org admin marks each guest as paid",
+        "value": {
+            "name": "Alter Buenos Aires - Abril 2024 (Pago)",
+            "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-bsas-paid-4321",
+            "requires_payment": True,
         },
     },
 }
@@ -260,6 +276,7 @@ CHECKIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_404_meetup(),
     **error_404_rsvp(),
     **error_409_already_checked_in(),
+    **error_409_checkin_payment_required(),
     **error_409_meetup_finalized(),
 }
 
@@ -295,6 +312,67 @@ UNDO_CHECKIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_404_meetup(),
     **error_404_rsvp(),
     **error_409_not_checked_in(),
+    **error_422_validation_reason(),
+}
+
+# ── PATCH /meetups/{id}/guests/{mazmo_user_id}/payment ────────────────────────
+
+MARK_PAYMENT_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Guest marked as paid",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "paid": {
+                        "summary": "Payment recorded",
+                        "description": "Returns who marked the payment and when",
+                        "value": PAYMENT_RESPONSE_EXAMPLE,
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_not_approved(),
+    **error_404_meetup(),
+    **error_404_rsvp_for_payment(),
+    **error_409_already_paid(),
+    **error_409_meetup_finalized(),
+    **error_409_payment_not_required(),
+}
+
+# ── PATCH /meetups/{id}/guests/{mazmo_user_id}/payment/undo ───────────────────
+
+UNDO_PAYMENT_REQUEST_EXAMPLES: dict[str, Any] = {
+    "undo_mistake": {
+        "summary": "Undo an accidental payment mark",
+        "description": "A reason is required for the audit trail",
+        "value": {
+            "reason": "Marked the wrong guest as paid by mistake",
+        },
+    },
+}
+
+UNDO_PAYMENT_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Payment mark undone",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "undone": {
+                        "summary": "Payment mark reversed",
+                        "description": "Guest is back to not-paid state",
+                        "value": GUEST_NORMAL_2,
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_not_approved(),
+    **error_404_meetup(),
+    **error_404_rsvp_for_undo_payment(),
+    **error_409_not_paid(),
     **error_422_validation_reason(),
 }
 

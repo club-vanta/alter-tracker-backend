@@ -280,6 +280,7 @@ def make_meetup(
     name: str = "Test Meetup",
     mazmo_meetup_url: str = "https://mazmo.net/test-community/test-meetup-123",
     date: datetime | None = None,
+    requires_payment: bool = False,
 ) -> Meetup:
     """Helper to create a Meetup directly in the test session."""
     meetup = Meetup(
@@ -287,6 +288,7 @@ def make_meetup(
         name=name,
         mazmo_meetup_url=mazmo_meetup_url,
         date=date or datetime.now(UTC),
+        requires_payment=requires_payment,
     )
     session.add(meetup)
     session.flush()
@@ -302,6 +304,9 @@ def make_rsvp(
     has_arrived: bool = False,
     arrival_order: int | None = None,
     arrival_time: datetime | None = None,
+    has_paid: bool = False,
+    paid_at: datetime | None = None,
+    paid_by_id: int | None = None,
 ) -> MeetupRsvp:
     """Helper to create a MeetupRsvp directly in the test session."""
     rsvp = MeetupRsvp(
@@ -311,6 +316,9 @@ def make_rsvp(
         has_arrived=has_arrived,
         arrival_order=arrival_order,
         arrival_time=arrival_time,
+        has_paid=has_paid,
+        paid_at=paid_at,
+        paid_by_id=paid_by_id,
     )
     session.add(rsvp)
     session.flush()

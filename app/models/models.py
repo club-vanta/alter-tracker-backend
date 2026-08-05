@@ -51,6 +51,8 @@ class EventType(StrEnum):
     MEETUP_UNFINALIZED = "MEETUP_UNFINALIZED"
     WALKIN = "WALKIN"
     GUEST_CREATED = "GUEST_CREATED"
+    PAYMENT_RECORDED = "PAYMENT_RECORDED"
+    PAYMENT_REVOKED = "PAYMENT_REVOKED"
 
 
 # ── Role lookup table ─────────────────────────────────────────────────────────
@@ -179,8 +181,9 @@ class MeetupRsvp(SQLModel, table=True):
     Association object representing a Guest's attendance at a specific Meetup.
 
     CRITICAL: The background sync upsert NEVER overwrites has_arrived,
-    arrival_time, arrival_order, or checked_in_by_id. These are set
-    ONLY by the door tracker check-in flow.
+    arrival_time, arrival_order, checked_in_by_id, has_paid, paid_at, or
+    paid_by_id. These are set ONLY by the door tracker check-in and
+    payment flows.
 
     arrival_order represents the sequence of arrival for this specific meetup.
     """
@@ -201,9 +204,21 @@ class MeetupRsvp(SQLModel, table=True):
 
     checked_in_by_id: int | None = Field(default=None, foreign_key="users.id")
 
+    # Payment tracking - only relevant when the parent meetup.requires_payment
+    # is True. Set manually by an org admin, never by Mazmo sync.
+    has_paid: bool = Field(default=False, index=True)
+    paid_at: datetime | None = None
+    paid_by_id: int | None = Field(default=None, foreign_key="users.id")
+
     guest: "Guest" = Relationship(back_populates="rsvps")
     meetup: "Meetup" = Relationship(back_populates="rsvps")
-    checked_in_by: Optional["User"] = Relationship()
+    # Two FKs to users.id on this table now (checked_in_by_id, paid_by_id),
+    # so each relationship must explicitly pick its own FK column or
+    # SQLAlchemy can't tell them apart.
+    checked_in_by: Optional["User"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[MeetupRsvp.checked_in_by_id]"}
+    )
+    paid_by: Optional["User"] = Relationship(sa_relationship_kwargs={"foreign_keys": "[MeetupRsvp.paid_by_id]"})
 
 
 class Guest(SQLModel, table=True):
@@ -256,6 +271,8 @@ class Meetup(SQLModel, table=True):
 
     is_finalized: bool = Field(default=False)
     finalized_at: datetime | None = Field(default=None)
+
+    requires_payment: bool = Field(default=False)
 
     org: Organization = Relationship(back_populates="meetups")
 

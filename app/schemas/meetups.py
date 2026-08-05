@@ -35,6 +35,7 @@ class MeetupPublic(BaseModel):
     date: datetime
     is_finalized: bool
     finalized_at: datetime | None
+    requires_payment: bool
 
 
 class MeetupListResponse(BaseModel):
@@ -59,6 +60,7 @@ class MeetupCreate(BaseModel):
 
     name: str
     mazmo_meetup_url: HttpUrl
+    requires_payment: bool = False
 
     @field_validator("mazmo_meetup_url")
     @classmethod
