@@ -24,6 +24,7 @@ from app.openapi_examples._constants import (
     MEETUP_EXAMPLE,
     MEETUP_EXAMPLE_2,
     MEETUP_EXAMPLE_FINALIZED,
+    MEETUP_EXAMPLE_PAID,
     MEETUP_GUEST_WALKIN,
     PAYMENT_RESPONSE_EXAMPLE,
     RSVP_ARRIVED,
@@ -35,8 +36,6 @@ from app.openapi_examples._error_responses import (
     error_403_not_approved,
     error_404_meetup,
     error_404_rsvp,
-    error_404_rsvp_for_payment,
-    error_404_rsvp_for_undo_payment,
     error_404_walkin_guest_not_in_system,
     error_409_already_checked_in,
     error_409_already_paid,
@@ -46,6 +45,8 @@ from app.openapi_examples._error_responses import (
     error_409_meetup_not_finalized,
     error_409_not_checked_in,
     error_409_not_paid,
+    error_409_payment_already_disabled,
+    error_409_payment_already_enabled,
     error_409_payment_not_required,
     error_409_walkin_already_rsvped,
     error_422_validation_reason,
@@ -335,7 +336,7 @@ MARK_PAYMENT_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_401_invalid_credentials(),
     **error_403_not_approved(),
     **error_404_meetup(),
-    **error_404_rsvp_for_payment(),
+    **error_404_rsvp(action="mark payment"),
     **error_409_already_paid(),
     **error_409_meetup_finalized(),
     **error_409_payment_not_required(),
@@ -371,9 +372,57 @@ UNDO_PAYMENT_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_401_invalid_credentials(),
     **error_403_not_approved(),
     **error_404_meetup(),
-    **error_404_rsvp_for_undo_payment(),
+    **error_404_rsvp(action="undo payment"),
     **error_409_not_paid(),
     **error_422_validation_reason(),
+}
+
+# ── PATCH /meetups/{id}/enable-payment ────────────────────────────────────────
+
+ENABLE_PAYMENT_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Meetup marked as requiring payment",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "enabled": {
+                        "summary": "Event switched to paid",
+                        "description": "Check-in is now blocked for guests without has_paid=true",
+                        "value": MEETUP_EXAMPLE_PAID,
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_not_approved(),
+    **error_404_meetup(),
+    **error_409_meetup_finalized(),
+    **error_409_payment_already_enabled(),
+}
+
+# ── PATCH /meetups/{id}/disable-payment ───────────────────────────────────────
+
+DISABLE_PAYMENT_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Meetup marked as not requiring payment",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "disabled": {
+                        "summary": "Event switched to free",
+                        "description": "Check-in no longer checks has_paid for this meetup",
+                        "value": MEETUP_EXAMPLE,
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_not_approved(),
+    **error_404_meetup(),
+    **error_409_meetup_finalized(),
+    **error_409_payment_already_disabled(),
 }
 
 # ── PATCH /meetups/{id}/finalize ──────────────────────────────────────────────

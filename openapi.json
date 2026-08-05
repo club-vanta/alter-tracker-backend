@@ -4772,7 +4772,7 @@
                   "payment_not_required": {
                     "summary": "Cannot mark payment on a free event",
                     "value": {
-                      "detail": "Cannot mark payment: meetup 'Alter C\u00f3rdoba - Marzo 2024' does not require payment."
+                      "detail": "Cannot mark payment: meetup 'Alter C\u00f3rdoba - Marzo 2024' does not require payment. Enable it first via PATCH /meetups/{meetup_id}/enable-payment."
                     }
                   }
                 }
@@ -4929,7 +4929,7 @@
                   "not_rsvped": {
                     "summary": "Guest didn't RSVP to this meetup",
                     "value": {
-                      "detail": "Cannot undo payment: guest mazmo_user_id=12345 is not RSVPed to this meetup. Verify the guest ID via GET /meetups/{meetup_id}/guests."
+                      "detail": "Cannot undo payment: guest mazmo_user_id=12345 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
                     }
                   }
                 }
@@ -4975,6 +4975,296 @@
                       ]
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organizations/{org_id}/meetups/{meetup_id}/enable-payment": {
+      "patch": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Mark a meetup as requiring payment (org admin only)",
+        "description": "Mark a meetup as requiring payment. Check-in will be blocked for any\nguest without has_paid=True from this point forward.\n\nExisting RSVPs are left untouched - guests who already checked in\nbefore this change keep their check-in, and any has_paid data from a\nprevious paid period (if this event toggled payment off and back on)\nstays valid.\n\nReturns 409 if the meetup already requires payment or is finalized.",
+        "operationId": "enable_payment_requirement_organizations__org_id__meetups__meetup_id__enable_payment_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meetup marked as requiring payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetupPublic"
+                },
+                "examples": {
+                  "enabled": {
+                    "summary": "Event switched to paid",
+                    "description": "Check-in is now blocked for guests without has_paid=true",
+                    "value": {
+                      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+                      "name": "Alter Buenos Aires - Abril 2024 (Pago)",
+                      "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-bsas-paid-4321",
+                      "date": "2024-04-15T20:00:00Z",
+                      "is_finalized": false,
+                      "requires_payment": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Meetup already requires payment",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "already_enabled": {
+                    "summary": "Cannot enable payment twice",
+                    "value": {
+                      "detail": "Cannot enable payment: meetup 'Alter C\u00f3rdoba - Marzo 2024' already requires payment. To switch it back to free, use PATCH /meetups/{meetup_id}/disable-payment."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organizations/{org_id}/meetups/{meetup_id}/disable-payment": {
+      "patch": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Mark a meetup as not requiring payment (org admin only)",
+        "description": "Mark a meetup as no longer requiring payment. Check-in is no longer\nblocked by has_paid for this meetup.\n\nAny has_paid data already recorded is left untouched (it becomes\ninert, not deleted) in case payment is re-enabled later.\n\nReturns 409 if the meetup doesn't currently require payment or is finalized.",
+        "operationId": "disable_payment_requirement_organizations__org_id__meetups__meetup_id__disable_payment_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meetup marked as not requiring payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetupPublic"
+                },
+                "examples": {
+                  "disabled": {
+                    "summary": "Event switched to free",
+                    "description": "Check-in no longer checks has_paid for this meetup",
+                    "value": {
+                      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                      "name": "Alter C\u00f3rdoba - Marzo 2024",
+                      "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217",
+                      "date": "2024-03-23T19:00:00Z",
+                      "is_finalized": false,
+                      "requires_payment": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Meetup does not require payment",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "already_disabled": {
+                    "summary": "Cannot disable payment twice",
+                    "value": {
+                      "detail": "Cannot disable payment: meetup 'Alter C\u00f3rdoba - Marzo 2024' does not currently require payment. To make it a paid event, use PATCH /meetups/{meetup_id}/enable-payment."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -5310,10 +5600,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN",
+              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED",
               "title": "Type"
             },
-            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN"
+            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED"
           },
           {
             "name": "since",
@@ -5660,10 +5950,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN",
+              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED",
               "title": "Type"
             },
-            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN"
+            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED"
           },
           {
             "name": "since",
@@ -5909,10 +6199,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN",
+              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED",
               "title": "Type"
             },
-            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN"
+            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED"
           },
           {
             "name": "since",
@@ -6218,10 +6508,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN",
+              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED",
               "title": "Type"
             },
-            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN"
+            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED"
           },
           {
             "name": "since",
@@ -7012,7 +7302,7 @@
           "timestamp"
         ],
         "title": "EventLogPublic",
-        "description": "Single event log entry for API responses.\n\nContains the full context of what happened: who did what to whom,\nwhen, and why. Relationships are expanded for convenience.\n\nFields:\n  - id: Unique event identifier\n  - event_type: What happened (CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN)\n  - timestamp: When it happened (UTC)\n  - actor: Staff member who performed the action\n  - guest: Guest who was affected (if applicable)\n  - meetup_id: Related meetup UUID (for check-in events)\n  - reason: Why the action was taken (required for bans, optional for undos)"
+        "description": "Single event log entry for API responses.\n\nContains the full context of what happened: who did what to whom,\nwhen, and why. Relationships are expanded for convenience.\n\nFields:\n  - id: Unique event identifier\n  - event_type: What happened (see EventType in app/models/models.py for the full list)\n  - timestamp: When it happened (UTC)\n  - actor: Staff member who performed the action\n  - guest: Guest who was affected (if applicable)\n  - meetup_id: Related meetup UUID (for check-in events)\n  - reason: Why the action was taken (required for bans, optional for undos)"
       },
       "GuestListResponse": {
         "properties": {

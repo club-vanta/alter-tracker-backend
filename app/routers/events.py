@@ -7,7 +7,7 @@ GET /organizations/{org_id}/events/guests/{id}     -> events for a guest (org me
 GET /organizations/{org_id}/events/staff/{id}      -> events by a staff member (org member; staff: own only)
 
 All endpoints support filtering by:
-  - type: Event type(s) comma-separated (CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN)
+  - type: Event type(s) comma-separated (see EventType in app/models/models.py for the full list)
   - since/until: Timestamp range
   - limit/offset: Pagination
 """
@@ -38,6 +38,9 @@ from app.schemas.events import (
 
 log = structlog.get_logger(__name__)
 router = APIRouter(tags=["events"])
+
+# Built from the EventType enum so this never goes stale as new event types are added.
+_EVENT_TYPE_FILTER_DESCRIPTION = f"Filter by event type(s), comma-separated: {', '.join(e.value for e in EventType)}"
 
 
 # -- Helpers ------------------------------------------------------------------
@@ -188,7 +191,7 @@ async def list_all_events(
     _admin: User = Depends(get_org_admin),
     type: str | None = Query(
         default=None,
-        description="Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN",
+        description=_EVENT_TYPE_FILTER_DESCRIPTION,
     ),
     since: datetime | None = Query(default=None, description="Events after this timestamp"),
     until: datetime | None = Query(default=None, description="Events before this timestamp"),
@@ -235,7 +238,7 @@ async def list_meetup_events(
     _staff: User = Depends(get_org_member),
     type: str | None = Query(
         default=None,
-        description="Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN",
+        description=_EVENT_TYPE_FILTER_DESCRIPTION,
     ),
     since: datetime | None = Query(default=None, description="Events after this timestamp"),
     until: datetime | None = Query(default=None, description="Events before this timestamp"),
@@ -285,7 +288,7 @@ async def list_guest_events(
     current_user: User = Depends(get_org_member),
     type: str | None = Query(
         default=None,
-        description="Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN",
+        description=_EVENT_TYPE_FILTER_DESCRIPTION,
     ),
     since: datetime | None = Query(default=None, description="Events after this timestamp"),
     until: datetime | None = Query(default=None, description="Events before this timestamp"),
@@ -350,7 +353,7 @@ async def list_staff_events(
     current_user: User = Depends(get_org_member),
     type: str | None = Query(
         default=None,
-        description="Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN",
+        description=_EVENT_TYPE_FILTER_DESCRIPTION,
     ),
     since: datetime | None = Query(default=None, description="Events after this timestamp"),
     until: datetime | None = Query(default=None, description="Events before this timestamp"),

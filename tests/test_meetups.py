@@ -1834,3 +1834,256 @@ def test_checkin_ignores_payment_requirement_when_meetup_does_not_require_it(
     )
 
     assert resp.status_code == status.HTTP_200_OK
+
+
+# -- Toggling requires_payment after creation ----------------------------------
+
+
+def test_enable_payment_sets_requires_payment_and_writes_event_log(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    meetup,
+    admin_user: User,
+):
+    """
+    Verify that enabling payment on a free meetup sets requires_payment=true.
+
+    WHY: Organizers may decide an event becomes paid after it was already
+    created as free (e.g. a bigger venue with a cover charge got booked).
+    """
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/enable-payment",
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["requires_payment"] is True
+
+    session.refresh(meetup)
+    assert meetup.requires_payment is True
+
+    event = session.exec(
+        select(EventLog)
+        .where(EventLog.meetup_id == meetup.id)
+        .where(EventLog.event_type == EventType.PAYMENT_REQUIREMENT_ENABLED)
+    ).first()
+    assert event is not None
+    assert event.actor_id == admin_user.id
+
+
+def test_enable_payment_returns_409_when_already_required(
+    client: TestClient,
+    admin_headers: dict,
+    paid_meetup,
+):
+    """
+    Verify that enabling payment on an already-paid meetup returns 409.
+    """
+    resp = client.patch(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/enable-payment",
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_enable_payment_returns_409_when_meetup_finalized(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    meetup,
+):
+    """
+    Verify that enabling payment on a finalized meetup returns 409.
+
+    WHY: A finalized meetup is frozen, same rule as marking payment itself.
+    """
+    meetup.is_finalized = True
+    meetup.finalized_at = datetime.now(UTC)
+    session.add(meetup)
+    session.flush()
+
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/enable-payment",
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_enable_payment_returns_403_for_org_staff_without_admin_role(
+    client: TestClient,
+    staff_headers: dict,
+    meetup,
+    org_staff_member,
+):
+    """
+    Verify that a STAFF-role org member cannot enable payment.
+    """
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/enable-payment",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_disable_payment_clears_requires_payment_and_writes_event_log(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    paid_meetup,
+    admin_user: User,
+):
+    """
+    Verify that disabling payment sets requires_payment=false.
+
+    WHY: Organizers may decide to waive the entrance fee after creating
+    the event as paid.
+    """
+    resp = client.patch(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/disable-payment",
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["requires_payment"] is False
+
+    session.refresh(paid_meetup)
+    assert paid_meetup.requires_payment is False
+
+    event = session.exec(
+        select(EventLog)
+        .where(EventLog.meetup_id == paid_meetup.id)
+        .where(EventLog.event_type == EventType.PAYMENT_REQUIREMENT_DISABLED)
+    ).first()
+    assert event is not None
+    assert event.actor_id == admin_user.id
+
+
+def test_disable_payment_returns_409_when_not_required(
+    client: TestClient,
+    admin_headers: dict,
+    meetup,
+):
+    """
+    Verify that disabling payment on an already-free meetup returns 409.
+    """
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/disable-payment",
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_disable_payment_returns_403_for_org_staff_without_admin_role(
+    client: TestClient,
+    staff_headers: dict,
+    paid_meetup,
+    org_staff_member,
+):
+    """
+    Verify that a STAFF-role org member cannot disable payment.
+    """
+    resp = client.patch(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/disable-payment",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_enable_payment_does_not_retroactively_block_already_checked_in_guest(
+    client: TestClient,
+    admin_headers: dict,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
+    """
+    Verify that switching a meetup to paid does not undo an existing check-in.
+
+    WHY: Core design guarantee discussed with the user -- toggling
+    requires_payment only affects check-ins from that point forward. A
+    guest who already entered for free must not be retroactively affected.
+    """
+    guest = make_guest(session, mazmo_user_id=413, username="already_in_before_toggle")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    checkin_resp = client.post(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+    assert checkin_resp.status_code == status.HTTP_200_OK
+
+    enable_resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/enable-payment",
+        headers=admin_headers,
+    )
+    assert enable_resp.status_code == status.HTTP_200_OK
+
+    rsvp = session.exec(
+        select(MeetupRsvp).where(MeetupRsvp.meetup_id == meetup.id).where(MeetupRsvp.guest_id == guest.mazmo_user_id)
+    ).one()
+    assert rsvp.has_arrived is True
+
+
+def test_new_checkin_blocked_after_enabling_payment_on_previously_free_meetup(
+    client: TestClient,
+    admin_headers: dict,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
+    """
+    Verify that a guest who hasn't checked in yet is blocked once payment
+    is enabled, even though the meetup started out free.
+    """
+    guest = make_guest(session, mazmo_user_id=414, username="not_yet_in_before_toggle")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    enable_resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/enable-payment",
+        headers=admin_headers,
+    )
+    assert enable_resp.status_code == status.HTTP_200_OK
+
+    checkin_resp = client.post(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        headers=staff_headers,
+    )
+    assert checkin_resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_disable_payment_preserves_has_paid_data(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    paid_meetup,
+):
+    """
+    Verify that disabling payment does not clear has_paid on existing RSVPs.
+
+    WHY: If payment is re-enabled later, previously recorded payments
+    should still count -- has_paid data is inert, not deleted, when the
+    requirement is switched off.
+    """
+    guest = make_guest(session, mazmo_user_id=415, username="paid_before_disable")
+    make_rsvp(session, meetup=paid_meetup, guest=guest, has_paid=True, paid_at=datetime.now(UTC))
+
+    resp = client.patch(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/disable-payment",
+        headers=admin_headers,
+    )
+    assert resp.status_code == status.HTTP_200_OK
+
+    rsvp = session.exec(
+        select(MeetupRsvp)
+        .where(MeetupRsvp.meetup_id == paid_meetup.id)
+        .where(MeetupRsvp.guest_id == guest.mazmo_user_id)
+    ).one()
+    assert rsvp.has_paid is True

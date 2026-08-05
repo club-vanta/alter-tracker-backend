@@ -369,8 +369,8 @@ def error_404_org() -> ResponsesDict:
     }
 
 
-def error_404_rsvp() -> ResponsesDict:
-    """404 - Guest not RSVPed to this meetup."""
+def error_404_rsvp(action: str = "check in") -> ResponsesDict:
+    """404 - Guest not RSVPed to this meetup. `action` customizes the leading verb (e.g. "mark payment")."""
     return {
         404: {
             "description": "Guest not RSVPed to meetup",
@@ -381,60 +381,10 @@ def error_404_rsvp() -> ResponsesDict:
                             "summary": "Guest didn't RSVP to this meetup",
                             "value": {
                                 "detail": (
-                                    "Cannot check in: guest mazmo_user_id=12345 is not RSVPed. "
-                                    "Either: (1) they haven't RSVPed on Mazmo yet, "
-                                    "(2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, "
-                                    "or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
-                                )
-                            },
-                        },
-                    }
-                }
-            },
-        }
-    }
-
-
-def error_404_rsvp_for_payment() -> ResponsesDict:
-    """404 - Guest not RSVPed to this meetup. Only for PATCH .../payment."""
-    return {
-        404: {
-            "description": "Guest not RSVPed to meetup",
-            "content": {
-                "application/json": {
-                    "examples": {
-                        "not_rsvped": {
-                            "summary": "Guest didn't RSVP to this meetup",
-                            "value": {
-                                "detail": (
-                                    "Cannot mark payment: guest mazmo_user_id=12345 is not RSVPed. "
-                                    "Either: (1) they haven't RSVPed on Mazmo yet, "
-                                    "(2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, "
-                                    "or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
-                                )
-                            },
-                        },
-                    }
-                }
-            },
-        }
-    }
-
-
-def error_404_rsvp_for_undo_payment() -> ResponsesDict:
-    """404 - Guest not RSVPed to this meetup. Only for PATCH .../payment/undo."""
-    return {
-        404: {
-            "description": "Guest not RSVPed to meetup",
-            "content": {
-                "application/json": {
-                    "examples": {
-                        "not_rsvped": {
-                            "summary": "Guest didn't RSVP to this meetup",
-                            "value": {
-                                "detail": (
-                                    "Cannot undo payment: guest mazmo_user_id=12345 is not RSVPed "
-                                    "to this meetup. Verify the guest ID via GET /meetups/{meetup_id}/guests."
+                                    f"Cannot {action}: guest mazmo_user_id=12345 is not RSVPed. "
+                                    f"Either: (1) they haven't RSVPed on Mazmo yet, "
+                                    f"(2) RSVP list needs syncing - try POST /meetups/{{meetup_id}}/sync, "
+                                    f"or (3) wrong ID - check GET /meetups/{{meetup_id}}/guests."
                                 )
                             },
                         },
@@ -620,7 +570,9 @@ def error_409_payment_not_required() -> ResponsesDict:
                             "summary": "Cannot mark payment on a free event",
                             "value": {
                                 "detail": (
-                                    "Cannot mark payment: meetup 'Alter Córdoba - Marzo 2024' does not require payment."
+                                    "Cannot mark payment: meetup 'Alter Córdoba - Marzo 2024' "
+                                    "does not require payment. "
+                                    "Enable it first via PATCH /meetups/{meetup_id}/enable-payment."
                                 )
                             },
                         },
@@ -698,6 +650,56 @@ def error_409_checkin_payment_required() -> ResponsesDict:
                                     "Cannot check in: guest 'fiestero_feliz' (mazmo_user_id=12345) "
                                     "has not paid the entrance fee for 'Alter Buenos Aires - Abril 2024 (Pago)'. "
                                     "Mark the payment first via PATCH /meetups/{meetup_id}/guests/12345/payment."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_payment_already_enabled() -> ResponsesDict:
+    """409 - Meetup already requires payment. Only for PATCH .../enable-payment."""
+    return {
+        409: {
+            "description": "Meetup already requires payment",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "already_enabled": {
+                            "summary": "Cannot enable payment twice",
+                            "value": {
+                                "detail": (
+                                    "Cannot enable payment: meetup 'Alter Córdoba - Marzo 2024' "
+                                    "already requires payment. "
+                                    "To switch it back to free, use PATCH /meetups/{meetup_id}/disable-payment."
+                                )
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_payment_already_disabled() -> ResponsesDict:
+    """409 - Meetup does not currently require payment. Only for PATCH .../disable-payment."""
+    return {
+        409: {
+            "description": "Meetup does not require payment",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "already_disabled": {
+                            "summary": "Cannot disable payment twice",
+                            "value": {
+                                "detail": (
+                                    "Cannot disable payment: meetup 'Alter Córdoba - Marzo 2024' "
+                                    "does not currently require payment. "
+                                    "To make it a paid event, use PATCH /meetups/{meetup_id}/enable-payment."
                                 )
                             },
                         },

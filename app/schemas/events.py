@@ -15,6 +15,11 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.models import EventType
+
+# Built from the EventType enum so this never goes stale as new event types are added.
+_EVENT_TYPE_FILTER_DESCRIPTION = f"Comma-separated event types to filter ({', '.join(e.value for e in EventType)})"
+
 
 class EventTypeFilter(StrEnum):
     """
@@ -72,7 +77,7 @@ class EventLogPublic(BaseModel):
 
     Fields:
       - id: Unique event identifier
-      - event_type: What happened (CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN)
+      - event_type: What happened (see EventType in app/models/models.py for the full list)
       - timestamp: When it happened (UTC)
       - actor: Staff member who performed the action
       - guest: Guest who was affected (if applicable)
@@ -132,7 +137,7 @@ class EventLogQuery(BaseModel):
 
     type: str | None = Field(
         default=None,
-        description="Comma-separated event types to filter (CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN)",
+        description=_EVENT_TYPE_FILTER_DESCRIPTION,
     )
     since: datetime | None = Field(
         default=None,

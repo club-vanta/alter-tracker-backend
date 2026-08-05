@@ -111,6 +111,33 @@ def test_sync_does_not_overwrite_checkin_data_of_arrived_guests_returns_200_ok(
     assert rsvp.arrival_order == 1
 
 
+def test_sync_does_not_overwrite_payment_data_of_paid_guests_returns_200_ok(
+    client: TestClient, admin_headers: dict, session: Session, meetup: Meetup, mock_mazmo: AsyncMock
+):
+    """
+    Verify that sync preserves payment data (has_paid, paid_at, paid_by_id).
+
+    WHY: Same invariant as check-in data. If an admin marks a guest as paid,
+    then staff syncs later, we must NOT lose that payment mark. The upsert
+    only updates rsvp_time and cancelled_rsvp, never the payment fields.
+    """
+    alice = make_guest(session, mazmo_user_id=111, username="alice")
+    rsvp = make_rsvp(
+        session,
+        meetup=meetup,
+        guest=alice,
+        has_paid=True,
+        paid_at=datetime(2026, 3, 17, 21, 0, tzinfo=UTC),
+    )
+
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    session.refresh(rsvp)
+    assert rsvp.has_paid is True
+    assert rsvp.paid_at is not None
+
+
 def test_sync_with_empty_rsvp_list_returns_200_ok_with_zero_counts(
     client: TestClient, admin_headers: dict, meetup: Meetup, mock_mazmo: AsyncMock
 ):

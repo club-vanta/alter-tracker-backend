@@ -11,6 +11,8 @@ POST  /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/checkin     -> che
 PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/undo-checkin -> undo check-in (org member)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/payment      -> mark paid (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/payment/undo -> undo payment mark (org admin)
+PATCH /organizations/{org_id}/meetups/{meetup_id}/enable-payment  -> mark event as paid (org admin)
+PATCH /organizations/{org_id}/meetups/{meetup_id}/disable-payment -> mark event as free (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/finalize       -> finalize (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/unfinalize     -> unfinalize (org admin)
 """
@@ -37,6 +39,8 @@ from app.openapi_examples.meetups_examples import (
     CHECKIN_RESPONSES,
     CREATE_MEETUP_REQUEST_EXAMPLES,
     CREATE_MEETUP_RESPONSES,
+    DISABLE_PAYMENT_RESPONSES,
+    ENABLE_PAYMENT_RESPONSES,
     FINALIZE_MEETUP_RESPONSES,
     GET_MEETUP_RESPONSES,
     LIST_MEETUP_GUESTS_RESPONSES,
@@ -98,6 +102,22 @@ def _raise_if_finalized(meetup: Meetup) -> None:
                 f"Finalized meetups no longer accept check-ins or syncs."
             ),
         )
+
+
+def _refetch_guest_or_500(session: Session, mazmo_user_id: int, *, action: str) -> Guest:
+    """Fetch a guest right after a commit succeeded, or raise 500 (should never happen)."""
+    guest = session.get(Guest, mazmo_user_id)
+    if not guest:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                f"Internal error: {action} succeeded but guest record "
+                f"(mazmo_user_id={mazmo_user_id}) could not be fetched. "
+                f"This should never happen - please report this bug. "
+                f"The {action} WAS recorded in the database."
+            ),
+        )
+    return guest
 
 
 # -- Create meetup ------------------------------------------------------------
@@ -549,17 +569,7 @@ async def checkin_guest(
     session.commit()
     session.refresh(rsvp)
 
-    guest = session.get(Guest, mazmo_user_id)
-    if not guest:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=(
-                f"Internal error: check-in succeeded but guest record "
-                f"(mazmo_user_id={mazmo_user_id}) could not be fetched. "
-                f"This should never happen - please report this bug. "
-                f"The check-in WAS recorded in the database."
-            ),
-        )
+    guest = _refetch_guest_or_500(session, mazmo_user_id, action="check-in")
 
     log.info(
         "Check-in recorded",
@@ -659,17 +669,7 @@ async def undo_checkin_guest(
     session.add(event)
     session.commit()
 
-    guest = session.get(Guest, mazmo_user_id)
-    if not guest:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=(
-                f"Internal error: undo succeeded but guest record "
-                f"(mazmo_user_id={mazmo_user_id}) could not be fetched. "
-                f"This should never happen - please report this bug. "
-                f"The undo WAS recorded in the database."
-            ),
-        )
+    guest = _refetch_guest_or_500(session, mazmo_user_id, action="undo")
 
     log.info(
         "Check-in undone",
@@ -714,7 +714,10 @@ async def mark_guest_paid(
     if not meetup.requires_payment:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=(f"Cannot mark payment: meetup '{meetup.name}' does not require payment."),
+            detail=(
+                f"Cannot mark payment: meetup '{meetup.name}' does not require payment. "
+                f"Enable it first via PATCH /organizations/{org_id}/meetups/{meetup_id}/enable-payment."
+            ),
         )
 
     rsvp = session.exec(
@@ -751,6 +754,13 @@ async def mark_guest_paid(
     rsvp.paid_at = datetime.now(UTC)
     rsvp.paid_by_id = admin.id
 
+    # Capture what the response/log need before commit expires rsvp's
+    # attributes (including the .guest relationship). paid_at is set in
+    # Python above, not by a DB trigger, so there's nothing to refresh.
+    guest_public = GuestPublic.model_validate(rsvp.guest)
+    guest_username = rsvp.guest.username
+    paid_at = rsvp.paid_at
+
     event = EventLog(
         event_type=EventType.PAYMENT_RECORDED,
         actor_id=admin.id,
@@ -762,20 +772,19 @@ async def mark_guest_paid(
     session.add(rsvp)
     session.add(event)
     session.commit()
-    session.refresh(rsvp)
 
     log.info(
         "Payment recorded",
         admin=admin.username,
-        guest=rsvp.guest.username,
+        guest=guest_username,
         guest_id=mazmo_user_id,
         meetup_id=str(meetup_id),
         org_id=str(org_id),
     )
 
     return PaymentResponse(
-        guest=GuestPublic.model_validate(rsvp.guest),
-        paid_at=rsvp.paid_at,
+        guest=guest_public,
+        paid_at=paid_at,
         paid_by=CheckedInByPublic.model_validate(admin),
     )
 
@@ -818,6 +827,7 @@ async def undo_guest_payment(
         select(MeetupRsvp)
         .where(MeetupRsvp.meetup_id == meetup_id)
         .where(MeetupRsvp.guest_id == mazmo_user_id)
+        .with_for_update()
         .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
     ).first()
 
@@ -859,17 +869,7 @@ async def undo_guest_payment(
     session.add(event)
     session.commit()
 
-    guest = session.get(Guest, mazmo_user_id)
-    if not guest:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=(
-                f"Internal error: undo succeeded but guest record "
-                f"(mazmo_user_id={mazmo_user_id}) could not be fetched. "
-                f"This should never happen - please report this bug. "
-                f"The undo WAS recorded in the database."
-            ),
-        )
+    guest = _refetch_guest_or_500(session, mazmo_user_id, action="undo")
 
     log.info(
         "Payment undone",
@@ -881,6 +881,128 @@ async def undo_guest_payment(
         reason=request.reason,
     )
     return guest
+
+
+# -- Enable payment requirement ------------------------------------------------
+
+
+@router.patch(
+    "/organizations/{org_id}/meetups/{meetup_id}/enable-payment",
+    response_model=MeetupPublic,
+    summary="Mark a meetup as requiring payment (org admin only)",
+    responses=ENABLE_PAYMENT_RESPONSES,
+)
+async def enable_payment_requirement(
+    org_id: uuid.UUID,
+    meetup_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    staff: User = Depends(get_org_admin),
+) -> Meetup:
+    """
+    Mark a meetup as requiring payment. Check-in will be blocked for any
+    guest without has_paid=True from this point forward.
+
+    Existing RSVPs are left untouched - guests who already checked in
+    before this change keep their check-in, and any has_paid data from a
+    previous paid period (if this event toggled payment off and back on)
+    stays valid.
+
+    Returns 409 if the meetup already requires payment or is finalized.
+    """
+    meetup = _get_meetup_or_404_in_org(session, meetup_id, org_id)
+    _raise_if_finalized(meetup)
+
+    if meetup.requires_payment:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot enable payment: meetup '{meetup.name}' already requires payment. "
+                f"To switch it back to free, use PATCH /organizations/{org_id}/meetups/{meetup_id}/disable-payment."
+            ),
+        )
+
+    meetup.requires_payment = True
+
+    event = EventLog(
+        event_type=EventType.PAYMENT_REQUIREMENT_ENABLED,
+        actor_id=staff.id,
+        meetup_id=meetup_id,
+        org_id=org_id,
+    )
+
+    session.add(meetup)
+    session.add(event)
+    session.commit()
+    session.refresh(meetup)
+
+    log.info(
+        "Payment requirement enabled",
+        staff=staff.username,
+        meetup_id=str(meetup_id),
+        meetup_name=meetup.name,
+        org_id=str(org_id),
+    )
+    return meetup
+
+
+# -- Disable payment requirement ------------------------------------------------
+
+
+@router.patch(
+    "/organizations/{org_id}/meetups/{meetup_id}/disable-payment",
+    response_model=MeetupPublic,
+    summary="Mark a meetup as not requiring payment (org admin only)",
+    responses=DISABLE_PAYMENT_RESPONSES,
+)
+async def disable_payment_requirement(
+    org_id: uuid.UUID,
+    meetup_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    staff: User = Depends(get_org_admin),
+) -> Meetup:
+    """
+    Mark a meetup as no longer requiring payment. Check-in is no longer
+    blocked by has_paid for this meetup.
+
+    Any has_paid data already recorded is left untouched (it becomes
+    inert, not deleted) in case payment is re-enabled later.
+
+    Returns 409 if the meetup doesn't currently require payment or is finalized.
+    """
+    meetup = _get_meetup_or_404_in_org(session, meetup_id, org_id)
+    _raise_if_finalized(meetup)
+
+    if not meetup.requires_payment:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot disable payment: meetup '{meetup.name}' does not currently require payment. "
+                f"To make it a paid event, use PATCH /organizations/{org_id}/meetups/{meetup_id}/enable-payment."
+            ),
+        )
+
+    meetup.requires_payment = False
+
+    event = EventLog(
+        event_type=EventType.PAYMENT_REQUIREMENT_DISABLED,
+        actor_id=staff.id,
+        meetup_id=meetup_id,
+        org_id=org_id,
+    )
+
+    session.add(meetup)
+    session.add(event)
+    session.commit()
+    session.refresh(meetup)
+
+    log.info(
+        "Payment requirement disabled",
+        staff=staff.username,
+        meetup_id=str(meetup_id),
+        meetup_name=meetup.name,
+        org_id=str(org_id),
+    )
+    return meetup
 
 
 # -- Finalize meetup ----------------------------------------------------------
