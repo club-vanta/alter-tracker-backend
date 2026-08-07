@@ -91,6 +91,7 @@ def upgrade() -> None:
     op.drop_column("organization_bans", "guest_id")
     op.alter_column("organization_bans", "guest_id_new", new_column_name="guest_id")
     op.create_index("ix_organization_bans_guest_id", "organization_bans", ["guest_id"])
+    op.create_unique_constraint("uq_organization_bans_org_guest", "organization_bans", ["org_id", "guest_id"])
     op.create_foreign_key(
         "organization_bans_guest_id_fkey", "organization_bans", "guests", ["guest_id"], ["id"], ondelete="CASCADE"
     )
@@ -155,6 +156,7 @@ def downgrade() -> None:
     op.create_index("ix_event_log_guest_meetup", "event_log", ["guest_id", "meetup_id"])
 
     # -- organization_bans: process while guests.id still exists -----------------
+    # Note: uq_organization_bans_org_guest constraint will be auto-dropped when guest_id is dropped
     op.drop_index("ix_organization_bans_guest_id", table_name="organization_bans")
     op.add_column("organization_bans", sa.Column("guest_id_old", sa.Integer(), nullable=True))
     op.execute("""
@@ -167,6 +169,7 @@ def downgrade() -> None:
     op.drop_column("organization_bans", "guest_id")
     op.alter_column("organization_bans", "guest_id_old", new_column_name="guest_id")
     op.create_index("ix_organization_bans_guest_id", "organization_bans", ["guest_id"])
+    op.create_unique_constraint("uq_organization_bans_org_guest", "organization_bans", ["org_id", "guest_id"])
 
     # -- meetup_rsvps: process while guests.id still exists ----------------------
     op.drop_constraint("meetup_rsvps_pkey", "meetup_rsvps", type_="primary")
