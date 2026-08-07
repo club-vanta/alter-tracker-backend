@@ -20,6 +20,10 @@ Este cambio:
    que un guest pueda crearse sin `mazmo_user_id` y, mas adelante, vincular
    una cuenta de Mazmo real si aparece.
 2. Agrega un campo opcional `instagram_username` a todos los guests.
+3. Renombra `Guest.username` a `Guest.mazmo_handle`, porque una vez que
+   Mazmo deja de ser obligatorio, "username" sugiere que todo guest tiene
+   uno. El nombre nuevo deja explicito que es el handle de Mazmo
+   especificamente, `None` cuando no aplica.
 
 ## Data model changes (`app/models/models.py`)
 
@@ -29,7 +33,7 @@ class Guest(SQLModel, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     mazmo_user_id: MazmoUserId | None = Field(default=None, unique=True, index=True, sa_type=Integer)
-    username: str | None = Field(default=None, index=True)
+    mazmo_handle: str | None = Field(default=None, index=True)
     displayname: str
     instagram_username: str | None = Field(default=None, max_length=64)
 ```
@@ -38,7 +42,9 @@ class Guest(SQLModel, table=True):
   `meetups.id` / `organizations.id` (UUID directo, sin `NewType` -
   `MazmoUserId` se reserva para el identificador externo).
 - `mazmo_user_id` deja de ser PK: nullable, UNIQUE, indexado.
-- `username` pasa a nullable (no existe si no hay cuenta de Mazmo).
+- `mazmo_handle` (antes `username`) pasa a nullable (no existe si no hay
+  cuenta de Mazmo). Solo se usa para el handle de Mazmo; un guest manual
+  no tiene equivalente local.
 - `displayname` sigue obligatorio: es el nombre a mostrar, venga de Mazmo o
   lo cargue el staff a mano.
 - `instagram_username` nuevo, opcional, sin integracion con la API de
@@ -59,8 +65,8 @@ todo en una sola migracion:
 1. `guests`: agregar `id uuid NOT NULL DEFAULT gen_random_uuid()`,
    backfillear filas existentes, dropear la PK de `mazmo_user_id`, crear
    la PK sobre `id`. Alterar `mazmo_user_id` a nullable + UNIQUE + index.
-   Alterar `username` a nullable. Agregar `instagram_username
-   varchar(64) NULL`.
+   Renombrar `username` a `mazmo_handle` y alterarla a nullable. Agregar
+   `instagram_username varchar(64) NULL`.
 2. En `meetup_rsvps`, `organization_bans`, `event_log`: agregar columna
    `guest_id_new uuid`, backfillear con
    `UPDATE ... FROM guests WHERE guest_id_new = guests.id AND guests.mazmo_user_id = <tabla>.guest_id`,
@@ -91,6 +97,13 @@ responde, 502 si Mazmo devuelve error). El chequeo de duplicado pasa de
 `session.exec(select(Guest).where(Guest.mazmo_user_id == user.mazmo_user_id)).first()`,
 porque `mazmo_user_id` ya no es PK.
 
+El campo `username` de `CreateGuestRequest` no se renombra: en el
+contexto de este endpoint (`/guests/mazmo`) es claramente "el username de
+Mazmo a buscar", igual que el parametro `username` de
+`MazmoClient.fetch_user_by_username`. El rename a `mazmo_handle` aplica
+al campo persistido/expuesto en `Guest`/`GuestPublic`, no a este input de
+busqueda.
+
 **`POST /guests/manual`** (nuevo)
 
 ```python
@@ -100,7 +113,7 @@ class CreateManualGuestRequest(BaseModel):
 ```
 
 Crea el `Guest` directo, sin contactar Mazmo: `id=uuid4()`,
-`mazmo_user_id=None`, `username=None`. Sin chequeo de duplicados: no hay
+`mazmo_user_id=None`, `mazmo_handle=None`. Sin chequeo de duplicados: no hay
 identificador externo contra el cual deduplicar. Se acepta que puedan
 crearse dos guests con el mismo `displayname` (la deduplicacion /
 merge de guests queda fuera de alcance, ver "Out of scope").
@@ -111,17 +124,21 @@ Ambos devuelven `GuestPublic`, actualizado a:
 class GuestPublic(BaseModel):
     id: uuid.UUID
     mazmo_user_id: int | None
-    username: str | None
+    mazmo_handle: str | None
     displayname: str
     instagram_username: str | None
 ```
 
 `GuestWithBanPublic` y `BannedGuestPublic` heredan/replican los mismos
-campos y se actualizan igual (`mazmo_user_id`/`username` nullable,
+campos y se actualizan igual (`mazmo_user_id`/`mazmo_handle` nullable,
 `instagram_username` agregado, `id` agregado).
 
-`GET /guests/`, `GET /guests/{guest_id}` y `GET /guests/by-username/{username}`
-no cambian de forma (solo el tipo de `{guest_id}`, ver siguiente seccion).
+`GET /guests/` y `GET /guests/{guest_id}` no cambian de forma (solo el
+tipo de `{guest_id}`, ver siguiente seccion). `GET /guests/by-username/{username}`
+se renombra a `GET /guests/by-mazmo-handle/{mazmo_handle}`, consistente
+con el nombre de campo nuevo y con la simetria `/guests/mazmo` vs
+`/guests/manual`. Sigue sin devolver resultados para guests sin
+`mazmo_handle`.
 
 El `EventLog` de `GUEST_CREATED` que escriben ambos endpoints pasa a usar
 `guest_id=guest.id` (el UUID interno), no `mazmo_user_id`.
@@ -139,7 +156,7 @@ El `EventLog` de `GUEST_CREATED` que escriben ambos endpoints pasa a usar
   sistema. Sin merge automatico: fusionar el historial de RSVPs, bans y
   audit log de dos guests es una operacion delicada que queda fuera de
   alcance de este cambio (ver "Out of scope").
-- Si no hay conflicto: setea `mazmo_user_id`, `username` y `displayname`
+- Si no hay conflicto: setea `mazmo_user_id`, `mazmo_handle` y `displayname`
   con los datos reales de Mazmo (pisa el nombre manual que hubiera
   cargado el staff). `instagram_username` no se toca.
 - Escribe un `EventLog` con `event_type=GUEST_MAZMO_LINKED` en el mismo
@@ -149,7 +166,7 @@ El `EventLog` de `GUEST_CREATED` que escriben ambos endpoints pasa a usar
 
 **`PATCH /guests/{guest_id}`**, body con `displayname` e
 `instagram_username` opcionales (partial update). No permite tocar
-`mazmo_user_id` ni `username` (eso solo cambia via link-mazmo o sync). Sin
+`mazmo_user_id` ni `mazmo_handle` (eso solo cambia via link-mazmo o sync). Sin
 entrada en `event_log`: es una edicion cosmetica, no un evento de negocio
 auditable como check-in o ban.
 
@@ -171,8 +188,8 @@ Cambia el tipo del path param (de `int` a `uuid.UUID`) y los
 No cambia la logica de negocio de estos endpoints, solo el tipo del
 identificador. Los mensajes de error que hoy citan `mazmo_user_id`
 directamente (ej. "Cannot check in: guest mazmo_user_id=... is not
-RSVPed") pasan a citar el `displayname`/`username` del guest junto con su
-`guest_id` interno, ya que `mazmo_user_id` puede no existir.
+RSVPed") pasan a citar el `displayname`/`mazmo_handle` del guest junto
+con su `guest_id` interno, ya que `mazmo_user_id` puede no existir.
 
 Tambien hay que actualizar el mensaje 409 del flujo de creacion por
 Mazmo, que hoy referencia `POST /guests/` en su detail, y la docstring
@@ -226,3 +243,5 @@ riesgo si se implementa apurado.
   el nuevo `guest_id` (UUID). Es un cambio mecanico pero extenso; se debe
   cubrir en el plan de implementacion, no se detalla aca archivo por
   archivo.
+- Tests existentes de `GET /guests/by-username/{username}` se mueven a
+  `GET /guests/by-mazmo-handle/{mazmo_handle}`, mismo comportamiento.
