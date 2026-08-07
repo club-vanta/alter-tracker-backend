@@ -724,10 +724,10 @@ class UpdateGuestRequest(BaseModel):
     """
     Request body for editing a guest's displayname and/or Instagram handle.
 
-    Both fields are optional (partial update). A field left as None is
-    not modified - there is no way to explicitly clear instagram_username
-    back to null through this endpoint, only to overwrite it with a new
-    value.
+    Both fields are optional (partial update). Whether an omitted key
+    means "don't touch" vs. an explicit null meaning "clear it" is
+    resolved by the router via payload.model_fields_set, not by this
+    schema - see update_guest() in app/routers/guests.py.
     """
 
     displayname: str | None = Field(default=None, min_length=1, max_length=255)
@@ -1653,15 +1653,22 @@ async def update_guest(
     """
     Edit a guest's displayname and/or instagram_username.
 
+    A key omitted from the request body is left untouched. A key sent
+    explicitly as null clears it (only instagram_username can be null -
+    displayname is required, so sending it as null is rejected by the
+    schema before this function runs). This distinction uses
+    payload.model_fields_set, since payload.instagram_username is None in
+    both the "omitted" and "explicitly cleared" cases.
+
     mazmo_user_id and mazmo_handle cannot be changed here - use
     link-mazmo/unlink-mazmo for that. This is a cosmetic edit, not an
     audited business event, so no event_log entry is written.
     """
     guest = _get_guest_or_404(session, guest_id)
 
-    if payload.displayname is not None:
+    if "displayname" in payload.model_fields_set and payload.displayname is not None:
         guest.displayname = payload.displayname
-    if payload.instagram_username is not None:
+    if "instagram_username" in payload.model_fields_set:
         guest.instagram_username = payload.instagram_username
 
     session.add(guest)
@@ -2147,6 +2154,11 @@ UPDATE_GUEST_REQUEST_EXAMPLES: dict[str, Any] = {
     "add_instagram": {
         "summary": "Add an Instagram handle after the fact",
         "value": {"instagram_username": "nuevo.handle"},
+    },
+    "clear_instagram": {
+        "summary": "Remove the Instagram handle",
+        "description": "Sending instagram_username as null clears it. Omitting the key entirely leaves it untouched.",
+        "value": {"instagram_username": None},
     },
 }
 
@@ -2638,6 +2650,36 @@ def test_update_guest_changes_instagram_username(client: TestClient, staff_heade
     resp = client.patch(f"/guests/{guest.id}", json={"instagram_username": "@new.handle"}, headers=staff_headers)
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json()["instagram_username"] == "new.handle"
+
+
+def test_update_guest_can_clear_instagram_username_with_explicit_null(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """
+    Verify that sending instagram_username: null clears it.
+
+    WHY: A guest's Instagram handle can become wrong or unwanted after
+    being set - staff need a way to remove it, not just overwrite it.
+    """
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="someone", instagram_username="old.handle")
+    resp = client.patch(f"/guests/{guest.id}", json={"instagram_username": None}, headers=staff_headers)
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["instagram_username"] is None
+
+
+def test_update_guest_omitting_instagram_username_leaves_it_unchanged(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """
+    Verify that NOT sending instagram_username at all leaves it untouched.
+
+    WHY: This is the key distinction from explicit null - omitted means
+    "don't touch", explicit null means "clear it".
+    """
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="someone", instagram_username="keep.this")
+    resp = client.patch(f"/guests/{guest.id}", json={"displayname": "New Name"}, headers=staff_headers)
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["instagram_username"] == "keep.this"
 
 
 def test_update_guest_cannot_change_mazmo_fields(client: TestClient, staff_headers: dict, session: Session):
