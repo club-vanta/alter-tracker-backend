@@ -55,7 +55,8 @@ class Guest(SQLModel, table=True):
 cambian de `MazmoUserId` (int, FK a `guests.mazmo_user_id`) a `uuid.UUID`
 (FK a `guests.id`).
 
-Nuevo valor de `EventType`: `GUEST_MAZMO_LINKED` (ver seccion de linking).
+Nuevos valores de `EventType`: `GUEST_MAZMO_LINKED` y
+`GUEST_MAZMO_UNLINKED` (ver secciones de linking/unlinking).
 
 ## Migration (Alembic)
 
@@ -77,6 +78,25 @@ todo en una sola migracion:
 Esto reescribe datos reales en las tres tablas de FK. Al volumen actual
 del sistema (eventos comunitarios, no millones de filas) es seguro
 hacerlo dentro de la transaccion de la migracion.
+
+### Reversibilidad
+
+Un guest manual (`mazmo_user_id IS NULL`) hace imposible revertir
+limpiamente a "mazmo_user_id como PK", porque una PK no admite NULL. El
+`downgrade()` de esta migracion:
+
+1. Chequea `SELECT COUNT(*) FROM guests WHERE mazmo_user_id IS NULL`.
+2. Si el resultado es > 0, aborta con un error explicito
+   (`RuntimeError` o similar) explicando que hay guests manuales y que
+   no se puede revertir sin perderlos.
+3. Si es 0 (nunca se creo ningun guest manual, o todos fueron linkeados
+   o borrados), procede a revertir el schema normalmente: PK de vuelta a
+   `mazmo_user_id`, dropea `id`, renombra `mazmo_handle` a `username`,
+   revierte las FKs de las tres tablas a `int` sobre `mazmo_user_id`.
+
+No se borran guests para forzar un downgrade limpio (violaria la regla
+de nunca hacer DELETE fisico). El downgrade es honesto: funciona solo
+si todavia no se uso la feature.
 
 ## Guest creation endpoints (`app/routers/guests.py`)
 
@@ -143,6 +163,30 @@ con el nombre de campo nuevo y con la simetria `/guests/mazmo` vs
 El `EventLog` de `GUEST_CREATED` que escriben ambos endpoints pasa a usar
 `guest_id=guest.id` (el UUID interno), no `mazmo_user_id`.
 
+### Busqueda y orden en `GET /guests/`
+
+Hoy ordena por `username` (ahora `mazmo_handle`), que va a ser `None`
+para todo guest manual. Cambia a:
+
+- `order_by(Guest.displayname)` en vez de `mazmo_handle`, para que el
+  orden tenga sentido sin importar si el guest tiene Mazmo o no.
+- Nuevo query param opcional `q: str | None`, que filtra por
+  `displayname ILIKE %q%` o `mazmo_handle ILIKE %q%` (busca en ambos
+  campos, ya que el staff puede recordar el nombre o el handle). Sin
+  paginacion por ahora, consistente con que el endpoint hoy tampoco
+  pagina.
+
+## Autorizacion
+
+Todos los endpoints nuevos y modificados de esta spec
+(`POST /guests/mazmo`, `POST /guests/manual`,
+`PATCH /guests/{guest_id}/link-mazmo`,
+`PATCH /guests/{guest_id}/unlink-mazmo`, `PATCH /guests/{guest_id}`)
+usan `get_approved_user`, el mismo nivel que ya requiere la creacion de
+guests hoy. No se introduce un nivel de admin para estas acciones:
+mantiene la consistencia con el resto de la creacion/gestion de guests y
+no bloquea al staff en la puerta si no hay un admin presente.
+
 ## Link retroactivo a Mazmo
 
 **`PATCH /guests/{guest_id}/link-mazmo`**, body `{"username": "..."}`:
@@ -161,6 +205,37 @@ El `EventLog` de `GUEST_CREATED` que escriben ambos endpoints pasa a usar
   cargado el staff). `instagram_username` no se toca.
 - Escribe un `EventLog` con `event_type=GUEST_MAZMO_LINKED` en el mismo
   commit.
+- **Race condition**: el chequeo de "ya pertenece a otro guest" es un
+  SELECT antes del UPDATE, no atomico. Siguiendo el patron de
+  concurrencia ya establecido en el proyecto (CLAUDE.md), el commit va
+  en un `try/except IntegrityError` sobre la constraint UNIQUE de
+  `mazmo_user_id`, y ante conflicto responde 409 igual que el chequeo
+  previo. Cubre el caso de dos staff linkeando el mismo mazmo_user_id en
+  simultaneo.
+
+## Unlink de Mazmo
+
+**`PATCH /guests/{guest_id}/unlink-mazmo`**, sin body. Simetrico a
+`undo-checkin` y `payment/undo`, para cubrir el caso de que el staff haya
+linkeado el `mazmo_user_id` equivocado:
+
+- 404 si `guest_id` no existe.
+- 409 si el guest no tiene `mazmo_user_id` seteado ("no esta vinculado").
+- Si esta linkeado: setea `mazmo_user_id=None` y `mazmo_handle=None`.
+  `displayname` **no se revierte** a ningun valor anterior (no se guarda
+  historial de nombres); queda con el ultimo `displayname` que tenia
+  (probablemente el de Mazmo), y el staff lo puede corregir despues con
+  `PATCH /guests/{guest_id}` si hace falta.
+- El `mazmo_user_id` liberado puede volver a linkearse (a este guest o a
+  otro) despues, ya que la constraint UNIQUE deja de bloquearlo.
+- El resto del historial del guest (RSVPs, bans, event_log) no se ve
+  afectado: al estar todo indexado por `guests.id` (que nunca cambia),
+  linkear/unlinkear/relinkear no reasigna nada.
+- Escribe un `EventLog` con `event_type=GUEST_MAZMO_UNLINKED` en el mismo
+  commit.
+
+Mismo nivel de auth que el resto (`get_approved_user`, ver seccion de
+autorizacion mas abajo).
 
 ## Edicion de guest
 
@@ -193,7 +268,15 @@ con su `guest_id` interno, ya que `mazmo_user_id` puede no existir.
 
 Tambien hay que actualizar el mensaje 409 del flujo de creacion por
 Mazmo, que hoy referencia `POST /guests/` en su detail, y la docstring
-del router (`app/routers/guests.py` lineas 1-9).
+del router (`app/routers/guests.py` lineas 1-9). El bound
+`Annotated[int, Field(gt=0, le=2_147_483_647)]` que hoy valida el path
+param en `meetups.py` (limite de int32 de Mazmo) desaparece: un UUID no
+necesita ese rango.
+
+`app/openapi_examples/guests_examples.py` necesita sus propios cambios:
+ejemplos nuevos para `/guests/mazmo`, `/guests/manual`, `link-mazmo`, y
+el PATCH de edicion; y actualizar los existentes que hoy muestran
+`mazmo_user_id`/`username` como identificador de path.
 
 ## `sync.py`
 
@@ -217,6 +300,21 @@ El comportamiento no cambia (sigue siendo idempotente, sigue sin tocar
 `has_arrived` / `has_paid` / etc.), pero es la parte del cambio con mas
 riesgo si se implementa apurado.
 
+## Documentacion externa (repo `../docs`)
+
+`docs/docs/business-logic/guests.md` y `docs/docs/technical/database-schema.md`
+(proyecto mkdocs separado, `/home/krapp/dev/vanta/docs`) describen el
+modelo actual como si Mazmo fuera obligatorio y `mazmo_user_id` fuera
+siempre la PK. Se actualizan como parte de esta implementacion:
+
+- `guests.md`: agregar la ruta de creacion manual junto a sync/creacion
+  por username, documentar `mazmo_handle`, `instagram_username`, y el
+  flujo de link/unlink-mazmo.
+- `database-schema.md`: actualizar la tabla `guests` (columnas, tipos,
+  nullability), las FKs de `meetup_rsvps`/`organization_bans`/`event_log`
+  (ahora UUID contra `guests.id`), el diagrama `erDiagram`, y agregar la
+  migracion nueva al historial.
+
 ## Out of scope
 
 - **Merge de guests duplicados**: si un guest manual y un guest real de
@@ -236,8 +334,13 @@ riesgo si se implementa apurado.
 - Tests nuevos: crear guest manual, crear guest por Mazmo (con y sin
   `instagram_username`), link-mazmo exitoso, link-mazmo 409 (ya
   vinculado), link-mazmo 409 (mazmo_user_id ya usado por otro guest),
-  editar guest (displayname / instagram_username), sync arma
+  link-mazmo race condition (IntegrityError -> 409), unlink-mazmo
+  exitoso, unlink-mazmo 409 (no estaba vinculado), re-link despues de un
+  unlink, editar guest (displayname / instagram_username), busqueda por
+  `q` en `GET /guests/` (por displayname y por mazmo_handle), sync arma
   correctamente el mapeo `mazmo_user_id -> id` al crear RSVPs.
+- Test de migracion: `downgrade()` falla explicitamente si existe un
+  guest con `mazmo_user_id IS NULL`, y funciona si no existe ninguno.
 - Tests existentes que usan `mazmo_user_id` como identificador en URLs
   (checkin, ban, walk-in, payment, etc.) necesitan actualizarse para usar
   el nuevo `guest_id` (UUID). Es un cambio mecanico pero extenso; se debe
