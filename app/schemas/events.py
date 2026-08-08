@@ -10,6 +10,7 @@ Authorization summary:
   - Admin: Can view all events with full filtering capabilities
 """
 
+import uuid
 from datetime import datetime
 from enum import StrEnum
 
@@ -60,8 +61,9 @@ class EventGuestPublic(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    mazmo_user_id: int
-    username: str
+    id: uuid.UUID
+    mazmo_user_id: int | None
+    mazmo_handle: str | None
     displayname: str
 
 
@@ -147,9 +149,9 @@ class EventLogQuery(BaseModel):
         default=None,
         description="Only events before this timestamp (ISO 8601 format)",
     )
-    guest_id: int | None = Field(
+    guest_id: uuid.UUID | None = Field(
         default=None,
-        description="Filter by guest's mazmo_user_id",
+        description="Filter by guest's internal id",
     )
     meetup_id: str | None = Field(
         default=None,

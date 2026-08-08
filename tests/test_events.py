@@ -31,7 +31,7 @@ class TestBanCreatesEvent:
         When an admin bans a guest, an EventLog entry should be created
         with the correct event_type, actor, guest, and reason.
         """
-        guest = make_guest(session, mazmo_user_id=1, username="troublemaker")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="troublemaker")
 
         client.patch(
             f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
@@ -45,7 +45,7 @@ class TestBanCreatesEvent:
         event = events[0]
         assert event.event_type == EventType.BAN
         assert event.actor_id == admin_user.id
-        assert event.guest_id == guest.mazmo_user_id
+        assert event.guest_id == guest.id
         assert event.reason == "Violated community guidelines"
         assert event.meetup_id is None  # Ban is not meetup-specific
 
@@ -59,7 +59,7 @@ class TestUnbanCreatesEvent:
         """
         When an admin unbans a guest, an EventLog entry should be created.
         """
-        guest = make_guest(session, mazmo_user_id=1, username="reformed")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="reformed")
 
         # First ban
         client.patch(
@@ -83,7 +83,7 @@ class TestUnbanCreatesEvent:
         unban_event = events[1]
         assert unban_event.event_type == EventType.UNBAN
         assert unban_event.actor_id == admin_user.id
-        assert unban_event.guest_id == guest.mazmo_user_id
+        assert unban_event.guest_id == guest.id
         assert unban_event.reason is None  # Unban doesn't require reason
 
 
@@ -99,7 +99,7 @@ class TestCheckinCreatesEvent:
         """
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
         meetup = make_meetup(session, org=org)
-        guest = make_guest(session, mazmo_user_id=1, username="attendee")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="attendee")
         make_rsvp(session, meetup=meetup, guest=guest)
 
         client.post(
@@ -113,7 +113,7 @@ class TestCheckinCreatesEvent:
         event = events[0]
         assert event.event_type == EventType.CHECK_IN
         assert event.actor_id == staff_user.id
-        assert event.guest_id == guest.mazmo_user_id
+        assert event.guest_id == guest.id
         assert event.meetup_id == meetup.id
         assert event.reason is None
 
@@ -130,7 +130,7 @@ class TestUndoCheckinCreatesEvent:
         """
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
         meetup = make_meetup(session, org=org)
-        guest = make_guest(session, mazmo_user_id=1, username="oops")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="oops")
         make_rsvp(session, meetup=meetup, guest=guest)
 
         # Check in first
@@ -158,7 +158,7 @@ class TestUndoCheckinCreatesEvent:
         undo_event = events[1]
         assert undo_event.event_type == EventType.UNDO_CHECK_IN
         assert undo_event.actor_id == staff_user.id
-        assert undo_event.guest_id == guest.mazmo_user_id
+        assert undo_event.guest_id == guest.id
         assert undo_event.meetup_id == meetup.id
         assert undo_event.reason == "Wrong person checked in"
 
@@ -177,7 +177,7 @@ class TestUndoCheckin:
         """Staff can undo a check-in."""
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
         meetup = make_meetup(session, org=org)
-        guest = make_guest(session, mazmo_user_id=1, username="attendee")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="attendee")
         make_rsvp(session, meetup=meetup, guest=guest)
 
         # Check in
@@ -200,7 +200,7 @@ class TestUndoCheckin:
         """Undoing a check-in clears has_arrived, arrival_time, arrival_order."""
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
         meetup = make_meetup(session, org=org)
-        guest = make_guest(session, mazmo_user_id=1, username="attendee")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="attendee")
         rsvp = make_rsvp(session, meetup=meetup, guest=guest)
 
         # Check in
@@ -233,7 +233,7 @@ class TestUndoCheckin:
         """Cannot undo a check-in if guest isn't checked in."""
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
         meetup = make_meetup(session, org=org)
-        guest = make_guest(session, mazmo_user_id=1, username="attendee")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="attendee")
         make_rsvp(session, meetup=meetup, guest=guest)
 
         resp = client.patch(
@@ -250,7 +250,7 @@ class TestUndoCheckin:
         """Cannot undo check-in for guest not RSVPed to meetup."""
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
         meetup = make_meetup(session, org=org)
-        make_guest(session, mazmo_user_id=1, username="stranger")
+        make_guest(session, mazmo_user_id=1, mazmo_handle="stranger")
 
         resp = client.patch(
             f"/organizations/{org.id}/meetups/{meetup.id}/guests/1/undo-checkin",
@@ -265,7 +265,7 @@ class TestUndoCheckin:
         """Undo check-in requires a reason for the audit trail."""
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
         meetup = make_meetup(session, org=org)
-        guest = make_guest(session, mazmo_user_id=1, username="attendee")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="attendee")
         make_rsvp(session, meetup=meetup, guest=guest)
 
         # Check in
@@ -288,7 +288,7 @@ class TestUndoCheckin:
         """Undo reason must be at least 5 characters."""
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
         meetup = make_meetup(session, org=org)
-        guest = make_guest(session, mazmo_user_id=1, username="attendee")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="attendee")
         make_rsvp(session, meetup=meetup, guest=guest)
 
         # Check in
@@ -319,7 +319,7 @@ class TestListAllEvents:
     ):
         """Admins can list all events."""
         # Create some events via actions
-        guest = make_guest(session, mazmo_user_id=1, username="testguest")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
         client.patch(
             f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
             json={"reason": "Testing"},
@@ -350,7 +350,7 @@ class TestListAllEvents:
         self, client: TestClient, admin_headers: dict, session: Session, org: Organization
     ):
         """Can filter events by type."""
-        guest = make_guest(session, mazmo_user_id=1, username="testguest")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
 
         # Create ban and unban events
         client.patch(
@@ -370,7 +370,7 @@ class TestListAllEvents:
         self, client: TestClient, admin_headers: dict, session: Session, org: Organization
     ):
         """Can filter by multiple event types."""
-        guest = make_guest(session, mazmo_user_id=1, username="testguest")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
 
         client.patch(
             f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
@@ -396,7 +396,7 @@ class TestListAllEvents:
         """Pagination works correctly."""
         # Create multiple events
         for i in range(5):
-            guest = make_guest(session, mazmo_user_id=i + 1, username=f"guest{i}")
+            guest = make_guest(session, mazmo_user_id=i + 1, mazmo_handle=f"guest{i}")
             client.patch(
                 f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
                 json={"reason": f"Ban {i}"},
@@ -431,7 +431,7 @@ class TestListMeetupEvents:
         """Staff can view events at a meetup."""
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
         meetup = make_meetup(session, org=org)
-        guest = make_guest(session, mazmo_user_id=1, username="attendee")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="attendee")
         make_rsvp(session, meetup=meetup, guest=guest)
 
         # Check in
@@ -471,8 +471,8 @@ class TestListMeetupEvents:
         meetup1 = make_meetup(session, org=org, name="Meetup 1", mazmo_meetup_url="https://mazmo.net/m1")
         meetup2 = make_meetup(session, org=org, name="Meetup 2", mazmo_meetup_url="https://mazmo.net/m2")
 
-        guest1 = make_guest(session, mazmo_user_id=1, username="guest1")
-        guest2 = make_guest(session, mazmo_user_id=2, username="guest2")
+        guest1 = make_guest(session, mazmo_user_id=1, mazmo_handle="guest1")
+        guest2 = make_guest(session, mazmo_user_id=2, mazmo_handle="guest2")
 
         make_rsvp(session, meetup=meetup1, guest=guest1)
         make_rsvp(session, meetup=meetup2, guest=guest2)
@@ -491,7 +491,7 @@ class TestListMeetupEvents:
         resp = client.get(f"/organizations/{org.id}/events/meetups/{meetup1.id}", headers=staff_headers)
         data = resp.json()
         assert data["total"] == 1
-        assert data["events"][0]["guest"]["username"] == "guest1"
+        assert data["events"][0]["guest"]["mazmo_handle"] == "guest1"
 
 
 # ======================================================================
@@ -519,7 +519,7 @@ class TestListGuestEvents:
         """
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
         meetup = make_meetup(session, org=org)
-        guest = make_guest(session, mazmo_user_id=1, username="testguest")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
         make_rsvp(session, meetup=meetup, guest=guest)
 
         # Create check-in event (as staff)
@@ -536,7 +536,7 @@ class TestListGuestEvents:
         )
 
         # Staff query - should only see ban
-        resp = client.get(f"/organizations/{org.id}/events/guests/{guest.mazmo_user_id}", headers=staff_headers)
+        resp = client.get(f"/organizations/{org.id}/events/guests/{guest.id}", headers=staff_headers)
         data = resp.json()
         assert data["total"] == 1
         assert data["events"][0]["event_type"] == "BAN"
@@ -553,7 +553,7 @@ class TestListGuestEvents:
         """Admins can see all events for a guest."""
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
         meetup = make_meetup(session, org=org)
-        guest = make_guest(session, mazmo_user_id=1, username="testguest")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
         make_rsvp(session, meetup=meetup, guest=guest)
 
         # Create check-in and ban events
@@ -568,7 +568,7 @@ class TestListGuestEvents:
         )
 
         # Admin query - should see both
-        resp = client.get(f"/organizations/{org.id}/events/guests/{guest.mazmo_user_id}", headers=admin_headers)
+        resp = client.get(f"/organizations/{org.id}/events/guests/{guest.id}", headers=admin_headers)
         data = resp.json()
         assert data["total"] == 2
         event_types = {e["event_type"] for e in data["events"]}
@@ -578,8 +578,11 @@ class TestListGuestEvents:
         self, client: TestClient, staff_headers: dict, session: Session, staff_user, org: Organization
     ):
         """Nonexistent guest returns 404."""
+        import uuid
+
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
-        resp = client.get(f"/organizations/{org.id}/events/guests/99999", headers=staff_headers)
+        fake_id = uuid.uuid4()
+        resp = client.get(f"/organizations/{org.id}/events/guests/{fake_id}", headers=staff_headers)
         assert resp.status_code == status.HTTP_404_NOT_FOUND
 
     def test_list_guest_events_staff_filter_checkin_returns_empty(
@@ -594,7 +597,7 @@ class TestListGuestEvents:
         """Staff filtering for CHECK_IN events returns empty (not authorized)."""
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
         meetup = make_meetup(session, org=org)
-        guest = make_guest(session, mazmo_user_id=1, username="testguest")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
         make_rsvp(session, meetup=meetup, guest=guest)
 
         client.post(
@@ -604,7 +607,7 @@ class TestListGuestEvents:
 
         # Staff filtering for CHECK_IN - should return empty
         resp = client.get(
-            f"/organizations/{org.id}/events/guests/{guest.mazmo_user_id}?type=CHECK_IN",
+            f"/organizations/{org.id}/events/guests/{guest.id}?type=CHECK_IN",
             headers=staff_headers,
         )
         data = resp.json()
@@ -626,7 +629,7 @@ class TestListStaffEvents:
         """Staff can view their own events."""
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
         meetup = make_meetup(session, org=org)
-        guest = make_guest(session, mazmo_user_id=1, username="attendee")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="attendee")
         make_rsvp(session, meetup=meetup, guest=guest)
 
         client.post(
@@ -663,7 +666,7 @@ class TestListStaffEvents:
         """Admins can view any staff member's events."""
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
         meetup = make_meetup(session, org=org)
-        guest = make_guest(session, mazmo_user_id=1, username="attendee")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="attendee")
         make_rsvp(session, meetup=meetup, guest=guest)
 
         client.post(
@@ -698,7 +701,7 @@ class TestEventFiltering:
 
     def test_filter_by_since(self, client: TestClient, admin_headers: dict, session: Session, org: Organization):
         """Can filter events by 'since' timestamp."""
-        guest = make_guest(session, mazmo_user_id=1, username="testguest")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
 
         client.patch(
             f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
@@ -721,8 +724,8 @@ class TestEventFiltering:
 
     def test_filter_by_guest_id(self, client: TestClient, admin_headers: dict, session: Session, org: Organization):
         """Can filter events by guest_id."""
-        guest1 = make_guest(session, mazmo_user_id=1, username="guest1")
-        guest2 = make_guest(session, mazmo_user_id=2, username="guest2")
+        guest1 = make_guest(session, mazmo_user_id=1, mazmo_handle="guest1")
+        guest2 = make_guest(session, mazmo_user_id=2, mazmo_handle="guest2")
 
         client.patch(
             f"/organizations/{org.id}/guests/{guest1.mazmo_user_id}/ban",
@@ -735,16 +738,16 @@ class TestEventFiltering:
             headers=admin_headers,
         )
 
-        resp = client.get(f"/organizations/{org.id}/events/?guest_id={guest1.mazmo_user_id}", headers=admin_headers)
+        resp = client.get(f"/organizations/{org.id}/events/?guest_id={guest1.id}", headers=admin_headers)
         data = resp.json()
         assert data["total"] == 1
-        assert data["events"][0]["guest"]["username"] == "guest1"
+        assert data["events"][0]["guest"]["mazmo_handle"] == "guest1"
 
     def test_filter_by_actor_id(
         self, client: TestClient, admin_headers: dict, session: Session, admin_user, org: Organization
     ):
         """Can filter events by actor_id."""
-        guest = make_guest(session, mazmo_user_id=1, username="testguest")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
 
         client.patch(
             f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
@@ -770,7 +773,7 @@ class TestEventResponseFormat:
         self, client: TestClient, admin_headers: dict, session: Session, admin_user, org: Organization
     ):
         """Events include actor username and id."""
-        guest = make_guest(session, mazmo_user_id=1, username="testguest")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
 
         client.patch(
             f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
@@ -787,7 +790,7 @@ class TestEventResponseFormat:
         self, client: TestClient, admin_headers: dict, session: Session, org: Organization
     ):
         """Events include guest username, displayname, and mazmo_user_id."""
-        guest = make_guest(session, mazmo_user_id=123, username="guestuser", displayname="Guest User")
+        guest = make_guest(session, mazmo_user_id=123, mazmo_handle="guestuser", displayname="Guest User")
 
         client.patch(
             f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
@@ -798,7 +801,7 @@ class TestEventResponseFormat:
         resp = client.get(f"/organizations/{org.id}/events/", headers=admin_headers)
         event = resp.json()["events"][0]
         assert event["guest"]["mazmo_user_id"] == 123
-        assert event["guest"]["username"] == "guestuser"
+        assert event["guest"]["mazmo_handle"] == "guestuser"
         assert event["guest"]["displayname"] == "Guest User"
 
     def test_event_includes_meetup_id_for_checkin(
@@ -813,7 +816,7 @@ class TestEventResponseFormat:
         """Check-in events include the meetup_id."""
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
         meetup = make_meetup(session, org=org)
-        guest = make_guest(session, mazmo_user_id=1, username="attendee")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="attendee")
         make_rsvp(session, meetup=meetup, guest=guest)
 
         client.post(
@@ -829,7 +832,7 @@ class TestEventResponseFormat:
         self, client: TestClient, admin_headers: dict, session: Session, org: Organization
     ):
         """Events include reason when one was provided."""
-        guest = make_guest(session, mazmo_user_id=1, username="testguest")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
 
         client.patch(
             f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
@@ -846,7 +849,7 @@ class TestEventResponseFormat:
     ):
         """Events are returned newest first."""
         for i in range(3):
-            guest = make_guest(session, mazmo_user_id=i + 1, username=f"guest{i}")
+            guest = make_guest(session, mazmo_user_id=i + 1, mazmo_handle=f"guest{i}")
             client.patch(
                 f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
                 json={"reason": f"Ban {i}"},
