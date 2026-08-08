@@ -1,19 +1,29 @@
 """
 Guest and RSVP-related schemas.
 
-Guest identity is now separate from ban status - bans are per-org.
-GuestPublic contains identity only (no is_banned).
+A guest may or may not have a Mazmo account: mazmo_user_id and
+mazmo_handle are both nullable. instagram_username is optional
+regardless of Mazmo linkage. Guest identity is separate from ban status
+- bans are per-org. GuestPublic contains identity only (no is_banned).
 GuestWithBanPublic adds org-scoped ban status for endpoints that need it.
 """
 
+import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def _strip_leading_at(value: str | None) -> str | None:
+    """Normalizes an Instagram handle so '@user' and 'user' store the same way."""
+    if value is None:
+        return None
+    return value.removeprefix("@")
 
 
 class GuestPublic(BaseModel):
     """
-    A Mazmo user's identity (cached locally).
+    A guest's identity (cached locally, may or may not have a Mazmo account).
 
     Identity-only - no RSVP or ban state. Bans are per-org and are
     included only in org-scoped endpoints via GuestWithBanPublic.
@@ -21,9 +31,11 @@ class GuestPublic(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    mazmo_user_id: int
-    username: str
+    id: uuid.UUID
+    mazmo_user_id: int | None
+    mazmo_handle: str | None
     displayname: str
+    instagram_username: str | None
 
 
 class GuestWithBanPublic(GuestPublic):
@@ -114,20 +126,54 @@ class PaymentResponse(BaseModel):
     paid_by: CheckedInByPublic
 
 
-# ── Manual guest creation ─────────────────────────────────────────────────────
+# -- Guest creation and editing -------------------------------------------------
 
 
 class CreateGuestRequest(BaseModel):
-    """Request body for creating a guest by Mazmo username."""
+    """Request body for creating a guest by Mazmo username (POST /guests/mazmo)."""
 
     username: str = Field(
         min_length=1,
         max_length=255,
         description="Mazmo username to look up (e.g. 'cindydark')",
     )
+    instagram_username: str | None = Field(default=None, max_length=64)
+
+    _normalize_instagram = field_validator("instagram_username")(_strip_leading_at)
 
 
-# ── Ban-related schemas ───────────────────────────────────────────────────────
+class CreateManualGuestRequest(BaseModel):
+    """Request body for creating a guest without a Mazmo account (POST /guests/manual)."""
+
+    displayname: str = Field(min_length=1, max_length=255)
+    instagram_username: str | None = Field(default=None, max_length=64)
+
+    _normalize_instagram = field_validator("instagram_username")(_strip_leading_at)
+
+
+class LinkMazmoRequest(BaseModel):
+    """Request body for linking an existing guest to a Mazmo account."""
+
+    username: str = Field(min_length=1, max_length=255, description="Mazmo username to link")
+
+
+class UpdateGuestRequest(BaseModel):
+    """
+    Request body for editing a guest's displayname and/or Instagram handle.
+
+    Both fields are optional (partial update). Whether an omitted key
+    means "don't touch" vs. an explicit null meaning "clear it" is
+    resolved by the router via payload.model_fields_set, not by this
+    schema - see update_guest() in app/routers/guests.py.
+    """
+
+    displayname: str | None = Field(default=None, min_length=1, max_length=255)
+    instagram_username: str | None = Field(default=None, max_length=64)
+
+    _normalize_instagram = field_validator("instagram_username")(_strip_leading_at)
+
+
+# -- Ban-related schemas ---------------------------------------------------------
 
 
 class BanGuestRequest(BaseModel):
@@ -145,9 +191,11 @@ class BannedGuestPublic(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    mazmo_user_id: int
-    username: str
+    id: uuid.UUID
+    mazmo_user_id: int | None
+    mazmo_handle: str | None
     displayname: str
+    instagram_username: str | None
     banned_at: datetime
     banned_reason: str
     banned_by_id: int | None
