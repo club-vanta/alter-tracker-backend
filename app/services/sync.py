@@ -16,6 +16,8 @@ MeetupRsvp table:
   paid_by_id).
 """
 
+import uuid
+
 import structlog
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import Session, func, select
@@ -57,7 +59,6 @@ class GuestSyncer:
             )
 
         guests_to_insert = self._build_guests(rsvps, user_details)
-        rsvps_to_upsert = self._build_rsvps(rsvps, user_details)
 
         if not guests_to_insert:
             log.warning("All RSVPs lacked user detail - nothing inserted.")
@@ -67,10 +68,14 @@ class GuestSyncer:
                 total_in_db=self._count_rsvps(),
             )
 
-        # First upsert guests (identity), then upsert RSVPs
+        # Guests must be upserted (and their internal ids resolved) before
+        # RSVPs can be built, since MeetupRsvp.guest_id is now the internal
+        # UUID, not the raw mazmo_user_id.
         self._upsert_guests(guests_to_insert)
+        guest_id_map = self._fetch_guest_id_map(list(rsvps.keys()))
+        rsvps_to_upsert = self._build_rsvps(rsvps, user_details, guest_id_map)
         inserted = self._upsert_rsvps(rsvps_to_upsert)
-        self._update_cancelled_rsvps(set(rsvps.keys()))
+        self._update_cancelled_rsvps(guest_id_map)
 
         total = self._count_rsvps()
 
@@ -119,16 +124,34 @@ class GuestSyncer:
             guests.append(
                 Guest(
                     mazmo_user_id=user_id,
-                    username=user.username,
+                    mazmo_handle=user.username,
                     displayname=user.displayname,
                 )
             )
         return guests
 
+    def _fetch_guest_id_map(self, mazmo_user_ids: list[MazmoUserId]) -> dict[MazmoUserId, uuid.UUID]:
+        """
+        Resolve mazmo_user_id -> internal guest.id for a batch of Mazmo IDs.
+
+        Must run AFTER _upsert_guests, so it covers both guests that
+        already existed and ones just inserted by that upsert.
+        """
+        rows = self._session.exec(
+            select(Guest.mazmo_user_id, Guest.id).where(Guest.mazmo_user_id.in_(mazmo_user_ids))  # type: ignore[union-attr]
+        ).all()
+        # Guest.mazmo_user_id is nullable at the type level (manual guests have
+        # none), but every row here matched the .in_() filter above, so it can
+        # never actually be None - the guard just satisfies the type checker.
+        return {
+            MazmoUserId(mazmo_user_id): guest_id for mazmo_user_id, guest_id in rows if mazmo_user_id is not None
+        }
+
     def _build_rsvps(
         self,
         rsvps: dict[MazmoUserId, MazmoRsvpEntry],
         user_details: dict[MazmoUserId, MazmoUserEntry],
+        guest_id_map: dict[MazmoUserId, uuid.UUID],
     ) -> list[MeetupRsvp]:
         """
         Build MeetupRsvp model instances from Mazmo data.
@@ -138,10 +161,14 @@ class GuestSyncer:
         for user_id, rsvp in rsvps.items():
             if user_id not in user_details:
                 continue
+            guest_id = guest_id_map.get(user_id)
+            if guest_id is None:
+                log.warning("No internal guest id found for mazmo_user_id=%d after upsert - skipping", user_id)
+                continue
             result.append(
                 MeetupRsvp(
                     meetup_id=self._meetup.id,
-                    guest_id=user_id,
+                    guest_id=guest_id,
                     rsvp_time=rsvp.joinedAt,
                     cancelled_rsvp=False,
                 )
@@ -204,16 +231,26 @@ class GuestSyncer:
 
         return self._count_rsvps() - count_before
 
-    def _update_cancelled_rsvps(self, current_ids: set[MazmoUserId]) -> None:
+    def _update_cancelled_rsvps(self, guest_id_map: dict[MazmoUserId, uuid.UUID]) -> None:
         """
         Flip `cancelled_rsvp` for RSVPs whose status changed FOR THIS MEETUP.
-        - RSVPs no longer in Mazmo's list are marked as cancelled.
+        - RSVPs whose guest is not in guest_id_map.values() (i.e. not in
+          the latest Mazmo fetch) are marked as cancelled.
         Only writes rows where the status actually changed.
+
+        NOTE (preserved from before this refactor): this also re-flags
+        walk-in RSVPs as cancelled_rsvp=True if that guest never RSVPed
+        on Mazmo, whether or not they have a Mazmo account. This was
+        already true for Mazmo-linked walk-ins before this change; it now
+        applies uniformly to manual (no-Mazmo) walk-ins too. cancelled_rsvp
+        does not block check-in (has_arrived is separate and untouched by
+        sync), so this is informational, not a functional regression.
         """
+        current_guest_ids = set(guest_id_map.values())
         all_rsvps = self._session.exec(select(MeetupRsvp).where(MeetupRsvp.meetup_id == self._meetup.id)).all()
         changed = 0
         for rsvp in all_rsvps:
-            should_be_cancelled = rsvp.guest_id not in current_ids
+            should_be_cancelled = rsvp.guest_id not in current_guest_ids
             if rsvp.cancelled_rsvp != should_be_cancelled:
                 rsvp.cancelled_rsvp = should_be_cancelled
                 self._session.add(rsvp)

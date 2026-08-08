@@ -38,8 +38,8 @@ def test_sync_inserts_all_rsvpd_guests_returns_200_ok(
     data = resp.json()
     assert data["inserted"] == 2
     assert data["total_in_db"] == 2
-    usernames = {g.username for g in session.exec(select(Guest)).all()}
-    assert usernames == {"alice", "bob"}
+    handles = {g.mazmo_handle for g in session.exec(select(Guest)).all()}
+    assert handles == {"alice", "bob"}
 
 
 def test_sync_creates_rsvp_records_for_meetup(
@@ -57,7 +57,10 @@ def test_sync_creates_rsvp_records_for_meetup(
     rsvps = session.exec(select(MeetupRsvp).where(MeetupRsvp.meetup_id == meetup.id)).all()
     assert len(rsvps) == 2
     guest_ids = {r.guest_id for r in rsvps}
-    assert guest_ids == {111, 222}
+    expected_guest_ids = {
+        g.id for g in session.exec(select(Guest).where(Guest.mazmo_user_id.in_({111, 222}))).all()  # type: ignore[union-attr]
+    }
+    assert guest_ids == expected_guest_ids
 
 
 def test_sync_updates_existing_rsvp_on_re_rsvp(
@@ -70,7 +73,7 @@ def test_sync_updates_existing_rsvp_on_re_rsvp(
     we should flip cancelled_rsvp back to False so they appear in the
     guest list again.
     """
-    alice = make_guest(session, mazmo_user_id=111, username="alice")
+    alice = make_guest(session, mazmo_user_id=111, mazmo_handle="alice")
     rsvp = make_rsvp(session, meetup=meetup, guest=alice)
     rsvp.cancelled_rsvp = True
     session.add(rsvp)
@@ -93,7 +96,7 @@ def test_sync_does_not_overwrite_checkin_data_of_arrived_guests_returns_200_ok(
     at 8:30pm, we must NOT lose the check-in. The upsert only updates
     rsvp_time and cancelled_rsvp, never the check-in fields.
     """
-    alice = make_guest(session, mazmo_user_id=111, username="alice")
+    alice = make_guest(session, mazmo_user_id=111, mazmo_handle="alice")
     rsvp = make_rsvp(
         session,
         meetup=meetup,
@@ -121,7 +124,7 @@ def test_sync_does_not_overwrite_payment_data_of_paid_guests_returns_200_ok(
     then staff syncs later, we must NOT lose that payment mark. The upsert
     only updates rsvp_time and cancelled_rsvp, never the payment fields.
     """
-    alice = make_guest(session, mazmo_user_id=111, username="alice")
+    alice = make_guest(session, mazmo_user_id=111, mazmo_handle="alice")
     rsvp = make_rsvp(
         session,
         meetup=meetup,
@@ -289,7 +292,7 @@ def test_checkin_stores_staff_id_who_performed_checkin(
     """
     make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
 
-    guest = make_guest(session, mazmo_user_id=999, username="checkintest")
+    guest = make_guest(session, mazmo_user_id=999, mazmo_handle="checkintest")
     make_rsvp(session, meetup=meetup, guest=guest)
 
     resp = client.post(
