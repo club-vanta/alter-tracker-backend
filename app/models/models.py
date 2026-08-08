@@ -330,8 +330,8 @@ class EventLog(SQLModel, table=True):
     """
     Audit log entry for trackable events, scoped to an organization.
 
-    org_id is NULL only for global events (GUEST_CREATED).
-    All other event types have an org_id.
+    org_id is NULL only for global events: GUEST_CREATED, GUEST_MAZMO_LINKED,
+    and GUEST_MAZMO_UNLINKED. All other event types have an org_id.
     """
 
     __tablename__ = "event_log"  # type: ignore[assignment]

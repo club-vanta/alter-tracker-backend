@@ -1680,7 +1680,7 @@
                   "already_banned": {
                     "summary": "Cannot ban twice",
                     "value": {
-                      "detail": "Cannot ban guest: 'usuario_problematico' (mazmo_user_id=99999) is already banned. They were banned on 2024-03-20 18:30:00+00:00 for reason: 'Comportamiento agresivo'. To update the ban reason, unban first via PATCH /guests/99999/unban, then re-ban."
+                      "detail": "Cannot ban guest: 'usuario_problematico' (id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) is already banned. They were banned on 2024-03-20 18:30:00+00:00 for reason: 'Comportamiento agresivo'. To update the ban reason, unban first via PATCH /organizations/{org_id}/guests/a1b2c3d4-e5f6-7890-abcd-ef1234567890/unban, then re-ban."
                     }
                   }
                 }
@@ -1836,7 +1836,7 @@
                   "not_banned": {
                     "summary": "Cannot unban a non-banned guest",
                     "value": {
-                      "detail": "Cannot unban guest: 'fiestero_feliz' (mazmo_user_id=12345) is not currently banned. They may have been unbanned by another admin. Check audit trail at GET /events/guests/12345."
+                      "detail": "Cannot unban guest: 'fiestero_feliz' (id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) is not currently banned. They may have been unbanned by another admin. Check audit trail at GET /organizations/{org_id}/events/guests/a1b2c3d4-e5f6-7890-abcd-ef1234567890."
                     }
                   }
                 }
@@ -3324,7 +3324,7 @@
           "guests"
         ],
         "summary": "Edit a guest's displayname and/or Instagram handle",
-        "description": "Edit a guest's displayname and/or instagram_username.\n\nA key omitted from the request body is left untouched. A key sent\nexplicitly as null clears it (only instagram_username can be null -\ndisplayname is required, so sending it as null is rejected by the\nschema before this function runs). This distinction uses\npayload.model_fields_set, since payload.instagram_username is None in\nboth the \"omitted\" and \"explicitly cleared\" cases.\n\nmazmo_user_id and mazmo_handle cannot be changed here - use\nlink-mazmo/unlink-mazmo for that. This is a cosmetic edit, not an\naudited business event, so no event_log entry is written.",
+        "description": "Edit a guest's displayname and/or instagram_username.\n\nA key omitted from the request body is left untouched. A key sent\nexplicitly as null clears it - but only for instagram_username.\ndisplayname is typed str | None on the request schema, so the schema\nitself accepts {\"displayname\": null} without a 422; it is this\nfunction's own guard (payload.displayname is not None) that silently\nignores an explicit null for displayname instead of clearing it,\nbecause Guest.displayname is non-nullable and cannot actually be\ncleared. This distinction uses payload.model_fields_set, since\npayload.instagram_username is None in both the \"omitted\" and\n\"explicitly cleared\" cases.\n\nmazmo_user_id and mazmo_handle cannot be changed here - use\nlink-mazmo/unlink-mazmo for that. This is a cosmetic edit, not an\naudited business event, so no event_log entry is written.",
         "operationId": "update_guest_guests__guest_id__patch",
         "security": [
           {
@@ -3754,7 +3754,7 @@
           "guests"
         ],
         "summary": "Unlink a guest's Mazmo account",
-        "description": "Detach a guest's Mazmo account, e.g. to undo a link made by mistake.\n\ndisplayname is NOT reverted to any prior value (no name history is\nkept) - it stays as whatever it was, and can be corrected afterward\nvia PATCH /guests/{guest_id}. The freed mazmo_user_id can be linked\nto this guest again, or to a different one.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is not currently linked.",
+        "description": "Detach a guest's Mazmo account, e.g. to undo a link made by mistake.\n\ndisplayname is NOT reverted to any prior value (no name history is\nkept) - it stays as whatever it was, and can be corrected afterward\nvia PATCH /guests/{guest_id}. The freed mazmo_user_id can be linked\nto this guest again, or to a different one.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is not currently linked.\nReturns 409 if the guest has an active ban in any organization - see\nthe ban-evasion guard below for why this is blocked.",
         "operationId": "unlink_guest_mazmo_guests__guest_id__unlink_mazmo_patch",
         "security": [
           {
@@ -4848,7 +4848,7 @@
                   "guest_not_in_system": {
                     "summary": "Guest has no record in the system",
                     "value": {
-                      "detail": "Cannot add walk-in: guest mazmo_user_id=55555 does not exist in the system. Register them first via POST /guests/ (username lookup) or sync a meetup they've RSVPed to. Search known guests via GET /guests/ to find the correct ID."
+                      "detail": "Cannot add walk-in: guest id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist in the system. Register them first via POST /guests/mazmo (Mazmo handle lookup) or POST /guests/manual (no Mazmo account), or sync a meetup they've RSVPed to. Search known guests via GET /guests/ to find the correct ID."
                     }
                   }
                 }
@@ -5010,7 +5010,7 @@
                   "not_rsvped": {
                     "summary": "Guest didn't RSVP to this meetup",
                     "value": {
-                      "detail": "Cannot check in: guest mazmo_user_id=12345 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
+                      "detail": "Cannot check in: guest id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
                     }
                   }
                 }
@@ -5184,7 +5184,7 @@
                   "not_rsvped": {
                     "summary": "Guest didn't RSVP to this meetup",
                     "value": {
-                      "detail": "Cannot check in: guest mazmo_user_id=12345 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
+                      "detail": "Cannot check in: guest id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
                     }
                   }
                 }
@@ -5199,7 +5199,7 @@
                   "not_checked_in": {
                     "summary": "Cannot undo non-existent check-in",
                     "value": {
-                      "detail": "Cannot undo check-in: guest 'fiestero_feliz' (mazmo_user_id=12345) is not currently checked in. They may have been un-checked by someone else. See event log: GET /events/meetups/{meetup_id}?type=CHECK_IN,UNDO_CHECK_IN"
+                      "detail": "Cannot undo check-in: guest 'fiestero_feliz' (id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) is not currently checked in. They may have been un-checked by someone else. See event log: GET /events/meetups/{meetup_id}?type=CHECK_IN,UNDO_CHECK_IN"
                     }
                   }
                 }
@@ -5363,7 +5363,7 @@
                   "not_rsvped": {
                     "summary": "Guest didn't RSVP to this meetup",
                     "value": {
-                      "detail": "Cannot mark payment: guest mazmo_user_id=12345 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
+                      "detail": "Cannot mark payment: guest id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
                     }
                   }
                 }
@@ -5535,7 +5535,7 @@
                   "not_rsvped": {
                     "summary": "Guest didn't RSVP to this meetup",
                     "value": {
-                      "detail": "Cannot undo payment: guest mazmo_user_id=12345 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
+                      "detail": "Cannot undo payment: guest id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
                     }
                   }
                 }
@@ -5550,7 +5550,7 @@
                   "not_paid": {
                     "summary": "Cannot undo a non-existent payment mark",
                     "value": {
-                      "detail": "Cannot undo payment: guest 'fiestero_feliz' (mazmo_user_id=12345) is not currently marked as paid. They may have had their payment undone by someone else. See event log: GET /events/meetups/{meetup_id}?type=PAYMENT_RECORDED,PAYMENT_REVOKED"
+                      "detail": "Cannot undo payment: guest 'fiestero_feliz' (id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) is not currently marked as paid. They may have had their payment undone by someone else. See event log: GET /events/meetups/{meetup_id}?type=PAYMENT_RECORDED,PAYMENT_REVOKED"
                     }
                   }
                 }

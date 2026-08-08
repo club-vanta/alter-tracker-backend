@@ -12,9 +12,9 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from app.models.models import EventLog, EventType, OrgRole
+from app.models.models import EventLog, EventType, Guest, OrgRole
 from app.services.mazmo import MazmoAPIError, MazmoNetworkError
-from tests.conftest import make_guest, make_org, make_org_member
+from tests.conftest import make_ban, make_guest, make_org, make_org_member
 
 # -- List guests ---------------------------------------------------------------
 
@@ -444,6 +444,32 @@ def test_unlink_mazmo_without_token_returns_401(client: TestClient, session: Ses
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
 
+def test_unlink_mazmo_returns_409_when_guest_has_active_ban(
+    client: TestClient, staff_headers: dict, session: Session, admin_user
+):
+    """
+    Verify that unlinking a banned guest's Mazmo account returns 409.
+
+    WHY: Unlinking a banned guest would free their Mazmo handle for
+    POST /guests/mazmo to re-register as a brand-new, unbanned guest -
+    a ban evasion vector. This must be blocked regardless of which
+    organization issued the ban.
+    """
+    org = make_org(session)
+    guest = make_guest(session, mazmo_user_id=39119, mazmo_handle="cindydark", displayname="Cindy")
+    make_ban(session, org=org, guest=guest, banned_by=admin_user, reason="Violated community guidelines")
+
+    resp = client.patch(f"/guests/{guest.id}/unlink-mazmo", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+    session.expire_all()
+    unchanged = session.get(Guest, guest.id)
+    assert unchanged is not None
+    assert unchanged.mazmo_user_id == 39119
+    assert unchanged.mazmo_handle == "cindydark"
+
+
 # -- Edit guest -------------------------------------------------------------------
 
 
@@ -491,6 +517,23 @@ def test_update_guest_omitting_instagram_username_leaves_it_unchanged(
     resp = client.patch(f"/guests/{guest.id}", json={"displayname": "New Name"}, headers=staff_headers)
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json()["instagram_username"] == "keep.this"
+
+
+def test_update_guest_with_explicit_null_displayname_leaves_it_unchanged(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """
+    Verify that {"displayname": null} is accepted (200), not rejected (422).
+
+    WHY: UpdateGuestRequest.displayname is typed str | None, so Pydantic
+    accepts an explicit null - it does NOT get rejected by the schema.
+    The router's own guard silently ignores it instead, since
+    Guest.displayname is non-nullable and cannot actually be cleared.
+    """
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="someone", displayname="Original Name")
+    resp = client.patch(f"/guests/{guest.id}", json={"displayname": None}, headers=staff_headers)
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["displayname"] == "Original Name"
 
 
 def test_update_guest_cannot_change_mazmo_fields(client: TestClient, staff_headers: dict, session: Session):

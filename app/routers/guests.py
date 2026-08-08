@@ -26,7 +26,7 @@ from sqlmodel import Session, select
 from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.deps import get_approved_user
-from app.models.models import EventLog, EventType, Guest, User
+from app.models.models import EventLog, EventType, Guest, OrganizationBan, User
 from app.openapi_examples.guests_examples import (
     CREATE_MANUAL_GUEST_REQUEST_EXAMPLES,
     CREATE_MANUAL_GUEST_RESPONSES,
@@ -408,6 +408,8 @@ async def unlink_guest_mazmo(
 
     Returns 404 if the guest doesn't exist.
     Returns 409 if the guest is not currently linked.
+    Returns 409 if the guest has an active ban in any organization - see
+    the ban-evasion guard below for why this is blocked.
     """
     guest = _get_guest_or_404(session, guest_id)
 
@@ -415,6 +417,41 @@ async def unlink_guest_mazmo(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(f"Cannot unlink: guest '{guest.displayname}' (id={guest_id}) is not linked to a Mazmo account."),
+        )
+
+    # Ban-evasion guard.
+    #
+    # Bans live on OrganizationBan, keyed to this guest's internal id, so an
+    # active ban would survive the unlink itself - the OrganizationBan row
+    # is untouched by this endpoint. The actual danger is what unlinking
+    # enables next: once mazmo_user_id/mazmo_handle are cleared here, that
+    # Mazmo handle is no longer claimed by anyone in our database, so
+    # POST /guests/mazmo with the SAME Mazmo handle creates a brand-new
+    # Guest row - fresh UUID, zero OrganizationBan rows, no dedup check
+    # against this (banned) guest. That new guest can then check in at the
+    # door as if nothing happened, even though it is controlled by the same
+    # banned person's Mazmo account. Banning requires org ADMIN (see
+    # PATCH /organizations/{org_id}/guests/{guest_id}/ban), but this
+    # unlink-mazmo endpoint only requires an approved user - so without
+    # this check, any approved staff member could silently undo an admin's
+    # ban decision without ever touching the ban record. We deliberately
+    # query across ALL organizations (no org_id filter): bans are per-org,
+    # but re-registering as a fresh identity would let the guest walk back
+    # into EVERY org they were banned from, not just the one an admin
+    # happened to ban them in.
+    active_ban = session.exec(select(OrganizationBan).where(OrganizationBan.guest_id == guest_id)).first()
+    if active_ban:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Cannot unlink: guest '{guest.displayname}' (id={guest_id}) has an active ban "
+                f"in organization id={active_ban.org_id} (reason: '{active_ban.reason}'). "
+                f"Unlinking is blocked specifically because it would free Mazmo handle "
+                f"'@{guest.mazmo_handle}' to be re-registered via POST /guests/mazmo as a brand-new, "
+                f"unbanned guest - letting a banned person re-enter as if they were never banned. "
+                f"If you genuinely need to unlink, first unban them via "
+                f"PATCH /organizations/{active_ban.org_id}/guests/{guest_id}/unban, then retry."
+            ),
         )
 
     previous_mazmo_user_id = guest.mazmo_user_id
@@ -461,11 +498,15 @@ async def update_guest(
     Edit a guest's displayname and/or instagram_username.
 
     A key omitted from the request body is left untouched. A key sent
-    explicitly as null clears it (only instagram_username can be null -
-    displayname is required, so sending it as null is rejected by the
-    schema before this function runs). This distinction uses
-    payload.model_fields_set, since payload.instagram_username is None in
-    both the "omitted" and "explicitly cleared" cases.
+    explicitly as null clears it - but only for instagram_username.
+    displayname is typed str | None on the request schema, so the schema
+    itself accepts {"displayname": null} without a 422; it is this
+    function's own guard (payload.displayname is not None) that silently
+    ignores an explicit null for displayname instead of clearing it,
+    because Guest.displayname is non-nullable and cannot actually be
+    cleared. This distinction uses payload.model_fields_set, since
+    payload.instagram_username is None in both the "omitted" and
+    "explicitly cleared" cases.
 
     mazmo_user_id and mazmo_handle cannot be changed here - use
     link-mazmo/unlink-mazmo for that. This is a cosmetic edit, not an

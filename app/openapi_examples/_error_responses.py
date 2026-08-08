@@ -382,7 +382,7 @@ def error_404_rsvp(action: str = "check in") -> ResponsesDict:
                             "summary": "Guest didn't RSVP to this meetup",
                             "value": {
                                 "detail": (
-                                    f"Cannot {action}: guest mazmo_user_id=12345 is not RSVPed. "
+                                    f"Cannot {action}: guest id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 is not RSVPed. "
                                     f"Either: (1) they haven't RSVPed on Mazmo yet, "
                                     f"(2) RSVP list needs syncing - try POST /meetups/{{meetup_id}}/sync, "
                                     f"or (3) wrong ID - check GET /meetups/{{meetup_id}}/guests."
@@ -468,10 +468,12 @@ def error_409_already_banned() -> ResponsesDict:
                             "summary": "Cannot ban twice",
                             "value": {
                                 "detail": (
-                                    "Cannot ban guest: 'usuario_problematico' (mazmo_user_id=99999) "
+                                    "Cannot ban guest: 'usuario_problematico' "
+                                    "(id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) "
                                     "is already banned. They were banned on 2024-03-20 18:30:00+00:00 "
                                     "for reason: 'Comportamiento agresivo'. To update the ban reason, "
-                                    "unban first via PATCH /guests/99999/unban, then re-ban."
+                                    "unban first via PATCH /organizations/{org_id}/guests/"
+                                    "a1b2c3d4-e5f6-7890-abcd-ef1234567890/unban, then re-ban."
                                 )
                             },
                         },
@@ -494,9 +496,11 @@ def error_409_not_banned() -> ResponsesDict:
                             "summary": "Cannot unban a non-banned guest",
                             "value": {
                                 "detail": (
-                                    "Cannot unban guest: 'fiestero_feliz' (mazmo_user_id=12345) "
+                                    "Cannot unban guest: 'fiestero_feliz' "
+                                    "(id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) "
                                     "is not currently banned. They may have been unbanned by another admin. "
-                                    "Check audit trail at GET /events/guests/12345."
+                                    "Check audit trail at GET /organizations/{org_id}/events/guests/"
+                                    "a1b2c3d4-e5f6-7890-abcd-ef1234567890."
                                 )
                             },
                         },
@@ -519,10 +523,12 @@ def error_409_already_checked_in() -> ResponsesDict:
                             "summary": "Cannot check in twice",
                             "value": {
                                 "detail": (
-                                    "Cannot check in: guest 'fiestero_feliz' (mazmo_user_id=12345) "
+                                    "Cannot check in: guest 'fiestero_feliz' "
+                                    "(id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) "
                                     "is already checked in. They arrived at 2024-03-23 20:05:32+00:00 "
                                     "(arrival #1). "
-                                    "To undo this, use PATCH /meetups/{meetup_id}/guests/12345/undo-checkin."
+                                    "To undo this, use PATCH /meetups/{meetup_id}/guests/"
+                                    "a1b2c3d4-e5f6-7890-abcd-ef1234567890/undo-checkin."
                                 )
                             },
                         },
@@ -546,7 +552,7 @@ def error_409_not_checked_in() -> ResponsesDict:
                             "value": {
                                 "detail": (
                                     "Cannot undo check-in: guest 'fiestero_feliz' "
-                                    "(mazmo_user_id=12345) is not currently checked in. "
+                                    "(id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) is not currently checked in. "
                                     "They may have been un-checked by someone else. "
                                     "See event log: GET /events/meetups/{meetup_id}?type=CHECK_IN,UNDO_CHECK_IN"
                                 )
@@ -596,9 +602,11 @@ def error_409_already_paid() -> ResponsesDict:
                             "summary": "Cannot mark payment twice",
                             "value": {
                                 "detail": (
-                                    "Cannot mark payment: guest 'fiestero_feliz' (mazmo_user_id=12345) "
+                                    "Cannot mark payment: guest 'fiestero_feliz' "
+                                    "(id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) "
                                     "already paid at 2024-03-23 19:30:00+00:00. "
-                                    "To undo this, use PATCH /meetups/{meetup_id}/guests/12345/payment/undo."
+                                    "To undo this, use PATCH /meetups/{meetup_id}/guests/"
+                                    "a1b2c3d4-e5f6-7890-abcd-ef1234567890/payment/undo."
                                 )
                             },
                         },
@@ -622,7 +630,7 @@ def error_409_not_paid() -> ResponsesDict:
                             "value": {
                                 "detail": (
                                     "Cannot undo payment: guest 'fiestero_feliz' "
-                                    "(mazmo_user_id=12345) is not currently marked as paid. "
+                                    "(id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) is not currently marked as paid. "
                                     "They may have had their payment undone by someone else. "
                                     "See event log: GET /events/meetups/{meetup_id}"
                                     "?type=PAYMENT_RECORDED,PAYMENT_REVOKED"
@@ -648,9 +656,11 @@ def error_409_checkin_payment_required() -> ResponsesDict:
                             "summary": "Cannot check in an unpaid guest at a paid event",
                             "value": {
                                 "detail": (
-                                    "Cannot check in: guest 'fiestero_feliz' (mazmo_user_id=12345) "
+                                    "Cannot check in: guest 'fiestero_feliz' "
+                                    "(id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) "
                                     "has not paid the entrance fee for 'Alter Buenos Aires - Abril 2024 (Pago)'. "
-                                    "Mark the payment first via PATCH /meetups/{meetup_id}/guests/12345/payment."
+                                    "Mark the payment first via PATCH /meetups/{meetup_id}/guests/"
+                                    "a1b2c3d4-e5f6-7890-abcd-ef1234567890/payment."
                                 )
                             },
                         },
@@ -799,7 +809,8 @@ def error_409_walkin_already_rsvped() -> ResponsesDict:
                             "summary": "Guest already has an RSVP (Mazmo sync or previous walk-in)",
                             "value": {
                                 "detail": (
-                                    "Cannot add walk-in: guest 'fiestero_feliz' (mazmo_user_id=12345) "
+                                    "Cannot add walk-in: guest 'fiestero_feliz' "
+                                    "(id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) "
                                     "already has an RSVP for this meetup. "
                                     "They may have RSVPed on Mazmo or been added as a walk-in previously."
                                 )
@@ -824,8 +835,10 @@ def error_404_walkin_guest_not_in_system() -> ResponsesDict:
                             "summary": "Guest has no record in the system",
                             "value": {
                                 "detail": (
-                                    "Cannot add walk-in: guest mazmo_user_id=55555 does not exist in the system. "
-                                    "Register them first via POST /guests/ (username lookup) or sync a meetup they've RSVPed to. "  # noqa: E501
+                                    "Cannot add walk-in: guest id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not "
+                                    "exist in the system. Register them first via POST /guests/mazmo (Mazmo "
+                                    "handle lookup) or POST /guests/manual (no Mazmo account), or sync a "
+                                    "meetup they've RSVPed to. "
                                     "Search known guests via GET /guests/ to find the correct ID."
                                 )
                             },
