@@ -730,9 +730,7 @@ def test_checkin_produces_exactly_one_event_log_entry_on_duplicate_attempt(
     )
 
     events = session.exec(
-        select(EventLog)
-        .where(EventLog.guest_id == guest.id)
-        .where(EventLog.event_type == EventType.CHECK_IN)
+        select(EventLog).where(EventLog.guest_id == guest.id).where(EventLog.event_type == EventType.CHECK_IN)
     ).all()
     assert len(events) == 1
     assert events[0].actor_id == staff_user.id
@@ -770,9 +768,7 @@ def test_checkin_event_log_records_first_staff_not_second(
     )
 
     event = session.exec(
-        select(EventLog)
-        .where(EventLog.guest_id == guest.id)
-        .where(EventLog.event_type == EventType.CHECK_IN)
+        select(EventLog).where(EventLog.guest_id == guest.id).where(EventLog.event_type == EventType.CHECK_IN)
     ).first()
     assert event is not None
     assert event.actor_id == staff_user.id  # first, not admin
@@ -848,9 +844,7 @@ def test_undo_checkin_writes_event_log_with_reason(
     )
 
     event = session.exec(
-        select(EventLog)
-        .where(EventLog.guest_id == guest.id)
-        .where(EventLog.event_type == EventType.UNDO_CHECK_IN)
+        select(EventLog).where(EventLog.guest_id == guest.id).where(EventLog.event_type == EventType.UNDO_CHECK_IN)
     ).first()
     assert event is not None
     assert event.reason == "Wrong person scanned"
@@ -1528,9 +1522,7 @@ def test_mark_payment_sets_has_paid_and_writes_event_log(
     assert data["paid_by"]["username"] == "admin"
 
     event = session.exec(
-        select(EventLog)
-        .where(EventLog.guest_id == guest.id)
-        .where(EventLog.event_type == EventType.PAYMENT_RECORDED)
+        select(EventLog).where(EventLog.guest_id == guest.id).where(EventLog.event_type == EventType.PAYMENT_RECORDED)
     ).first()
     assert event is not None
     assert event.actor_id == admin_user.id
@@ -1678,18 +1670,14 @@ def test_undo_payment_clears_has_paid_and_writes_event_log_with_reason(
     assert resp.status_code == status.HTTP_200_OK
 
     rsvp = session.exec(
-        select(MeetupRsvp)
-        .where(MeetupRsvp.meetup_id == paid_meetup.id)
-        .where(MeetupRsvp.guest_id == guest.id)
+        select(MeetupRsvp).where(MeetupRsvp.meetup_id == paid_meetup.id).where(MeetupRsvp.guest_id == guest.id)
     ).one()
     assert rsvp.has_paid is False
     assert rsvp.paid_at is None
     assert rsvp.paid_by_id is None
 
     event = session.exec(
-        select(EventLog)
-        .where(EventLog.guest_id == guest.id)
-        .where(EventLog.event_type == EventType.PAYMENT_REVOKED)
+        select(EventLog).where(EventLog.guest_id == guest.id).where(EventLog.event_type == EventType.PAYMENT_REVOKED)
     ).first()
     assert event is not None
     assert event.actor_id == admin_user.id
@@ -2082,8 +2070,6 @@ def test_disable_payment_preserves_has_paid_data(
     assert resp.status_code == status.HTTP_200_OK
 
     rsvp = session.exec(
-        select(MeetupRsvp)
-        .where(MeetupRsvp.meetup_id == paid_meetup.id)
-        .where(MeetupRsvp.guest_id == guest.id)
+        select(MeetupRsvp).where(MeetupRsvp.meetup_id == paid_meetup.id).where(MeetupRsvp.guest_id == guest.id)
     ).one()
     assert rsvp.has_paid is True

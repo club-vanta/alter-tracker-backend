@@ -414,10 +414,7 @@ async def unlink_guest_mazmo(
     if guest.mazmo_user_id is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"Cannot unlink: guest '{guest.displayname}' (id={guest_id}) "
-                f"is not linked to a Mazmo account."
-            ),
+            detail=(f"Cannot unlink: guest '{guest.displayname}' (id={guest_id}) is not linked to a Mazmo account."),
         )
 
     previous_mazmo_user_id = guest.mazmo_user_id

@@ -143,9 +143,7 @@ class GuestSyncer:
         # Guest.mazmo_user_id is nullable at the type level (manual guests have
         # none), but every row here matched the .in_() filter above, so it can
         # never actually be None - the guard just satisfies the type checker.
-        return {
-            MazmoUserId(mazmo_user_id): guest_id for mazmo_user_id, guest_id in rows if mazmo_user_id is not None
-        }
+        return {MazmoUserId(mazmo_user_id): guest_id for mazmo_user_id, guest_id in rows if mazmo_user_id is not None}
 
     def _build_rsvps(
         self,

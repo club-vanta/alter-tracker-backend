@@ -58,7 +58,8 @@ def test_sync_creates_rsvp_records_for_meetup(
     assert len(rsvps) == 2
     guest_ids = {r.guest_id for r in rsvps}
     expected_guest_ids = {
-        g.id for g in session.exec(select(Guest).where(Guest.mazmo_user_id.in_({111, 222}))).all()  # type: ignore[union-attr]
+        g.id
+        for g in session.exec(select(Guest).where(Guest.mazmo_user_id.in_({111, 222}))).all()  # type: ignore[union-attr]
     }
     assert guest_ids == expected_guest_ids
 
@@ -296,7 +297,7 @@ def test_checkin_stores_staff_id_who_performed_checkin(
     make_rsvp(session, meetup=meetup, guest=guest)
 
     resp = client.post(
-        f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
 
@@ -310,7 +311,7 @@ def test_checkin_stores_staff_id_who_performed_checkin(
 
     # Verify it's stored in the database
     rsvp = session.exec(
-        select(MeetupRsvp).where(MeetupRsvp.meetup_id == meetup.id).where(MeetupRsvp.guest_id == guest.mazmo_user_id)
+        select(MeetupRsvp).where(MeetupRsvp.meetup_id == meetup.id).where(MeetupRsvp.guest_id == guest.id)
     ).first()
     assert rsvp is not None
     assert rsvp.checked_in_by_id == staff_user.id

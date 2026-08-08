@@ -5,6 +5,8 @@ Ban management is org-scoped: /organizations/{org_id}/guests/{id}/ban|unban
 and /organizations/{org_id}/guests/banned.
 """
 
+import uuid
+
 import httpx
 from fastapi import status
 from fastapi.testclient import TestClient
@@ -330,9 +332,7 @@ def test_link_mazmo_writes_guest_mazmo_linked_event(
     client.patch(f"/guests/{guest.id}/link-mazmo", json={"username": "cindydark"}, headers=staff_headers)
 
     event = session.exec(
-        select(EventLog)
-        .where(EventLog.guest_id == guest.id)
-        .where(EventLog.event_type == EventType.GUEST_MAZMO_LINKED)
+        select(EventLog).where(EventLog.guest_id == guest.id).where(EventLog.event_type == EventType.GUEST_MAZMO_LINKED)
     ).first()
     assert event is not None
     assert event.actor_id == staff_user.id
@@ -533,9 +533,9 @@ def test_ban_guest_as_site_admin_returns_200_ok(client: TestClient, admin_header
     across all orgs without needing an explicit org membership.
     """
     org = make_org(session)
-    guest = make_guest(session, mazmo_user_id=1, username="troublemaker")
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="troublemaker")
     resp = client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+        f"/organizations/{org.id}/guests/{guest.id}/ban",
         json={"reason": "Violated community guidelines"},
         headers=admin_headers,
     )
@@ -552,9 +552,9 @@ def test_ban_guest_stores_audit_trail(client: TestClient, admin_headers: dict, s
     WHY: We need to know who banned a guest and when for accountability.
     """
     org = make_org(session)
-    guest = make_guest(session, mazmo_user_id=1, username="troublemaker")
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="troublemaker")
     resp = client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+        f"/organizations/{org.id}/guests/{guest.id}/ban",
         json={"reason": "Violated community guidelines"},
         headers=admin_headers,
     )
@@ -576,9 +576,9 @@ def test_ban_guest_as_staff_member_returns_403_forbidden(
     """
     org = make_org(session)
     make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
-    guest = make_guest(session, mazmo_user_id=1, username="innocent")
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="innocent")
     resp = client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+        f"/organizations/{org.id}/guests/{guest.id}/ban",
         json={"reason": "Testing unauthorized"},
         headers=staff_headers,
     )
@@ -593,9 +593,9 @@ def test_ban_guest_as_non_member_returns_403_forbidden(client: TestClient, staff
     A plain USER with no org role should be rejected.
     """
     org = make_org(session)
-    guest = make_guest(session, mazmo_user_id=1, username="innocent")
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="innocent")
     resp = client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+        f"/organizations/{org.id}/guests/{guest.id}/ban",
         json={"reason": "Testing unauthorized"},
         headers=staff_headers,
     )
@@ -610,16 +610,16 @@ def test_ban_already_banned_guest_returns_409_conflict(client: TestClient, admin
     return a conflict rather than silently succeeding.
     """
     org = make_org(session)
-    guest = make_guest(session, mazmo_user_id=1, username="troublemaker")
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="troublemaker")
     # First ban
     client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+        f"/organizations/{org.id}/guests/{guest.id}/ban",
         json={"reason": "First offense"},
         headers=admin_headers,
     )
     # Try to ban again
     resp = client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+        f"/organizations/{org.id}/guests/{guest.id}/ban",
         json={"reason": "Second offense"},
         headers=admin_headers,
     )
@@ -636,7 +636,7 @@ def test_ban_nonexistent_guest_returns_404_not_found(client: TestClient, admin_h
     """
     org = make_org(session)
     resp = client.patch(
-        f"/organizations/{org.id}/guests/99999/ban",
+        f"/organizations/{org.id}/guests/{uuid.uuid4()}/ban",
         json={"reason": "Testing nonexistent"},
         headers=admin_headers,
     )
@@ -651,9 +651,9 @@ def test_ban_requires_reason(client: TestClient, admin_headers: dict, session: S
     for accountability and potential unbanning decisions.
     """
     org = make_org(session)
-    guest = make_guest(session, mazmo_user_id=1, username="needsreason")
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="needsreason")
     resp = client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+        f"/organizations/{org.id}/guests/{guest.id}/ban",
         json={},
         headers=admin_headers,
     )
@@ -669,9 +669,9 @@ def test_ban_reason_too_short_returns_422_unprocessable_entity(
     WHY: Enforce meaningful reasons - "ok" is not a useful audit trail.
     """
     org = make_org(session)
-    guest = make_guest(session, mazmo_user_id=1, username="shortreason")
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="shortreason")
     resp = client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+        f"/organizations/{org.id}/guests/{guest.id}/ban",
         json={"reason": "abc"},
         headers=admin_headers,
     )
@@ -681,9 +681,9 @@ def test_ban_reason_too_short_returns_422_unprocessable_entity(
 def test_ban_guest_without_token_returns_401_unauthorized(client: TestClient, session: Session):
     """Verify that unauthenticated ban attempts are rejected."""
     org = make_org(session)
-    guest = make_guest(session, mazmo_user_id=1, username="notoken")
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="notoken")
     resp = client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+        f"/organizations/{org.id}/guests/{guest.id}/ban",
         json={"reason": "Testing unauthorized"},
     )
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
@@ -700,23 +700,24 @@ def test_unban_guest_as_site_admin_returns_200_ok(client: TestClient, admin_head
     ban period is over, admins can restore their access.
     """
     org = make_org(session)
-    guest = make_guest(session, mazmo_user_id=1, username="reformed")
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="reformed")
     # First ban
     client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+        f"/organizations/{org.id}/guests/{guest.id}/ban",
         json={"reason": "Temporary ban"},
         headers=admin_headers,
     )
     # Then unban
     resp = client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/unban",
+        f"/organizations/{org.id}/guests/{guest.id}/unban",
         headers=admin_headers,
     )
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
     # Unban returns GuestPublic (identity only, no is_banned field)
+    assert data["id"] == str(guest.id)
     assert data["mazmo_user_id"] == guest.mazmo_user_id
-    assert data["username"] == "reformed"
+    assert data["mazmo_handle"] == "reformed"
     assert "is_banned" not in data
 
 
@@ -728,15 +729,15 @@ def test_unban_clears_ban_record(client: TestClient, admin_headers: dict, sessio
     in the org's banned list.
     """
     org = make_org(session)
-    guest = make_guest(session, mazmo_user_id=1, username="cleared")
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="cleared")
     # Ban then unban
     client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+        f"/organizations/{org.id}/guests/{guest.id}/ban",
         json={"reason": "Temporary"},
         headers=admin_headers,
     )
     unban_resp = client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/unban",
+        f"/organizations/{org.id}/guests/{guest.id}/unban",
         headers=admin_headers,
     )
     assert unban_resp.status_code == status.HTTP_200_OK
@@ -755,9 +756,9 @@ def test_unban_not_banned_guest_returns_409_conflict(client: TestClient, admin_h
     return a conflict rather than silently succeeding.
     """
     org = make_org(session)
-    guest = make_guest(session, mazmo_user_id=1, username="notbanned")
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="notbanned")
     resp = client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/unban",
+        f"/organizations/{org.id}/guests/{guest.id}/unban",
         headers=admin_headers,
     )
     assert resp.status_code == status.HTTP_409_CONFLICT
@@ -775,16 +776,16 @@ def test_unban_guest_as_staff_member_returns_403_forbidden(
     """
     org = make_org(session)
     make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
-    guest = make_guest(session, mazmo_user_id=1, username="staffcantunban")
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="staffcantunban")
     # Admin bans
     client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+        f"/organizations/{org.id}/guests/{guest.id}/ban",
         json={"reason": "Testing"},
         headers=admin_headers,
     )
     # Org STAFF tries to unban
     resp = client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/unban",
+        f"/organizations/{org.id}/guests/{guest.id}/unban",
         headers=staff_headers,
     )
     assert resp.status_code == status.HTTP_403_FORBIDDEN
@@ -794,7 +795,7 @@ def test_unban_nonexistent_guest_returns_404_not_found(client: TestClient, admin
     """Verify that unbanning a nonexistent guest returns 404."""
     org = make_org(session)
     resp = client.patch(
-        f"/organizations/{org.id}/guests/99999/unban",
+        f"/organizations/{org.id}/guests/{uuid.uuid4()}/unban",
         headers=admin_headers,
     )
     assert resp.status_code == status.HTTP_404_NOT_FOUND
@@ -803,15 +804,15 @@ def test_unban_nonexistent_guest_returns_404_not_found(client: TestClient, admin
 def test_unban_guest_without_token_returns_401_unauthorized(client: TestClient, admin_headers: dict, session: Session):
     """Verify that unauthenticated unban attempts are rejected."""
     org = make_org(session)
-    guest = make_guest(session, mazmo_user_id=1, username="unbannotoken")
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="unbannotoken")
     # Admin bans
     client.patch(
-        f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+        f"/organizations/{org.id}/guests/{guest.id}/ban",
         json={"reason": "Testing"},
         headers=admin_headers,
     )
     # Unauthenticated tries to unban
-    resp = client.patch(f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/unban")
+    resp = client.patch(f"/organizations/{org.id}/guests/{guest.id}/unban")
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
 
@@ -837,11 +838,11 @@ class TestListBannedGuests:
         """
         org = make_org(session)
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
-        guest1 = make_guest(session, mazmo_user_id=1, username="banned_one")
-        make_guest(session, mazmo_user_id=2, username="not_banned")
+        guest1 = make_guest(session, mazmo_user_id=1, mazmo_handle="banned_one")
+        make_guest(session, mazmo_user_id=2, mazmo_handle="not_banned")
 
         client.patch(
-            f"/organizations/{org.id}/guests/{guest1.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest1.id}/ban",
             json={"reason": "Banned for testing"},
             headers=admin_headers,
         )
@@ -850,7 +851,7 @@ class TestListBannedGuests:
         assert resp.status_code == status.HTTP_200_OK
         data = resp.json()
         assert data["total"] == 1
-        assert data["guests"][0]["username"] == "banned_one"
+        assert data["guests"][0]["mazmo_handle"] == "banned_one"
 
     def test_returns_empty_list_when_no_bans(
         self,
@@ -867,7 +868,7 @@ class TestListBannedGuests:
         """
         org = make_org(session)
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
-        make_guest(session, mazmo_user_id=1, username="innocent")
+        make_guest(session, mazmo_user_id=1, mazmo_handle="innocent")
 
         resp = client.get(f"/organizations/{org.id}/guests/banned", headers=staff_headers)
         assert resp.status_code == status.HTTP_200_OK
@@ -892,9 +893,9 @@ class TestListBannedGuests:
         """
         org = make_org(session)
         make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
-        guest = make_guest(session, mazmo_user_id=1, username="banned_details")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="banned_details")
         client.patch(
-            f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest.id}/ban",
             json={"reason": "Aggressive behavior"},
             headers=admin_headers,
         )
@@ -904,8 +905,9 @@ class TestListBannedGuests:
         data = resp.json()
         assert data["total"] == 1
         banned_guest = data["guests"][0]
+        assert banned_guest["id"] == str(guest.id)
         assert banned_guest["mazmo_user_id"] == guest.mazmo_user_id
-        assert banned_guest["username"] == "banned_details"
+        assert banned_guest["mazmo_handle"] == "banned_details"
         assert banned_guest["banned_reason"] == "Aggressive behavior"
         assert banned_guest["banned_at"] is not None
         assert banned_guest["banned_by_id"] == admin_user.id
@@ -924,10 +926,10 @@ class TestListBannedGuests:
         """
         org_a = make_org(session, name="Org A", slug="org-a")
         org_b = make_org(session, name="Org B", slug="org-b")
-        guest = make_guest(session, mazmo_user_id=1, username="banned_in_a")
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="banned_in_a")
 
         client.patch(
-            f"/organizations/{org_a.id}/guests/{guest.mazmo_user_id}/ban",
+            f"/organizations/{org_a.id}/guests/{guest.id}/ban",
             json={"reason": "Banned in A only"},
             headers=admin_headers,
         )
@@ -941,4 +943,3 @@ class TestListBannedGuests:
         org = make_org(session)
         resp = client.get(f"/organizations/{org.id}/guests/banned")
         assert resp.status_code == status.HTTP_401_UNAUTHORIZED
-

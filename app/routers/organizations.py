@@ -25,7 +25,6 @@ from sqlmodel import Session, select
 
 from app.core.database import get_session
 from app.core.deps import get_org_admin, get_org_member, get_site_admin
-from app.domain_types import MazmoUserId
 from app.models.models import EventLog, EventType, Guest, Organization, OrganizationBan, OrgRole, User, UserOrganization
 from app.openapi_examples.organizations_examples import (
     ADD_MEMBER_REQUEST_EXAMPLES,
@@ -376,9 +375,11 @@ async def list_banned_guests(
         if guest:
             guests.append(
                 BannedGuestPublic(
+                    id=guest.id,
                     mazmo_user_id=guest.mazmo_user_id,
-                    username=guest.username,
+                    mazmo_handle=guest.mazmo_handle,
                     displayname=guest.displayname,
+                    instagram_username=guest.instagram_username,
                     banned_at=ban.banned_at,
                     banned_reason=ban.reason,
                     banned_by_id=ban.banned_by_id,
@@ -392,14 +393,14 @@ async def list_banned_guests(
 
 
 @router.patch(
-    "/organizations/{org_id}/guests/{mazmo_user_id}/ban",
+    "/organizations/{org_id}/guests/{guest_id}/ban",
     response_model=BannedGuestPublic,
     summary="Ban a guest in this organization (org admin only)",
     responses=BAN_GUEST_RESPONSES,
 )
 async def ban_guest(
     org_id: uuid.UUID,
-    mazmo_user_id: int,
+    guest_id: uuid.UUID,
     payload: Annotated[BanGuestRequest, Body(openapi_examples=BAN_GUEST_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
     admin: User = Depends(get_org_admin),
@@ -412,34 +413,34 @@ async def ban_guest(
     """
     _get_org_or_404(session, org_id)
 
-    guest = session.get(Guest, mazmo_user_id)
+    guest = session.get(Guest, guest_id)
     if not guest:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
-                f"Cannot ban guest: mazmo_user_id={mazmo_user_id} does not exist in our database. "
-                f"Guests are added via Mazmo sync or manually via POST /guests/."
+                f"Cannot ban guest: id={guest_id} does not exist in our database. "
+                f"Guests are added via Mazmo sync or manually via POST /guests/mazmo or POST /guests/manual."
             ),
         )
 
     existing_ban = session.exec(
-        select(OrganizationBan).where(OrganizationBan.org_id == org_id).where(OrganizationBan.guest_id == mazmo_user_id)
+        select(OrganizationBan).where(OrganizationBan.org_id == org_id).where(OrganizationBan.guest_id == guest_id)
     ).first()
     if existing_ban:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Cannot ban guest: '{guest.username}' (mazmo_user_id={mazmo_user_id}) "
+                f"Cannot ban guest: '{guest.displayname}' (id={guest_id}) "
                 f"is already banned in this organization. They were banned on {existing_ban.banned_at} "
                 f"for reason: '{existing_ban.reason}'. "
                 f"To update the ban reason, unban first via "
-                f"PATCH /organizations/{org_id}/guests/{mazmo_user_id}/unban, then re-ban."
+                f"PATCH /organizations/{org_id}/guests/{guest_id}/unban, then re-ban."
             ),
         )
 
     ban = OrganizationBan(
         org_id=org_id,
-        guest_id=MazmoUserId(mazmo_user_id),
+        guest_id=guest_id,
         banned_by_id=admin.id,
         banned_at=datetime.now(UTC),
         reason=payload.reason,
@@ -447,7 +448,7 @@ async def ban_guest(
     event = EventLog(
         event_type=EventType.BAN,
         actor_id=admin.id,
-        guest_id=MazmoUserId(mazmo_user_id),
+        guest_id=guest_id,
         org_id=org_id,
         reason=payload.reason,
     )
@@ -460,16 +461,18 @@ async def ban_guest(
     log.info(
         "Guest banned",
         admin=admin.username,
-        guest=guest.username,
-        guest_id=MazmoUserId(mazmo_user_id),
+        guest=guest.displayname,
+        guest_id=str(guest_id),
         org_id=str(org_id),
         reason=payload.reason,
     )
 
     return BannedGuestPublic(
+        id=guest.id,
         mazmo_user_id=guest.mazmo_user_id,
-        username=guest.username,
+        mazmo_handle=guest.mazmo_handle,
         displayname=guest.displayname,
+        instagram_username=guest.instagram_username,
         banned_at=ban.banned_at,
         banned_reason=ban.reason,
         banned_by_id=ban.banned_by_id,
@@ -480,14 +483,14 @@ async def ban_guest(
 
 
 @router.patch(
-    "/organizations/{org_id}/guests/{mazmo_user_id}/unban",
+    "/organizations/{org_id}/guests/{guest_id}/unban",
     response_model=GuestPublic,
     summary="Unban a guest in this organization (org admin only)",
     responses=UNBAN_GUEST_RESPONSES,
 )
 async def unban_guest(
     org_id: uuid.UUID,
-    mazmo_user_id: int,
+    guest_id: uuid.UUID,
     session: Session = Depends(get_session),
     admin: User = Depends(get_org_admin),
 ) -> GuestPublic:
@@ -499,34 +502,34 @@ async def unban_guest(
     """
     _get_org_or_404(session, org_id)
 
-    guest = session.get(Guest, mazmo_user_id)
+    guest = session.get(Guest, guest_id)
     if not guest:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
-                f"Cannot unban guest: mazmo_user_id={mazmo_user_id} does not exist. "
+                f"Cannot unban guest: id={guest_id} does not exist. "
                 f"Double-check the ID via GET /guests/ or GET /organizations/{org_id}/guests/banned."
             ),
         )
 
     ban = session.exec(
-        select(OrganizationBan).where(OrganizationBan.org_id == org_id).where(OrganizationBan.guest_id == mazmo_user_id)
+        select(OrganizationBan).where(OrganizationBan.org_id == org_id).where(OrganizationBan.guest_id == guest_id)
     ).first()
     if not ban:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Cannot unban guest: '{guest.username}' (mazmo_user_id={mazmo_user_id}) "
+                f"Cannot unban guest: '{guest.displayname}' (id={guest_id}) "
                 f"is not currently banned in this organization. "
                 f"They may have been unbanned by another admin. "
-                f"Check audit trail at GET /organizations/{org_id}/events/guests/{mazmo_user_id}."
+                f"Check audit trail at GET /organizations/{org_id}/events/guests/{guest_id}."
             ),
         )
 
     event = EventLog(
         event_type=EventType.UNBAN,
         actor_id=admin.id,
-        guest_id=MazmoUserId(mazmo_user_id),
+        guest_id=guest_id,
         org_id=org_id,
     )
 
@@ -537,8 +540,8 @@ async def unban_guest(
     log.info(
         "Guest unbanned",
         admin=admin.username,
-        guest=guest.username,
-        guest_id=MazmoUserId(mazmo_user_id),
+        guest=guest.displayname,
+        guest_id=str(guest_id),
         org_id=str(org_id),
     )
 
