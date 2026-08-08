@@ -263,10 +263,10 @@ def error_404_guest() -> ResponsesDict:
                             "summary": "Guest not in system",
                             "value": {
                                 "detail": (
-                                    "Guest with mazmo_user_id=99999 does not exist in our database. "
-                                    "Guests are added when they RSVP to a meetup and we sync from Mazmo, "
-                                    "or when registered manually via POST /guests/. "
-                                    "Try POST /meetups/{meetup_id}/sync, POST /guests/, or verify the mazmo_user_id."
+                                    "Guest with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist in our "
+                                    "database. Guests are added when they RSVP to a meetup and we sync from "
+                                    "Mazmo, or when registered manually via POST /guests/mazmo or "
+                                    "POST /guests/manual. Try POST /meetups/{meetup_id}/sync, or verify the id."
                                 )
                             },
                         },
@@ -277,21 +277,22 @@ def error_404_guest() -> ResponsesDict:
     }
 
 
-def error_404_guest_username() -> ResponsesDict:
-    """404 - No guest with that username in our system. Only for GET /guests/by-username/{username}."""
+def error_404_guest_mazmo_handle() -> ResponsesDict:
+    """404 - No guest with that Mazmo handle. Only for GET /guests/by-mazmo-handle/{mazmo_handle}."""
     return {
         404: {
-            "description": "Guest not found by username",
+            "description": "Guest not found by Mazmo handle",
             "content": {
                 "application/json": {
                     "examples": {
-                        "guest_username_not_found": {
-                            "summary": "Username not registered in this system",
+                        "guest_handle_not_found": {
+                            "summary": "Handle not registered in this system",
                             "value": {
                                 "detail": (
-                                    "No guest with username 'unknownuser' found in the system. "
-                                    "They may not have RSVPed to any meetup yet. "
-                                    "Use POST /guests/ to register them if they're at the door."
+                                    "No guest with Mazmo handle 'unknownuser' found in the system. "
+                                    "They may not have RSVPed to any meetup yet, or may not have a Mazmo "
+                                    "account at all. Use POST /guests/mazmo to register them by handle, "
+                                    "or POST /guests/manual if they don't use Mazmo."
                                 )
                             },
                         },
@@ -772,9 +773,10 @@ def error_409_guest_already_exists() -> ResponsesDict:
                             "value": {
                                 "detail": (
                                     "Cannot create guest: mazmo_user_id=12345 already exists "
-                                    "in the system as 'fiestero_feliz'. "
+                                    "in the system as 'Juan El Fiestero' (id=e5f6a7b8-c9d0-1234-efab-345678901234). "
                                     "If you want to add them to a meetup, use "
-                                    "POST /meetups/{meetup_id}/guests/12345/add-walkin."
+                                    "POST /organizations/{org_id}/meetups/{meetup_id}/guests/"
+                                    "e5f6a7b8-c9d0-1234-efab-345678901234/add-walkin."
                                 )
                             },
                         },
