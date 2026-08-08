@@ -257,15 +257,22 @@ def make_org_member(
 def make_guest(
     session: Session,
     *,
-    mazmo_user_id: int = 1,
-    username: str = "guestuser",
+    mazmo_user_id: int | None = 1,
+    mazmo_handle: str | None = "guestuser",
     displayname: str = "Guest User",
+    instagram_username: str | None = None,
 ) -> Guest:
-    """Helper to create a Guest (identity only) directly in the test session."""
+    """
+    Helper to create a Guest (identity only) directly in the test session.
+
+    Defaults to a Mazmo-linked guest (matches most existing tests). Pass
+    mazmo_user_id=None, mazmo_handle=None for a manual (no-Mazmo) guest.
+    """
     guest = Guest(
-        mazmo_user_id=MazmoUserId(mazmo_user_id),
-        username=username,
+        mazmo_user_id=MazmoUserId(mazmo_user_id) if mazmo_user_id is not None else None,
+        mazmo_handle=mazmo_handle,
         displayname=displayname,
+        instagram_username=instagram_username,
     )
     session.add(guest)
     session.flush()
@@ -311,7 +318,7 @@ def make_rsvp(
     """Helper to create a MeetupRsvp directly in the test session."""
     rsvp = MeetupRsvp(
         meetup_id=meetup.id,
-        guest_id=guest.mazmo_user_id,
+        guest_id=guest.id,
         rsvp_time=datetime.now(UTC),
         has_arrived=has_arrived,
         arrival_order=arrival_order,
@@ -337,7 +344,7 @@ def make_ban(
     """Helper to create an OrganizationBan directly in the test session."""
     ban = OrganizationBan(
         org_id=org.id,
-        guest_id=MazmoUserId(guest.mazmo_user_id),
+        guest_id=guest.id,
         banned_by_id=banned_by.id,
         banned_at=datetime.now(UTC),
         reason=reason,
