@@ -51,6 +51,8 @@ class EventType(StrEnum):
     MEETUP_UNFINALIZED = "MEETUP_UNFINALIZED"
     WALKIN = "WALKIN"
     GUEST_CREATED = "GUEST_CREATED"
+    GUEST_MAZMO_LINKED = "GUEST_MAZMO_LINKED"
+    GUEST_MAZMO_UNLINKED = "GUEST_MAZMO_UNLINKED"
     PAYMENT_RECORDED = "PAYMENT_RECORDED"
     PAYMENT_REVOKED = "PAYMENT_REVOKED"
     PAYMENT_REQUIREMENT_ENABLED = "PAYMENT_REQUIREMENT_ENABLED"
@@ -193,7 +195,7 @@ class MeetupRsvp(SQLModel, table=True):
     __tablename__ = "meetup_rsvps"  # type: ignore[assignment]
 
     meetup_id: uuid.UUID = Field(foreign_key="meetups.id", primary_key=True)
-    guest_id: MazmoUserId = Field(foreign_key="guests.mazmo_user_id", primary_key=True, sa_type=Integer)
+    guest_id: uuid.UUID = Field(foreign_key="guests.id", primary_key=True)
 
     rsvp_time: datetime
     cancelled_rsvp: bool = Field(default=False)
@@ -225,19 +227,25 @@ class MeetupRsvp(SQLModel, table=True):
 
 class Guest(SQLModel, table=True):
     """
-    Core identity of a user fetched from the Mazmo platform.
+    Core identity of a guest, optionally linked to a Mazmo account.
 
-    PK is Mazmo's own user ID so that upserts are idempotent.
-    Ban information is now stored in organization_bans (per-org).
+    PK is an internal UUID, independent of Mazmo - it never changes even
+    if a guest is linked, unlinked, or re-linked to a different Mazmo
+    account over time. mazmo_user_id/mazmo_handle are nullable: a guest
+    created via POST /guests/manual has neither until someone links one
+    via PATCH /guests/{id}/link-mazmo.
 
-    displayname is highly mutable; username is effectively constant.
+    displayname is highly mutable; mazmo_handle is effectively constant
+    while a guest is linked.
     """
 
     __tablename__ = "guests"  # type: ignore[assignment]
 
-    mazmo_user_id: MazmoUserId = Field(primary_key=True, sa_type=Integer)
-    username: str = Field(index=True)
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    mazmo_user_id: MazmoUserId | None = Field(default=None, unique=True, index=True, sa_type=Integer)
+    mazmo_handle: str | None = Field(default=None, index=True)
     displayname: str
+    instagram_username: str | None = Field(default=None, max_length=64)
 
     # See Guest/Meetup comment in models - both rsvps and meetups relationships
     # are intentional (different use cases, same underlying data).
@@ -305,7 +313,7 @@ class OrganizationBan(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     org_id: uuid.UUID = Field(foreign_key="organizations.id", index=True)
-    guest_id: MazmoUserId = Field(foreign_key="guests.mazmo_user_id", index=True, sa_type=Integer)
+    guest_id: uuid.UUID = Field(foreign_key="guests.id", index=True)
     banned_by_id: int | None = Field(default=None, foreign_key="users.id")
     banned_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     reason: str = Field(max_length=500)
@@ -334,7 +342,7 @@ class EventLog(SQLModel, table=True):
 
     org_id: uuid.UUID | None = Field(default=None, foreign_key="organizations.id", index=True)
     actor_id: int | None = Field(default=None, foreign_key="users.id")
-    guest_id: int | None = Field(default=None, foreign_key="guests.mazmo_user_id", index=True)
+    guest_id: uuid.UUID | None = Field(default=None, foreign_key="guests.id", index=True)
     meetup_id: uuid.UUID | None = Field(default=None, foreign_key="meetups.id", index=True)
     reason: str | None = Field(default=None, max_length=500)
 
