@@ -87,7 +87,7 @@ def test_checkin_in_wrong_org_meetup_returns_404(client: TestClient, session: Se
     make_rsvp(session, meetup=meetup_a, guest=guest)
 
     resp = client.post(
-        f"/organizations/{org_b.id}/meetups/{meetup_a.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{org_b.id}/meetups/{meetup_a.id}/guests/{guest.id}/checkin",
         headers=headers_b,
     )
 
@@ -134,7 +134,7 @@ def test_cross_org_unban_returns_409(client: TestClient, session: Session):
     make_ban(session, org=org_a, guest=guest, banned_by=user_a)
 
     resp = client.patch(
-        f"/organizations/{org_b.id}/guests/{guest.mazmo_user_id}/unban",
+        f"/organizations/{org_b.id}/guests/{guest.id}/unban",
         headers=headers_b,
     )
 
@@ -152,7 +152,7 @@ def test_non_member_cannot_ban_in_another_org(client: TestClient, session: Sessi
     guest = make_guest(session, mazmo_user_id=30)
 
     resp = client.patch(
-        f"/organizations/{org_a.id}/guests/{guest.mazmo_user_id}/ban",
+        f"/organizations/{org_a.id}/guests/{guest.id}/ban",
         json={"reason": "Attempting cross-org ban"},
         headers=headers_b,
     )
@@ -176,7 +176,7 @@ def test_events_are_scoped_to_org(client: TestClient, session: Session):
     make_rsvp(session, meetup=meetup_a, guest=guest)
 
     client.post(
-        f"/organizations/{org_a.id}/meetups/{meetup_a.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{org_a.id}/meetups/{meetup_a.id}/guests/{guest.id}/checkin",
         headers=headers_a,
     )
 

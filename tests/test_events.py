@@ -7,6 +7,7 @@ These tests verify:
 4. Pagination
 """
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import status
@@ -34,7 +35,7 @@ class TestBanCreatesEvent:
         guest = make_guest(session, mazmo_user_id=1, mazmo_handle="troublemaker")
 
         client.patch(
-            f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest.id}/ban",
             json={"reason": "Violated community guidelines"},
             headers=admin_headers,
         )
@@ -63,13 +64,13 @@ class TestUnbanCreatesEvent:
 
         # First ban
         client.patch(
-            f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest.id}/ban",
             json={"reason": "Initial ban"},
             headers=admin_headers,
         )
 
         # Then unban
-        client.patch(f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/unban", headers=admin_headers)
+        client.patch(f"/organizations/{org.id}/guests/{guest.id}/unban", headers=admin_headers)
 
         # Check EventLog has both entries
         events = session.exec(
@@ -103,7 +104,7 @@ class TestCheckinCreatesEvent:
         make_rsvp(session, meetup=meetup, guest=guest)
 
         client.post(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
             headers=staff_headers,
         )
 
@@ -135,13 +136,13 @@ class TestUndoCheckinCreatesEvent:
 
         # Check in first
         client.post(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
             headers=staff_headers,
         )
 
         # Then undo
         client.patch(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/undo-checkin",
             json={"reason": "Wrong person checked in"},
             headers=staff_headers,
         )
@@ -182,13 +183,13 @@ class TestUndoCheckin:
 
         # Check in
         client.post(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
             headers=staff_headers,
         )
 
         # Undo
         resp = client.patch(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/undo-checkin",
             json={"reason": "Mistake"},
             headers=staff_headers,
         )
@@ -205,7 +206,7 @@ class TestUndoCheckin:
 
         # Check in
         client.post(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
             headers=staff_headers,
         )
 
@@ -215,7 +216,7 @@ class TestUndoCheckin:
 
         # Undo
         client.patch(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/undo-checkin",
             json={"reason": "Mistake"},
             headers=staff_headers,
         )
@@ -237,7 +238,7 @@ class TestUndoCheckin:
         make_rsvp(session, meetup=meetup, guest=guest)
 
         resp = client.patch(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/undo-checkin",
             json={"reason": "Testing"},
             headers=staff_headers,
         )
@@ -253,7 +254,7 @@ class TestUndoCheckin:
         make_guest(session, mazmo_user_id=1, mazmo_handle="stranger")
 
         resp = client.patch(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/1/undo-checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{uuid.uuid4()}/undo-checkin",
             json={"reason": "Testing"},
             headers=staff_headers,
         )
@@ -270,13 +271,13 @@ class TestUndoCheckin:
 
         # Check in
         client.post(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
             headers=staff_headers,
         )
 
         # Try to undo without reason
         resp = client.patch(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/undo-checkin",
             json={},
             headers=staff_headers,
         )
@@ -293,13 +294,13 @@ class TestUndoCheckin:
 
         # Check in
         client.post(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
             headers=staff_headers,
         )
 
         # Try with short reason
         resp = client.patch(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/undo-checkin",
             json={"reason": "abc"},
             headers=staff_headers,
         )
@@ -321,7 +322,7 @@ class TestListAllEvents:
         # Create some events via actions
         guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
         client.patch(
-            f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest.id}/ban",
             json={"reason": "Testing"},
             headers=admin_headers,
         )
@@ -354,11 +355,11 @@ class TestListAllEvents:
 
         # Create ban and unban events
         client.patch(
-            f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest.id}/ban",
             json={"reason": "Testing"},
             headers=admin_headers,
         )
-        client.patch(f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/unban", headers=admin_headers)
+        client.patch(f"/organizations/{org.id}/guests/{guest.id}/unban", headers=admin_headers)
 
         # Filter to BAN only
         resp = client.get(f"/organizations/{org.id}/events/?type=BAN", headers=admin_headers)
@@ -373,11 +374,11 @@ class TestListAllEvents:
         guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
 
         client.patch(
-            f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest.id}/ban",
             json={"reason": "Testing"},
             headers=admin_headers,
         )
-        client.patch(f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/unban", headers=admin_headers)
+        client.patch(f"/organizations/{org.id}/guests/{guest.id}/unban", headers=admin_headers)
 
         resp = client.get(f"/organizations/{org.id}/events/?type=BAN,UNBAN", headers=admin_headers)
         assert resp.status_code == status.HTTP_200_OK
@@ -398,7 +399,7 @@ class TestListAllEvents:
         for i in range(5):
             guest = make_guest(session, mazmo_user_id=i + 1, mazmo_handle=f"guest{i}")
             client.patch(
-                f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+                f"/organizations/{org.id}/guests/{guest.id}/ban",
                 json={"reason": f"Ban {i}"},
                 headers=admin_headers,
             )
@@ -436,7 +437,7 @@ class TestListMeetupEvents:
 
         # Check in
         client.post(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
             headers=staff_headers,
         )
 
@@ -479,11 +480,11 @@ class TestListMeetupEvents:
 
         # Check in at both meetups
         client.post(
-            f"/organizations/{org.id}/meetups/{meetup1.id}/guests/{guest1.mazmo_user_id}/checkin",
+            f"/organizations/{org.id}/meetups/{meetup1.id}/guests/{guest1.id}/checkin",
             headers=staff_headers,
         )
         client.post(
-            f"/organizations/{org.id}/meetups/{meetup2.id}/guests/{guest2.mazmo_user_id}/checkin",
+            f"/organizations/{org.id}/meetups/{meetup2.id}/guests/{guest2.id}/checkin",
             headers=staff_headers,
         )
 
@@ -524,13 +525,13 @@ class TestListGuestEvents:
 
         # Create check-in event (as staff)
         client.post(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
             headers=staff_headers,
         )
 
         # Create ban event (as admin)
         client.patch(
-            f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest.id}/ban",
             json={"reason": "Testing"},
             headers=admin_headers,
         )
@@ -558,11 +559,11 @@ class TestListGuestEvents:
 
         # Create check-in and ban events
         client.post(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
             headers=staff_headers,
         )
         client.patch(
-            f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest.id}/ban",
             json={"reason": "Testing"},
             headers=admin_headers,
         )
@@ -601,7 +602,7 @@ class TestListGuestEvents:
         make_rsvp(session, meetup=meetup, guest=guest)
 
         client.post(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
             headers=staff_headers,
         )
 
@@ -633,7 +634,7 @@ class TestListStaffEvents:
         make_rsvp(session, meetup=meetup, guest=guest)
 
         client.post(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
             headers=staff_headers,
         )
 
@@ -670,7 +671,7 @@ class TestListStaffEvents:
         make_rsvp(session, meetup=meetup, guest=guest)
 
         client.post(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
             headers=staff_headers,
         )
 
@@ -704,7 +705,7 @@ class TestEventFiltering:
         guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
 
         client.patch(
-            f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest.id}/ban",
             json={"reason": "Testing"},
             headers=admin_headers,
         )
@@ -728,12 +729,12 @@ class TestEventFiltering:
         guest2 = make_guest(session, mazmo_user_id=2, mazmo_handle="guest2")
 
         client.patch(
-            f"/organizations/{org.id}/guests/{guest1.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest1.id}/ban",
             json={"reason": "Ban 1"},
             headers=admin_headers,
         )
         client.patch(
-            f"/organizations/{org.id}/guests/{guest2.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest2.id}/ban",
             json={"reason": "Ban 2"},
             headers=admin_headers,
         )
@@ -750,7 +751,7 @@ class TestEventFiltering:
         guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
 
         client.patch(
-            f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest.id}/ban",
             json={"reason": "Testing"},
             headers=admin_headers,
         )
@@ -776,7 +777,7 @@ class TestEventResponseFormat:
         guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
 
         client.patch(
-            f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest.id}/ban",
             json={"reason": "Testing"},
             headers=admin_headers,
         )
@@ -793,7 +794,7 @@ class TestEventResponseFormat:
         guest = make_guest(session, mazmo_user_id=123, mazmo_handle="guestuser", displayname="Guest User")
 
         client.patch(
-            f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest.id}/ban",
             json={"reason": "Testing"},
             headers=admin_headers,
         )
@@ -820,7 +821,7 @@ class TestEventResponseFormat:
         make_rsvp(session, meetup=meetup, guest=guest)
 
         client.post(
-            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
             headers=staff_headers,
         )
 
@@ -835,7 +836,7 @@ class TestEventResponseFormat:
         guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
 
         client.patch(
-            f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+            f"/organizations/{org.id}/guests/{guest.id}/ban",
             json={"reason": "Specific reason here"},
             headers=admin_headers,
         )
@@ -851,7 +852,7 @@ class TestEventResponseFormat:
         for i in range(3):
             guest = make_guest(session, mazmo_user_id=i + 1, mazmo_handle=f"guest{i}")
             client.patch(
-                f"/organizations/{org.id}/guests/{guest.mazmo_user_id}/ban",
+                f"/organizations/{org.id}/guests/{guest.id}/ban",
                 json={"reason": f"Ban {i}"},
                 headers=admin_headers,
             )
