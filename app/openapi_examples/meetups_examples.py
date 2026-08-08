@@ -7,9 +7,9 @@ Endpoints:
   GET   /organizations/{org_id}/meetups/{id}
   POST  /organizations/{org_id}/meetups/{id}/sync
   GET   /organizations/{org_id}/meetups/{id}/guests
-  POST  /organizations/{org_id}/meetups/{id}/guests/{mazmo_user_id}/add-walkin
-  POST  /organizations/{org_id}/meetups/{id}/guests/{mazmo_user_id}/checkin
-  PATCH /organizations/{org_id}/meetups/{id}/guests/{mazmo_user_id}/undo-checkin
+  POST  /organizations/{org_id}/meetups/{id}/guests/{guest_id}/add-walkin
+  POST  /organizations/{org_id}/meetups/{id}/guests/{guest_id}/checkin
+  PATCH /organizations/{org_id}/meetups/{id}/guests/{guest_id}/undo-checkin
   PATCH /organizations/{org_id}/meetups/{id}/finalize
   PATCH /organizations/{org_id}/meetups/{id}/unfinalize
 """
@@ -230,7 +230,7 @@ LIST_MEETUP_GUESTS_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_404_meetup(),
 }
 
-# ── POST /meetups/{id}/guests/{mazmo_user_id}/add-walkin ──────────────────────
+# ── POST /meetups/{id}/guests/{guest_id}/add-walkin ────────────────────────────
 
 ADD_WALKIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     201: {
@@ -255,7 +255,7 @@ ADD_WALKIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_409_meetup_finalized(),
 }
 
-# ── POST /meetups/{id}/guests/{mazmo_user_id}/checkin ─────────────────────────
+# ── POST /meetups/{id}/guests/{guest_id}/checkin ───────────────────────────────
 
 CHECKIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     200: {
@@ -281,7 +281,7 @@ CHECKIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_409_meetup_finalized(),
 }
 
-# ── PATCH /meetups/{id}/guests/{mazmo_user_id}/undo-checkin ───────────────────
+# ── PATCH /meetups/{id}/guests/{guest_id}/undo-checkin ─────────────────────────
 
 UNDO_CHECKIN_REQUEST_EXAMPLES: dict[str, Any] = {
     "undo_mistake": {
@@ -316,7 +316,7 @@ UNDO_CHECKIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_422_validation_reason(),
 }
 
-# ── PATCH /meetups/{id}/guests/{mazmo_user_id}/payment ────────────────────────
+# ── PATCH /meetups/{id}/guests/{guest_id}/payment ──────────────────────────────
 
 MARK_PAYMENT_RESPONSES: dict[int | str, dict[str, Any]] = {
     200: {
@@ -342,7 +342,7 @@ MARK_PAYMENT_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_409_payment_not_required(),
 }
 
-# ── PATCH /meetups/{id}/guests/{mazmo_user_id}/payment/undo ───────────────────
+# ── PATCH /meetups/{id}/guests/{guest_id}/payment/undo ─────────────────────────
 
 UNDO_PAYMENT_REQUEST_EXAMPLES: dict[str, Any] = {
     "undo_mistake": {

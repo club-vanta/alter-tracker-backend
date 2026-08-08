@@ -83,17 +83,34 @@ STAFF_USER_DISABLED = {
 
 # -- Guests -------------------------------------------------------------------
 
+GUEST_UUID = "e5f6a7b8-c9d0-1234-efab-345678901234"
+GUEST_UUID_2 = "f6a7b8c9-d0e1-2345-fabc-456789012345"
+
 # GuestPublic: identity only, no ban status (bans are per-org)
 GUEST_NORMAL = {
+    "id": GUEST_UUID,
     "mazmo_user_id": 12345,
-    "username": "fiestero_feliz",
+    "mazmo_handle": "fiestero_feliz",
     "displayname": "Juan El Fiestero",
+    "instagram_username": "juan.fiestero",
 }
 
 GUEST_NORMAL_2 = {
+    "id": GUEST_UUID_2,
     "mazmo_user_id": 12346,
-    "username": "bailarina_nocturna",
+    "mazmo_handle": "bailarina_nocturna",
     "displayname": "Ana Bailarina",
+    "instagram_username": None,
+}
+
+GUEST_MANUAL_UUID = "a7b8c9d0-e1f2-3456-abcd-567890123456"
+
+GUEST_MANUAL = {
+    "id": GUEST_MANUAL_UUID,
+    "mazmo_user_id": None,
+    "mazmo_handle": None,
+    "displayname": "Recien Llegado Sin Mazmo",
+    "instagram_username": "recien.llegado",
 }
 
 # GuestWithBanPublic: identity + org-scoped ban flag (used in meetup guest lists)
@@ -102,18 +119,24 @@ GUEST_IN_ORG_NOT_BANNED = {
     "is_banned": False,
 }
 
+GUEST_BANNED_UUID = "b8c9d0e1-f2a3-4567-bcde-678901234567"
+
 GUEST_IN_ORG_BANNED = {
+    "id": GUEST_BANNED_UUID,
     "mazmo_user_id": 99999,
-    "username": "usuario_problematico",
+    "mazmo_handle": "usuario_problematico",
     "displayname": "Persona Conflictiva",
+    "instagram_username": None,
     "is_banned": True,
 }
 
 # BannedGuestPublic: identity + ban metadata (used in org banned list)
 GUEST_BANNED_FULL = {
+    "id": GUEST_BANNED_UUID,
     "mazmo_user_id": 99999,
-    "username": "usuario_problematico",
+    "mazmo_handle": "usuario_problematico",
     "displayname": "Persona Conflictiva",
+    "instagram_username": None,
     "banned_at": TIMESTAMP_2024_03_20,
     "banned_reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03",
     "banned_by_id": 1,
@@ -226,8 +249,9 @@ EVENT_CHECKIN = {
     "timestamp": TIMESTAMP_2024_03_23_CHECKIN,
     "actor": {"id": 2, "username": "carlos_staff"},
     "guest": {
+        "id": GUEST_UUID,
         "mazmo_user_id": 12345,
-        "username": "fiestero_feliz",
+        "mazmo_handle": "fiestero_feliz",
         "displayname": "Juan El Fiestero",
     },
     "meetup_id": MEETUP_UUID,
@@ -240,8 +264,9 @@ EVENT_BAN = {
     "timestamp": TIMESTAMP_2024_03_20,
     "actor": {"id": 1, "username": "maria_admin"},
     "guest": {
+        "id": GUEST_BANNED_UUID,
         "mazmo_user_id": 99999,
-        "username": "usuario_problematico",
+        "mazmo_handle": "usuario_problematico",
         "displayname": "Persona Conflictiva",
     },
     "meetup_id": None,
@@ -261,11 +286,15 @@ RSVP_WALKIN = {
     "paid_at": None,
 }
 
+GUEST_WALKIN_UUID = "c9d0e1f2-a3b4-5678-cdef-789012345678"
+
 MEETUP_GUEST_WALKIN = {
     "guest": {
+        "id": GUEST_WALKIN_UUID,
         "mazmo_user_id": 55555,
-        "username": "recien_llegado",
-        "displayname": "Recién Llegado",
+        "mazmo_handle": "recien_llegado",
+        "displayname": "Recien Llegado",
+        "instagram_username": None,
         "is_banned": False,
     },
     "rsvp": RSVP_WALKIN,

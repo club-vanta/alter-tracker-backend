@@ -1450,8 +1450,9 @@
                       "total": 1,
                       "guests": [
                         {
+                          "id": "b8c9d0e1-f2a3-4567-bcde-678901234567",
                           "mazmo_user_id": 99999,
-                          "username": "usuario_problematico",
+                          "mazmo_handle": "usuario_problematico",
                           "displayname": "Persona Conflictiva",
                           "banned_at": "2024-03-20T18:30:00Z",
                           "banned_reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03",
@@ -1541,14 +1542,14 @@
         }
       }
     },
-    "/organizations/{org_id}/guests/{mazmo_user_id}/ban": {
+    "/organizations/{org_id}/guests/{guest_id}/ban": {
       "patch": {
         "tags": [
           "organizations"
         ],
         "summary": "Ban a guest in this organization (org admin only)",
         "description": "Ban a guest in this organization. Records the admin who performed the ban and the reason.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is already banned in this organization.",
-        "operationId": "ban_guest_organizations__org_id__guests__mazmo_user_id__ban_patch",
+        "operationId": "ban_guest_organizations__org_id__guests__guest_id__ban_patch",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -1566,12 +1567,13 @@
             }
           },
           {
-            "name": "mazmo_user_id",
+            "name": "guest_id",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
-              "title": "Mazmo User Id"
+              "type": "string",
+              "format": "uuid",
+              "title": "Guest Id"
             }
           }
         ],
@@ -1606,8 +1608,9 @@
                   "banned": {
                     "summary": "Guest now banned",
                     "value": {
+                      "id": "b8c9d0e1-f2a3-4567-bcde-678901234567",
                       "mazmo_user_id": 99999,
-                      "username": "usuario_problematico",
+                      "mazmo_handle": "usuario_problematico",
                       "displayname": "Persona Conflictiva",
                       "banned_at": "2024-03-20T18:30:00Z",
                       "banned_reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03",
@@ -1677,7 +1680,7 @@
                   "already_banned": {
                     "summary": "Cannot ban twice",
                     "value": {
-                      "detail": "Cannot ban guest: 'usuario_problematico' (mazmo_user_id=99999) is already banned. They were banned on 2024-03-20 18:30:00+00:00 for reason: 'Comportamiento agresivo'. To update the ban reason, unban first via PATCH /guests/99999/unban, then re-ban."
+                      "detail": "Cannot ban guest: 'usuario_problematico' (id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) is already banned. They were banned on 2024-03-20 18:30:00+00:00 for reason: 'Comportamiento agresivo'. To update the ban reason, unban first via PATCH /organizations/{org_id}/guests/a1b2c3d4-e5f6-7890-abcd-ef1234567890/unban, then re-ban."
                     }
                   }
                 }
@@ -1715,14 +1718,14 @@
         }
       }
     },
-    "/organizations/{org_id}/guests/{mazmo_user_id}/unban": {
+    "/organizations/{org_id}/guests/{guest_id}/unban": {
       "patch": {
         "tags": [
           "organizations"
         ],
         "summary": "Unban a guest in this organization (org admin only)",
         "description": "Unban a guest in this organization. Removes the ban record (history stays in event log).\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is not currently banned in this organization.",
-        "operationId": "unban_guest_organizations__org_id__guests__mazmo_user_id__unban_patch",
+        "operationId": "unban_guest_organizations__org_id__guests__guest_id__unban_patch",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -1740,12 +1743,13 @@
             }
           },
           {
-            "name": "mazmo_user_id",
+            "name": "guest_id",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
-              "title": "Mazmo User Id"
+              "type": "string",
+              "format": "uuid",
+              "title": "Guest Id"
             }
           }
         ],
@@ -1762,9 +1766,11 @@
                     "summary": "Guest now unbanned",
                     "description": "Returns the guest's identity without ban data",
                     "value": {
+                      "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
                       "mazmo_user_id": 12345,
-                      "username": "fiestero_feliz",
-                      "displayname": "Juan El Fiestero"
+                      "mazmo_handle": "fiestero_feliz",
+                      "displayname": "Juan El Fiestero",
+                      "instagram_username": "juan.fiestero"
                     }
                   }
                 }
@@ -1830,7 +1836,7 @@
                   "not_banned": {
                     "summary": "Cannot unban a non-banned guest",
                     "value": {
-                      "detail": "Cannot unban guest: 'fiestero_feliz' (mazmo_user_id=12345) is not currently banned. They may have been unbanned by another admin. Check audit trail at GET /events/guests/12345."
+                      "detail": "Cannot unban guest: 'fiestero_feliz' (id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) is not currently banned. They may have been unbanned by another admin. Check audit trail at GET /organizations/{org_id}/events/guests/a1b2c3d4-e5f6-7890-abcd-ef1234567890."
                     }
                   }
                 }
@@ -2769,110 +2775,14 @@
         }
       }
     },
-    "/guests/": {
-      "get": {
-        "tags": [
-          "guests"
-        ],
-        "summary": "List all known guests (identity only)",
-        "description": "List all guests in the system (identity only, no RSVP state).",
-        "operationId": "list_guests_guests__get",
-        "responses": {
-          "200": {
-            "description": "All known guests (global, no ban context)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GuestListResponse"
-                },
-                "examples": {
-                  "guests_list": {
-                    "summary": "Known guests",
-                    "description": "Identity only - ban status is org-scoped and not included here",
-                    "value": {
-                      "total": 2,
-                      "guests": [
-                        {
-                          "mazmo_user_id": 12346,
-                          "username": "bailarina_nocturna",
-                          "displayname": "Ana Bailarina"
-                        },
-                        {
-                          "mazmo_user_id": 12345,
-                          "username": "fiestero_feliz",
-                          "displayname": "Juan El Fiestero"
-                        }
-                      ]
-                    }
-                  },
-                  "empty": {
-                    "summary": "No guests yet",
-                    "description": "No guests in the system until a meetup is synced",
-                    "value": {
-                      "total": 0,
-                      "guests": []
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Invalid or missing credentials",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "missing_token": {
-                    "summary": "No token provided",
-                    "value": {
-                      "detail": "Not authenticated"
-                    }
-                  },
-                  "invalid_token": {
-                    "summary": "Invalid or expired JWT",
-                    "value": {
-                      "detail": "Could not validate credentials"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Account not approved or disabled",
-            "content": {
-              "application/json": {
-                "examples": {
-                  "pending_approval": {
-                    "summary": "Account pending approval",
-                    "value": {
-                      "detail": "Your account is pending admin approval. Please try again later."
-                    }
-                  },
-                  "account_disabled": {
-                    "summary": "Account disabled",
-                    "value": {
-                      "detail": "Your account has been disabled."
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
-      },
+    "/guests/mazmo": {
       "post": {
         "tags": [
           "guests"
         ],
         "summary": "Create a guest by Mazmo username",
-        "description": "Register a guest using their Mazmo username handle.\n\nLooks up the canonical Mazmo user ID and profile data automatically,\nso staff at the door only need to know the handle (e.g. \"cindydark\").\n\nReturns 404 if the username doesn't exist on Mazmo.\nReturns 409 if the guest is already registered in the system.\nReturns 504 if Mazmo is unreachable.",
-        "operationId": "create_guest_guests__post",
+        "description": "Register a guest using their Mazmo username handle.\n\nLooks up the canonical Mazmo user ID and profile data automatically,\nso staff at the door only need to know the handle (e.g. \"cindydark\").\n\nReturns 404 if the username doesn't exist on Mazmo.\nReturns 409 if that mazmo_user_id is already registered.\nReturns 504 if Mazmo is unreachable.",
+        "operationId": "create_guest_from_mazmo_guests_mazmo_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2885,6 +2795,13 @@
                   "description": "Staff knows the handle but not the numeric ID",
                   "value": {
                     "username": "cindydark"
+                  }
+                },
+                "with_instagram": {
+                  "summary": "Look up by Mazmo handle, with Instagram",
+                  "value": {
+                    "username": "cindydark",
+                    "instagram_username": "cindy.dark"
                   }
                 }
               }
@@ -2904,9 +2821,11 @@
                   "created": {
                     "summary": "Guest successfully registered from Mazmo lookup",
                     "value": {
-                      "mazmo_user_id": 39119,
-                      "username": "cindydark",
-                      "displayname": "\u269c\ufe0fLissandra\u269c\ufe0f"
+                      "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+                      "mazmo_user_id": 12345,
+                      "mazmo_handle": "fiestero_feliz",
+                      "displayname": "Juan El Fiestero",
+                      "instagram_username": "juan.fiestero"
                     }
                   }
                 }
@@ -2978,7 +2897,7 @@
                   "guest_exists": {
                     "summary": "mazmo_user_id already in system",
                     "value": {
-                      "detail": "Cannot create guest: mazmo_user_id=12345 already exists in the system as 'fiestero_feliz'. If you want to add them to a meetup, use POST /meetups/{meetup_id}/guests/12345/add-walkin."
+                      "detail": "Cannot create guest: mazmo_user_id=12345 already exists in the system as 'Juan El Fiestero' (id=e5f6a7b8-c9d0-1234-efab-345678901234). If you want to add them to a meetup, use POST /organizations/{org_id}/meetups/{meetup_id}/guests/e5f6a7b8-c9d0-1234-efab-345678901234/add-walkin."
                     }
                   }
                 }
@@ -3036,14 +2955,129 @@
         ]
       }
     },
-    "/guests/{mazmo_user_id}": {
+    "/guests/manual": {
+      "post": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "Create a guest without a Mazmo account",
+        "description": "Register a guest who does not have a Mazmo account.\n\nNo dedup check is performed: there is no external identifier to\ndeduplicate against, so two guests with the same displayname can\ncoexist. Use PATCH /guests/{guest_id}/link-mazmo later if this guest\nturns out to have (or creates) a Mazmo account.",
+        "operationId": "create_manual_guest_guests_manual_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateManualGuestRequest"
+              },
+              "examples": {
+                "basic": {
+                  "summary": "Guest without a Mazmo account",
+                  "description": "Someone at the door who doesn't have a Mazmo profile",
+                  "value": {
+                    "displayname": "Recien Llegado Sin Mazmo"
+                  }
+                },
+                "with_instagram": {
+                  "summary": "With Instagram handle",
+                  "value": {
+                    "displayname": "Recien Llegado Sin Mazmo",
+                    "instagram_username": "recien.llegado"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Guest created without a Mazmo account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestPublic"
+                },
+                "examples": {
+                  "created": {
+                    "summary": "Manual guest successfully registered",
+                    "value": {
+                      "id": "a7b8c9d0-e1f2-3456-abcd-567890123456",
+                      "displayname": "Recien Llegado Sin Mazmo",
+                      "instagram_username": "recien.llegado"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/guests/": {
       "get": {
         "tags": [
           "guests"
         ],
-        "summary": "Get a single guest's identity",
-        "description": "Get a single guest by their Mazmo user ID.",
-        "operationId": "get_guest_guests__mazmo_user_id__get",
+        "summary": "List all known guests (identity only)",
+        "description": "List all guests in the system (identity only, no RSVP state).",
+        "operationId": "list_guests_guests__get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -3051,12 +3085,144 @@
         ],
         "parameters": [
           {
-            "name": "mazmo_user_id",
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by displayname or mazmo_handle (case-insensitive substring)",
+              "title": "Q"
+            },
+            "description": "Filter by displayname or mazmo_handle (case-insensitive substring)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "All known guests (global, no ban context)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestListResponse"
+                },
+                "examples": {
+                  "guests_list": {
+                    "summary": "Known guests",
+                    "description": "Identity only - ban status is org-scoped and not included here",
+                    "value": {
+                      "total": 2,
+                      "guests": [
+                        {
+                          "id": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+                          "mazmo_user_id": 12346,
+                          "mazmo_handle": "bailarina_nocturna",
+                          "displayname": "Ana Bailarina"
+                        },
+                        {
+                          "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+                          "mazmo_user_id": 12345,
+                          "mazmo_handle": "fiestero_feliz",
+                          "displayname": "Juan El Fiestero",
+                          "instagram_username": "juan.fiestero"
+                        }
+                      ]
+                    }
+                  },
+                  "empty": {
+                    "summary": "No guests yet",
+                    "description": "No guests in the system until a meetup is synced",
+                    "value": {
+                      "total": 0,
+                      "guests": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guests/{guest_id}": {
+      "get": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "Get a single guest's identity",
+        "description": "Get a single guest by their internal id.",
+        "operationId": "get_guest_guests__guest_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "guest_id",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
-              "title": "Mazmo User Id"
+              "type": "string",
+              "format": "uuid",
+              "title": "Guest Id"
             }
           }
         ],
@@ -3073,9 +3239,11 @@
                     "summary": "Guest identity",
                     "description": "Ban status is not included - check org-scoped endpoints for ban info",
                     "value": {
+                      "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
                       "mazmo_user_id": 12345,
-                      "username": "fiestero_feliz",
-                      "displayname": "Juan El Fiestero"
+                      "mazmo_handle": "fiestero_feliz",
+                      "displayname": "Juan El Fiestero",
+                      "instagram_username": "juan.fiestero"
                     }
                   }
                 }
@@ -3132,7 +3300,7 @@
                   "guest_not_found": {
                     "summary": "Guest not in system",
                     "value": {
-                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/. Try POST /meetups/{meetup_id}/sync, POST /guests/, or verify the mazmo_user_id."
+                      "detail": "Guest with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/mazmo or POST /guests/manual. Try POST /meetups/{meetup_id}/sync, or verify the id."
                     }
                   }
                 }
@@ -3150,16 +3318,14 @@
             }
           }
         }
-      }
-    },
-    "/guests/by-username/{username}": {
-      "get": {
+      },
+      "patch": {
         "tags": [
           "guests"
         ],
-        "summary": "Get a single guest by Mazmo username",
-        "description": "Get a single guest by their Mazmo username handle.",
-        "operationId": "get_guest_by_username_guests_by_username__username__get",
+        "summary": "Edit a guest's displayname and/or Instagram handle",
+        "description": "Edit a guest's displayname and/or instagram_username.\n\nA key omitted from the request body is left untouched. A key sent\nexplicitly as null clears it - but only for instagram_username.\ndisplayname is typed str | None on the request schema, so the schema\nitself accepts {\"displayname\": null} without a 422; it is this\nfunction's own guard (payload.displayname is not None) that silently\nignores an explicit null for displayname instead of clearing it,\nbecause Guest.displayname is non-nullable and cannot actually be\ncleared. This distinction uses payload.model_fields_set, since\npayload.instagram_username is None in both the \"omitted\" and\n\"explicitly cleared\" cases.\n\nmazmo_user_id and mazmo_handle cannot be changed here - use\nlink-mazmo/unlink-mazmo for that. This is a cosmetic edit, not an\naudited business event, so no event_log entry is written.",
+        "operationId": "update_guest_guests__guest_id__patch",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -3167,30 +3333,62 @@
         ],
         "parameters": [
           {
-            "name": "username",
+            "name": "guest_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Username"
+              "format": "uuid",
+              "title": "Guest Id"
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGuestRequest"
+              },
+              "examples": {
+                "update_name": {
+                  "summary": "Fix a typo in the display name",
+                  "value": {
+                    "displayname": "Nombre Corregido"
+                  }
+                },
+                "add_instagram": {
+                  "summary": "Add an Instagram handle after the fact",
+                  "value": {
+                    "instagram_username": "nuevo.handle"
+                  }
+                },
+                "clear_instagram": {
+                  "summary": "Remove the Instagram handle",
+                  "description": "Sending instagram_username as null clears it. Omitting the key entirely leaves it untouched.",
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "Guest found",
+            "description": "Guest updated",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GuestPublic"
                 },
                 "examples": {
-                  "guest": {
-                    "summary": "Guest identity",
+                  "updated": {
+                    "summary": "Guest identity after the edit",
                     "value": {
+                      "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
                       "mazmo_user_id": 12345,
-                      "username": "fiestero_feliz",
-                      "displayname": "Juan El Fiestero"
+                      "mazmo_handle": "fiestero_feliz",
+                      "displayname": "Juan El Fiestero",
+                      "instagram_username": "juan.fiestero"
                     }
                   }
                 }
@@ -3240,14 +3438,413 @@
             }
           },
           "404": {
-            "description": "Guest not found by username",
+            "description": "Guest not found",
             "content": {
               "application/json": {
                 "examples": {
-                  "guest_username_not_found": {
-                    "summary": "Username not registered in this system",
+                  "guest_not_found": {
+                    "summary": "Guest not in system",
                     "value": {
-                      "detail": "No guest with username 'unknownuser' found in the system. They may not have RSVPed to any meetup yet. Use POST /guests/ to register them if they're at the door."
+                      "detail": "Guest with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/mazmo or POST /guests/manual. Try POST /meetups/{meetup_id}/sync, or verify the id."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guests/by-mazmo-handle/{mazmo_handle}": {
+      "get": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "Get a single guest by Mazmo handle",
+        "description": "Get a single guest by their Mazmo handle. Guests without Mazmo never match.",
+        "operationId": "get_guest_by_mazmo_handle_guests_by_mazmo_handle__mazmo_handle__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mazmo_handle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mazmo Handle"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guest found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestPublic"
+                },
+                "examples": {
+                  "guest": {
+                    "summary": "Guest identity",
+                    "value": {
+                      "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+                      "mazmo_user_id": 12345,
+                      "mazmo_handle": "fiestero_feliz",
+                      "displayname": "Juan El Fiestero",
+                      "instagram_username": "juan.fiestero"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Guest not found by Mazmo handle",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "guest_handle_not_found": {
+                    "summary": "Handle not registered in this system",
+                    "value": {
+                      "detail": "No guest with Mazmo handle 'unknownuser' found in the system. They may not have RSVPed to any meetup yet, or may not have a Mazmo account at all. Use POST /guests/mazmo to register them by handle, or POST /guests/manual if they don't use Mazmo."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guests/{guest_id}/link-mazmo": {
+      "patch": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "Link an existing guest to a Mazmo account",
+        "description": "Attach a Mazmo account to a guest created without one.\n\nOverwrites mazmo_user_id, mazmo_handle, and displayname with the\nMazmo profile data. instagram_username is left untouched.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is already linked, or if the Mazmo account\nis already linked to a different guest (no automatic merge).",
+        "operationId": "link_guest_to_mazmo_guests__guest_id__link_mazmo_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "guest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Guest Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkMazmoRequest"
+              },
+              "examples": {
+                "link": {
+                  "summary": "Link to a Mazmo account",
+                  "value": {
+                    "username": "cindydark"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Guest linked to Mazmo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestPublic"
+                },
+                "examples": {
+                  "linked": {
+                    "summary": "Guest now has a Mazmo account attached",
+                    "value": {
+                      "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+                      "mazmo_user_id": 12345,
+                      "mazmo_handle": "fiestero_feliz",
+                      "displayname": "Juan El Fiestero",
+                      "instagram_username": "juan.fiestero"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Username not found on Mazmo",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "username_not_found": {
+                    "summary": "Mazmo doesn't know this username",
+                    "value": {
+                      "detail": "Username 'unknownuser' was not found on Mazmo. Check the spelling and try again."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Guest already exists",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "guest_exists": {
+                    "summary": "mazmo_user_id already in system",
+                    "value": {
+                      "detail": "Cannot create guest: mazmo_user_id=12345 already exists in the system as 'Juan El Fiestero' (id=e5f6a7b8-c9d0-1234-efab-345678901234). If you want to add them to a meetup, use POST /organizations/{org_id}/meetups/{meetup_id}/guests/e5f6a7b8-c9d0-1234-efab-345678901234/add-walkin."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Mazmo API timeout",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "mazmo_timeout": {
+                    "summary": "Could not connect to Mazmo",
+                    "value": {
+                      "detail": "Cannot create guest: failed to connect to Mazmo API. Error: Connection timed out. Try again in a few moments."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guests/{guest_id}/unlink-mazmo": {
+      "patch": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "Unlink a guest's Mazmo account",
+        "description": "Detach a guest's Mazmo account, e.g. to undo a link made by mistake.\n\ndisplayname is NOT reverted to any prior value (no name history is\nkept) - it stays as whatever it was, and can be corrected afterward\nvia PATCH /guests/{guest_id}. The freed mazmo_user_id can be linked\nto this guest again, or to a different one.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is not currently linked.\nReturns 409 if the guest has an active ban in any organization - see\nthe ban-evasion guard below for why this is blocked.",
+        "operationId": "unlink_guest_mazmo_guests__guest_id__unlink_mazmo_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "guest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Guest Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guest unlinked from Mazmo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestPublic"
+                },
+                "examples": {
+                  "unlinked": {
+                    "summary": "Guest no longer has a Mazmo account attached",
+                    "value": {
+                      "id": "a7b8c9d0-e1f2-3456-abcd-567890123456",
+                      "displayname": "Recien Llegado Sin Mazmo",
+                      "instagram_username": "recien.llegado"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Guest not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "guest_not_found": {
+                    "summary": "Guest not in system",
+                    "value": {
+                      "detail": "Guest with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/mazmo or POST /guests/manual. Try POST /meetups/{meetup_id}/sync, or verify the id."
                     }
                   }
                 }
@@ -3961,9 +4558,11 @@
                       "guests": [
                         {
                           "guest": {
+                            "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
                             "mazmo_user_id": 12345,
-                            "username": "fiestero_feliz",
+                            "mazmo_handle": "fiestero_feliz",
                             "displayname": "Juan El Fiestero",
+                            "instagram_username": "juan.fiestero",
                             "is_banned": false
                           },
                           "rsvp": {
@@ -3978,8 +4577,9 @@
                         },
                         {
                           "guest": {
+                            "id": "f6a7b8c9-d0e1-2345-fabc-456789012345",
                             "mazmo_user_id": 12346,
-                            "username": "bailarina_nocturna",
+                            "mazmo_handle": "bailarina_nocturna",
                             "displayname": "Ana Bailarina",
                             "is_banned": false
                           },
@@ -4002,9 +4602,11 @@
                       "guests": [
                         {
                           "guest": {
+                            "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
                             "mazmo_user_id": 12345,
-                            "username": "fiestero_feliz",
+                            "mazmo_handle": "fiestero_feliz",
                             "displayname": "Juan El Fiestero",
+                            "instagram_username": "juan.fiestero",
                             "is_banned": false
                           },
                           "rsvp": {
@@ -4019,8 +4621,9 @@
                         },
                         {
                           "guest": {
+                            "id": "b8c9d0e1-f2a3-4567-bcde-678901234567",
                             "mazmo_user_id": 99999,
-                            "username": "usuario_problematico",
+                            "mazmo_handle": "usuario_problematico",
                             "displayname": "Persona Conflictiva",
                             "is_banned": true
                           },
@@ -4117,14 +4720,14 @@
         }
       }
     },
-    "/organizations/{org_id}/meetups/{meetup_id}/guests/{mazmo_user_id}/add-walkin": {
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{guest_id}/add-walkin": {
       "post": {
         "tags": [
           "meetups"
         ],
         "summary": "Add a walk-in guest to this meetup",
         "description": "Manually add a guest who has a Mazmo profile but didn't RSVP to this event.\n\nCreates a MeetupRsvp row with the current time as rsvp_time.\nThe guest must already exist in the system (fetched via a previous sync\nfor any meetup, or visible in GET /guests/).\n\nReturns 404 if the guest doesn't exist in the system.\nReturns 409 if the guest already has an RSVP for this meetup.\nReturns 409 if the meetup is finalized.",
-        "operationId": "add_walkin_guest_organizations__org_id__meetups__meetup_id__guests__mazmo_user_id__add_walkin_post",
+        "operationId": "add_walkin_guest_organizations__org_id__meetups__meetup_id__guests__guest_id__add_walkin_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -4152,14 +4755,13 @@
             }
           },
           {
-            "name": "mazmo_user_id",
+            "name": "guest_id",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
-              "maximum": 2147483647,
-              "exclusiveMinimum": 0,
-              "title": "Mazmo User Id"
+              "type": "string",
+              "format": "uuid",
+              "title": "Guest Id"
             }
           }
         ],
@@ -4177,9 +4779,10 @@
                     "description": "is_walkin=true distinguishes this RSVP from a Mazmo-synced one",
                     "value": {
                       "guest": {
+                        "id": "c9d0e1f2-a3b4-5678-cdef-789012345678",
                         "mazmo_user_id": 55555,
-                        "username": "recien_llegado",
-                        "displayname": "Reci\u00e9n Llegado",
+                        "mazmo_handle": "recien_llegado",
+                        "displayname": "Recien Llegado",
                         "is_banned": false
                       },
                       "rsvp": {
@@ -4245,7 +4848,7 @@
                   "guest_not_in_system": {
                     "summary": "Guest has no record in the system",
                     "value": {
-                      "detail": "Cannot add walk-in: guest mazmo_user_id=55555 does not exist in the system. Register them first via POST /guests/ (username lookup) or sync a meetup they've RSVPed to. Search known guests via GET /guests/ to find the correct ID."
+                      "detail": "Cannot add walk-in: guest id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist in the system. Register them first via POST /guests/mazmo (Mazmo handle lookup) or POST /guests/manual (no Mazmo account), or sync a meetup they've RSVPed to. Search known guests via GET /guests/ to find the correct ID."
                     }
                   }
                 }
@@ -4280,14 +4883,14 @@
         }
       }
     },
-    "/organizations/{org_id}/meetups/{meetup_id}/guests/{mazmo_user_id}/checkin": {
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{guest_id}/checkin": {
       "post": {
         "tags": [
           "meetups"
         ],
         "summary": "Check in a guest at this meetup",
         "description": "Mark a guest as arrived at this meetup.\n\nThe arrival_order and arrival_time are set automatically by a database trigger.\nThe staff member performing the check-in is recorded for audit purposes.\nReturns 404 if guest not RSVPed, 409 if already checked in or meetup finalized.",
-        "operationId": "checkin_guest_organizations__org_id__meetups__meetup_id__guests__mazmo_user_id__checkin_post",
+        "operationId": "checkin_guest_organizations__org_id__meetups__meetup_id__guests__guest_id__checkin_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -4315,14 +4918,13 @@
             }
           },
           {
-            "name": "mazmo_user_id",
+            "name": "guest_id",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
-              "maximum": 2147483647,
-              "exclusiveMinimum": 0,
-              "title": "Mazmo User Id"
+              "type": "string",
+              "format": "uuid",
+              "title": "Guest Id"
             }
           }
         ],
@@ -4340,9 +4942,11 @@
                     "description": "Returns arrival order and who performed the check-in",
                     "value": {
                       "guest": {
+                        "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
                         "mazmo_user_id": 12345,
-                        "username": "fiestero_feliz",
-                        "displayname": "Juan El Fiestero"
+                        "mazmo_handle": "fiestero_feliz",
+                        "displayname": "Juan El Fiestero",
+                        "instagram_username": "juan.fiestero"
                       },
                       "arrival_order": 1,
                       "arrival_time": "2024-03-23T20:05:32Z",
@@ -4406,7 +5010,7 @@
                   "not_rsvped": {
                     "summary": "Guest didn't RSVP to this meetup",
                     "value": {
-                      "detail": "Cannot check in: guest mazmo_user_id=12345 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
+                      "detail": "Cannot check in: guest id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
                     }
                   }
                 }
@@ -4441,14 +5045,14 @@
         }
       }
     },
-    "/organizations/{org_id}/meetups/{meetup_id}/guests/{mazmo_user_id}/undo-checkin": {
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{guest_id}/undo-checkin": {
       "patch": {
         "tags": [
           "meetups"
         ],
         "summary": "Undo a guest check-in at this meetup",
         "description": "Undo a check-in for a guest at this meetup.\n\nUse this when a guest was checked in by mistake. Requires a reason\nfor the audit trail. Clears has_arrived, arrival_time, arrival_order,\nand checked_in_by_id.\n\nReturns 404 if guest not RSVPed to this meetup.\nReturns 409 if guest is not currently checked in.",
-        "operationId": "undo_checkin_guest_organizations__org_id__meetups__meetup_id__guests__mazmo_user_id__undo_checkin_patch",
+        "operationId": "undo_checkin_guest_organizations__org_id__meetups__meetup_id__guests__guest_id__undo_checkin_patch",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -4476,14 +5080,13 @@
             }
           },
           {
-            "name": "mazmo_user_id",
+            "name": "guest_id",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
-              "maximum": 2147483647,
-              "exclusiveMinimum": 0,
-              "title": "Mazmo User Id"
+              "type": "string",
+              "format": "uuid",
+              "title": "Guest Id"
             }
           }
         ],
@@ -4519,9 +5122,11 @@
                     "summary": "Check-in reversed",
                     "description": "Guest is back to not-arrived state",
                     "value": {
+                      "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
                       "mazmo_user_id": 12345,
-                      "username": "fiestero_feliz",
+                      "mazmo_handle": "fiestero_feliz",
                       "displayname": "Juan El Fiestero",
+                      "instagram_username": "juan.fiestero",
                       "is_banned": false
                     }
                   }
@@ -4579,7 +5184,7 @@
                   "not_rsvped": {
                     "summary": "Guest didn't RSVP to this meetup",
                     "value": {
-                      "detail": "Cannot check in: guest mazmo_user_id=12345 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
+                      "detail": "Cannot check in: guest id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
                     }
                   }
                 }
@@ -4594,7 +5199,7 @@
                   "not_checked_in": {
                     "summary": "Cannot undo non-existent check-in",
                     "value": {
-                      "detail": "Cannot undo check-in: guest 'fiestero_feliz' (mazmo_user_id=12345) is not currently checked in. They may have been un-checked by someone else. See event log: GET /events/meetups/{meetup_id}?type=CHECK_IN,UNDO_CHECK_IN"
+                      "detail": "Cannot undo check-in: guest 'fiestero_feliz' (id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) is not currently checked in. They may have been un-checked by someone else. See event log: GET /events/meetups/{meetup_id}?type=CHECK_IN,UNDO_CHECK_IN"
                     }
                   }
                 }
@@ -4632,14 +5237,14 @@
         }
       }
     },
-    "/organizations/{org_id}/meetups/{meetup_id}/guests/{mazmo_user_id}/payment": {
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{guest_id}/payment": {
       "patch": {
         "tags": [
           "meetups"
         ],
         "summary": "Mark a guest's entrance as paid for this meetup (org admin only)",
         "description": "Mark a guest's entrance fee as paid for this specific meetup.\n\nPayment is handled externally by the organizer (cash, transfer, etc.);\nthis just records that it happened so check-in can be enforced.\n\nReturns 409 if the meetup doesn't require payment, if the guest already\npaid, or if the meetup is finalized. Returns 404 if not RSVPed.",
-        "operationId": "mark_guest_paid_organizations__org_id__meetups__meetup_id__guests__mazmo_user_id__payment_patch",
+        "operationId": "mark_guest_paid_organizations__org_id__meetups__meetup_id__guests__guest_id__payment_patch",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -4667,14 +5272,13 @@
             }
           },
           {
-            "name": "mazmo_user_id",
+            "name": "guest_id",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
-              "maximum": 2147483647,
-              "exclusiveMinimum": 0,
-              "title": "Mazmo User Id"
+              "type": "string",
+              "format": "uuid",
+              "title": "Guest Id"
             }
           }
         ],
@@ -4692,9 +5296,11 @@
                     "description": "Returns who marked the payment and when",
                     "value": {
                       "guest": {
+                        "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
                         "mazmo_user_id": 12345,
-                        "username": "fiestero_feliz",
-                        "displayname": "Juan El Fiestero"
+                        "mazmo_handle": "fiestero_feliz",
+                        "displayname": "Juan El Fiestero",
+                        "instagram_username": "juan.fiestero"
                       },
                       "paid_at": "2024-03-23T20:05:32Z",
                       "paid_by": {
@@ -4757,7 +5363,7 @@
                   "not_rsvped": {
                     "summary": "Guest didn't RSVP to this meetup",
                     "value": {
-                      "detail": "Cannot mark payment: guest mazmo_user_id=12345 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
+                      "detail": "Cannot mark payment: guest id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
                     }
                   }
                 }
@@ -4792,14 +5398,14 @@
         }
       }
     },
-    "/organizations/{org_id}/meetups/{meetup_id}/guests/{mazmo_user_id}/payment/undo": {
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{guest_id}/payment/undo": {
       "patch": {
         "tags": [
           "meetups"
         ],
         "summary": "Undo a guest's payment mark for this meetup (org admin only)",
         "description": "Undo a payment mark for a guest at this meetup.\n\nUse this when a payment was marked by mistake. Requires a reason for\nthe audit trail. Clears has_paid, paid_at, and paid_by_id.\n\nReturns 404 if guest not RSVPed to this meetup.\nReturns 409 if the guest is not currently marked as paid.",
-        "operationId": "undo_guest_payment_organizations__org_id__meetups__meetup_id__guests__mazmo_user_id__payment_undo_patch",
+        "operationId": "undo_guest_payment_organizations__org_id__meetups__meetup_id__guests__guest_id__payment_undo_patch",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -4827,14 +5433,13 @@
             }
           },
           {
-            "name": "mazmo_user_id",
+            "name": "guest_id",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
-              "maximum": 2147483647,
-              "exclusiveMinimum": 0,
-              "title": "Mazmo User Id"
+              "type": "string",
+              "format": "uuid",
+              "title": "Guest Id"
             }
           }
         ],
@@ -4870,8 +5475,9 @@
                     "summary": "Payment mark reversed",
                     "description": "Guest is back to not-paid state",
                     "value": {
+                      "id": "f6a7b8c9-d0e1-2345-fabc-456789012345",
                       "mazmo_user_id": 12346,
-                      "username": "bailarina_nocturna",
+                      "mazmo_handle": "bailarina_nocturna",
                       "displayname": "Ana Bailarina"
                     }
                   }
@@ -4929,7 +5535,7 @@
                   "not_rsvped": {
                     "summary": "Guest didn't RSVP to this meetup",
                     "value": {
-                      "detail": "Cannot undo payment: guest mazmo_user_id=12345 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
+                      "detail": "Cannot undo payment: guest id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
                     }
                   }
                 }
@@ -4944,7 +5550,7 @@
                   "not_paid": {
                     "summary": "Cannot undo a non-existent payment mark",
                     "value": {
-                      "detail": "Cannot undo payment: guest 'fiestero_feliz' (mazmo_user_id=12345) is not currently marked as paid. They may have had their payment undone by someone else. See event log: GET /events/meetups/{meetup_id}?type=PAYMENT_RECORDED,PAYMENT_REVOKED"
+                      "detail": "Cannot undo payment: guest 'fiestero_feliz' (id=a1b2c3d4-e5f6-7890-abcd-ef1234567890) is not currently marked as paid. They may have had their payment undone by someone else. See event log: GET /events/meetups/{meetup_id}?type=PAYMENT_RECORDED,PAYMENT_REVOKED"
                     }
                   }
                 }
@@ -5600,10 +6206,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED",
+              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, GUEST_MAZMO_LINKED, GUEST_MAZMO_UNLINKED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED",
               "title": "Type"
             },
-            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED"
+            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, GUEST_MAZMO_LINKED, GUEST_MAZMO_UNLINKED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED"
           },
           {
             "name": "since",
@@ -5650,16 +6256,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "integer"
+                  "type": "string",
+                  "format": "uuid"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Filter by guest mazmo_user_id",
+              "description": "Filter by guest id",
               "title": "Guest Id"
             },
-            "description": "Filter by guest mazmo_user_id"
+            "description": "Filter by guest id"
           },
           {
             "name": "meetup_id",
@@ -5750,8 +6357,9 @@
                             "username": "maria_admin"
                           },
                           "guest": {
+                            "id": "b8c9d0e1-f2a3-4567-bcde-678901234567",
                             "mazmo_user_id": 99999,
-                            "username": "usuario_problematico",
+                            "mazmo_handle": "usuario_problematico",
                             "displayname": "Persona Conflictiva"
                           },
                           "reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03"
@@ -5765,8 +6373,9 @@
                             "username": "carlos_staff"
                           },
                           "guest": {
+                            "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
                             "mazmo_user_id": 12345,
-                            "username": "fiestero_feliz",
+                            "mazmo_handle": "fiestero_feliz",
                             "displayname": "Juan El Fiestero"
                           },
                           "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -5791,8 +6400,9 @@
                             "username": "carlos_staff"
                           },
                           "guest": {
+                            "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
                             "mazmo_user_id": 12345,
-                            "username": "fiestero_feliz",
+                            "mazmo_handle": "fiestero_feliz",
                             "displayname": "Juan El Fiestero"
                           },
                           "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -5817,8 +6427,9 @@
                             "username": "carlos_staff"
                           },
                           "guest": {
+                            "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
                             "mazmo_user_id": 12345,
-                            "username": "fiestero_feliz",
+                            "mazmo_handle": "fiestero_feliz",
                             "displayname": "Juan El Fiestero"
                           },
                           "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -5950,10 +6561,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED",
+              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, GUEST_MAZMO_LINKED, GUEST_MAZMO_UNLINKED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED",
               "title": "Type"
             },
-            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED"
+            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, GUEST_MAZMO_LINKED, GUEST_MAZMO_UNLINKED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED"
           },
           {
             "name": "since",
@@ -6046,8 +6657,9 @@
                             "username": "carlos_staff"
                           },
                           "guest": {
+                            "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
                             "mazmo_user_id": 12345,
-                            "username": "fiestero_feliz",
+                            "mazmo_handle": "fiestero_feliz",
                             "displayname": "Juan El Fiestero"
                           },
                           "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -6182,7 +6794,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
+              "type": "string",
+              "format": "uuid",
               "title": "Guest Id"
             }
           },
@@ -6199,10 +6812,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED",
+              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, GUEST_MAZMO_LINKED, GUEST_MAZMO_UNLINKED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED",
               "title": "Type"
             },
-            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED"
+            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, GUEST_MAZMO_LINKED, GUEST_MAZMO_UNLINKED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED"
           },
           {
             "name": "since",
@@ -6314,8 +6927,9 @@
                             "username": "maria_admin"
                           },
                           "guest": {
+                            "id": "b8c9d0e1-f2a3-4567-bcde-678901234567",
                             "mazmo_user_id": 99999,
-                            "username": "usuario_problematico",
+                            "mazmo_handle": "usuario_problematico",
                             "displayname": "Persona Conflictiva"
                           },
                           "reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03"
@@ -6340,8 +6954,9 @@
                             "username": "maria_admin"
                           },
                           "guest": {
+                            "id": "b8c9d0e1-f2a3-4567-bcde-678901234567",
                             "mazmo_user_id": 99999,
-                            "username": "usuario_problematico",
+                            "mazmo_handle": "usuario_problematico",
                             "displayname": "Persona Conflictiva"
                           },
                           "reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03"
@@ -6355,8 +6970,9 @@
                             "username": "carlos_staff"
                           },
                           "guest": {
+                            "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
                             "mazmo_user_id": 12345,
-                            "username": "fiestero_feliz",
+                            "mazmo_handle": "fiestero_feliz",
                             "displayname": "Juan El Fiestero"
                           },
                           "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -6442,7 +7058,7 @@
                   "guest_not_found": {
                     "summary": "Guest not in system",
                     "value": {
-                      "detail": "Guest with mazmo_user_id=99999 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/. Try POST /meetups/{meetup_id}/sync, POST /guests/, or verify the mazmo_user_id."
+                      "detail": "Guest with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/mazmo or POST /guests/manual. Try POST /meetups/{meetup_id}/sync, or verify the id."
                     }
                   }
                 }
@@ -6508,10 +7124,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED",
+              "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, GUEST_MAZMO_LINKED, GUEST_MAZMO_UNLINKED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED",
               "title": "Type"
             },
-            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED"
+            "description": "Filter by event type(s), comma-separated: CHECK_IN, UNDO_CHECK_IN, BAN, UNBAN, MEETUP_FINALIZED, MEETUP_UNFINALIZED, WALKIN, GUEST_CREATED, GUEST_MAZMO_LINKED, GUEST_MAZMO_UNLINKED, PAYMENT_RECORDED, PAYMENT_REVOKED, PAYMENT_REQUIREMENT_ENABLED, PAYMENT_REQUIREMENT_DISABLED"
           },
           {
             "name": "since",
@@ -6558,16 +7174,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "integer"
+                  "type": "string",
+                  "format": "uuid"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Filter by guest mazmo_user_id",
+              "description": "Filter by guest id",
               "title": "Guest Id"
             },
-            "description": "Filter by guest mazmo_user_id"
+            "description": "Filter by guest id"
           },
           {
             "name": "meetup_id",
@@ -6640,8 +7257,9 @@
                             "username": "carlos_staff"
                           },
                           "guest": {
+                            "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
                             "mazmo_user_id": 12345,
-                            "username": "fiestero_feliz",
+                            "mazmo_handle": "fiestero_feliz",
                             "displayname": "Juan El Fiestero"
                           },
                           "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -6666,8 +7284,9 @@
                             "username": "maria_admin"
                           },
                           "guest": {
+                            "id": "b8c9d0e1-f2a3-4567-bcde-678901234567",
                             "mazmo_user_id": 99999,
-                            "username": "usuario_problematico",
+                            "mazmo_handle": "usuario_problematico",
                             "displayname": "Persona Conflictiva"
                           },
                           "reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03"
@@ -6681,8 +7300,9 @@
                             "username": "carlos_staff"
                           },
                           "guest": {
+                            "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
                             "mazmo_user_id": 12345,
-                            "username": "fiestero_feliz",
+                            "mazmo_handle": "fiestero_feliz",
                             "displayname": "Juan El Fiestero"
                           },
                           "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -6978,17 +7598,47 @@
       },
       "BannedGuestPublic": {
         "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
           "mazmo_user_id": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Mazmo User Id"
           },
-          "username": {
-            "type": "string",
-            "title": "Username"
+          "mazmo_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mazmo Handle"
           },
           "displayname": {
             "type": "string",
             "title": "Displayname"
+          },
+          "instagram_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instagram Username"
           },
           "banned_at": {
             "type": "string",
@@ -7013,9 +7663,11 @@
         },
         "type": "object",
         "required": [
+          "id",
           "mazmo_user_id",
-          "username",
+          "mazmo_handle",
           "displayname",
+          "instagram_username",
           "banned_at",
           "banned_reason",
           "banned_by_id"
@@ -7137,6 +7789,18 @@
             "minLength": 1,
             "title": "Username",
             "description": "Mazmo username to look up (e.g. 'cindydark')"
+          },
+          "instagram_username": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instagram Username"
           }
         },
         "type": "object",
@@ -7144,7 +7808,35 @@
           "username"
         ],
         "title": "CreateGuestRequest",
-        "description": "Request body for creating a guest by Mazmo username."
+        "description": "Request body for creating a guest by Mazmo username (POST /guests/mazmo)."
+      },
+      "CreateManualGuestRequest": {
+        "properties": {
+          "displayname": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Displayname"
+          },
+          "instagram_username": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instagram Username"
+          }
+        },
+        "type": "object",
+        "required": [
+          "displayname"
+        ],
+        "title": "CreateManualGuestRequest",
+        "description": "Request body for creating a guest without a Mazmo account (POST /guests/manual)."
       },
       "DisableUserRequest": {
         "properties": {
@@ -7183,13 +7875,32 @@
       },
       "EventGuestPublic": {
         "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
           "mazmo_user_id": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Mazmo User Id"
           },
-          "username": {
-            "type": "string",
-            "title": "Username"
+          "mazmo_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mazmo Handle"
           },
           "displayname": {
             "type": "string",
@@ -7198,8 +7909,9 @@
         },
         "type": "object",
         "required": [
+          "id",
           "mazmo_user_id",
-          "username",
+          "mazmo_handle",
           "displayname"
         ],
         "title": "EventGuestPublic",
@@ -7328,41 +8040,103 @@
       },
       "GuestPublic": {
         "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
           "mazmo_user_id": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Mazmo User Id"
           },
-          "username": {
-            "type": "string",
-            "title": "Username"
+          "mazmo_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mazmo Handle"
           },
           "displayname": {
             "type": "string",
             "title": "Displayname"
+          },
+          "instagram_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instagram Username"
           }
         },
         "type": "object",
         "required": [
+          "id",
           "mazmo_user_id",
-          "username",
-          "displayname"
+          "mazmo_handle",
+          "displayname",
+          "instagram_username"
         ],
         "title": "GuestPublic",
-        "description": "A Mazmo user's identity (cached locally).\n\nIdentity-only - no RSVP or ban state. Bans are per-org and are\nincluded only in org-scoped endpoints via GuestWithBanPublic."
+        "description": "A guest's identity (cached locally, may or may not have a Mazmo account).\n\nIdentity-only - no RSVP or ban state. Bans are per-org and are\nincluded only in org-scoped endpoints via GuestWithBanPublic."
       },
       "GuestWithBanPublic": {
         "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
           "mazmo_user_id": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Mazmo User Id"
           },
-          "username": {
-            "type": "string",
-            "title": "Username"
+          "mazmo_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mazmo Handle"
           },
           "displayname": {
             "type": "string",
             "title": "Displayname"
+          },
+          "instagram_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instagram Username"
           },
           "is_banned": {
             "type": "boolean",
@@ -7372,9 +8146,11 @@
         },
         "type": "object",
         "required": [
+          "id",
           "mazmo_user_id",
-          "username",
-          "displayname"
+          "mazmo_handle",
+          "displayname",
+          "instagram_username"
         ],
         "title": "GuestWithBanPublic",
         "description": "Guest identity with org-scoped ban status.\n\nUsed in meetup guest lists and org-specific guest endpoints where\nthe frontend needs to know if this guest is banned in the current org."
@@ -7418,6 +8194,23 @@
         ],
         "title": "HealthResponse",
         "description": "Full health check response.\n\nThe overall status is \"healthy\" only if all critical services are healthy.\nNon-critical services being down results in \"degraded\" status."
+      },
+      "LinkMazmoRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Username",
+            "description": "Mazmo username to link"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username"
+        ],
+        "title": "LinkMazmoRequest",
+        "description": "Request body for linking an existing guest to a Mazmo account."
       },
       "MeetupCreate": {
         "properties": {
@@ -8071,6 +8864,38 @@
         ],
         "title": "UndoPaymentRequest",
         "description": "Request body for undoing a payment mark."
+      },
+      "UpdateGuestRequest": {
+        "properties": {
+          "displayname": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displayname"
+          },
+          "instagram_username": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instagram Username"
+          }
+        },
+        "type": "object",
+        "title": "UpdateGuestRequest",
+        "description": "Request body for editing a guest's displayname and/or Instagram handle.\n\nBoth fields are optional (partial update). Whether an omitted key\nmeans \"don't touch\" vs. an explicit null meaning \"clear it\" is\nresolved by the router via payload.model_fields_set, not by this\nschema - see update_guest() in app/routers/guests.py."
       },
       "UserPublic": {
         "properties": {

@@ -32,7 +32,6 @@ from sqlmodel import Session, select
 from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.deps import get_org_admin, get_org_member
-from app.domain_types import MazmoUserId
 from app.models.models import EventLog, EventType, Guest, Meetup, MeetupRsvp, OrganizationBan, User
 from app.openapi_examples.meetups_examples import (
     ADD_WALKIN_RESPONSES,
@@ -104,15 +103,15 @@ def _raise_if_finalized(meetup: Meetup) -> None:
         )
 
 
-def _refetch_guest_or_500(session: Session, mazmo_user_id: int, *, action: str) -> Guest:
+def _refetch_guest_or_500(session: Session, guest_id: uuid.UUID, *, action: str) -> Guest:
     """Fetch a guest right after a commit succeeded, or raise 500 (should never happen)."""
-    guest = session.get(Guest, mazmo_user_id)
+    guest = session.get(Guest, guest_id)
     if not guest:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=(
                 f"Internal error: {action} succeeded but guest record "
-                f"(mazmo_user_id={mazmo_user_id}) could not be fetched. "
+                f"(id={guest_id}) could not be fetched. "
                 f"This should never happen - please report this bug. "
                 f"The {action} WAS recorded in the database."
             ),
@@ -346,22 +345,24 @@ async def list_meetup_guests(
 
     # Batch-load bans to avoid N+1 queries
     guest_ids = [rsvp.guest_id for rsvp in rsvps]
-    banned_ids: set[int] = set()
+    banned_ids: set[uuid.UUID] = set()
     if guest_ids:
         bans = session.exec(
             select(OrganizationBan)
             .where(OrganizationBan.org_id == org_id)
             .where(OrganizationBan.guest_id.in_(guest_ids))  # type: ignore[union-attr]
         ).all()
-        banned_ids = {int(ban.guest_id) for ban in bans}
+        banned_ids = {ban.guest_id for ban in bans}
 
     guests = [
         MeetupGuestPublic(
             guest=GuestWithBanPublic(
+                id=rsvp.guest.id,
                 mazmo_user_id=rsvp.guest.mazmo_user_id,
-                username=rsvp.guest.username,
+                mazmo_handle=rsvp.guest.mazmo_handle,
                 displayname=rsvp.guest.displayname,
-                is_banned=int(rsvp.guest_id) in banned_ids,
+                instagram_username=rsvp.guest.instagram_username,
+                is_banned=rsvp.guest_id in banned_ids,
             ),
             rsvp=RsvpPublic.model_validate(rsvp),
         )
@@ -375,7 +376,7 @@ async def list_meetup_guests(
 
 
 @router.post(
-    "/organizations/{org_id}/meetups/{meetup_id}/guests/{mazmo_user_id}/add-walkin",
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{guest_id}/add-walkin",
     response_model=MeetupGuestPublic,
     status_code=status.HTTP_201_CREATED,
     summary="Add a walk-in guest to this meetup",
@@ -384,7 +385,7 @@ async def list_meetup_guests(
 async def add_walkin_guest(
     org_id: uuid.UUID,
     meetup_id: uuid.UUID,
-    mazmo_user_id: Annotated[int, Field(gt=0, le=2_147_483_647)],
+    guest_id: uuid.UUID,
     session: Session = Depends(get_session),
     staff: User = Depends(get_org_member),
 ) -> MeetupGuestPublic:
@@ -402,24 +403,25 @@ async def add_walkin_guest(
     meetup = _get_meetup_or_404_in_org(session, meetup_id, org_id)
     _raise_if_finalized(meetup)
 
-    guest = session.get(Guest, mazmo_user_id)
+    guest = session.get(Guest, guest_id)
     if not guest:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
-                f"Cannot add walk-in: guest mazmo_user_id={mazmo_user_id} does not exist in the system. "
-                f"Register them first via POST /guests/ (username lookup) or sync a meetup they've RSVPed to."
+                f"Cannot add walk-in: guest id={guest_id} does not exist in the system. "
+                f"Register them first via POST /guests/mazmo, POST /guests/manual, or sync "
+                f"a meetup they've RSVPed to."
             ),
         )
 
     existing = session.exec(
-        select(MeetupRsvp).where(MeetupRsvp.meetup_id == meetup_id).where(MeetupRsvp.guest_id == mazmo_user_id)
+        select(MeetupRsvp).where(MeetupRsvp.meetup_id == meetup_id).where(MeetupRsvp.guest_id == guest_id)
     ).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Cannot add walk-in: guest '{guest.username}' (mazmo_user_id={mazmo_user_id}) "
+                f"Cannot add walk-in: guest '{guest.displayname}' (id={guest_id}) "
                 f"already has an RSVP for this meetup. "
                 f"They may have RSVPed on Mazmo or been added as a walk-in previously."
             ),
@@ -427,7 +429,7 @@ async def add_walkin_guest(
 
     rsvp = MeetupRsvp(
         meetup_id=meetup_id,
-        guest_id=MazmoUserId(mazmo_user_id),
+        guest_id=guest_id,
         rsvp_time=datetime.now(UTC),
         cancelled_rsvp=False,
         is_walkin=True,
@@ -436,7 +438,7 @@ async def add_walkin_guest(
     event = EventLog(
         event_type=EventType.WALKIN,
         actor_id=staff.id,
-        guest_id=MazmoUserId(mazmo_user_id),
+        guest_id=guest_id,
         meetup_id=meetup_id,
         org_id=org_id,
     )
@@ -450,7 +452,7 @@ async def add_walkin_guest(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Cannot add walk-in: guest '{guest.username}' (mazmo_user_id={mazmo_user_id}) "
+                f"Cannot add walk-in: guest '{guest.displayname}' (id={guest_id}) "
                 f"already has an RSVP for this meetup (concurrent request)."
             ),
         ) from None
@@ -459,21 +461,23 @@ async def add_walkin_guest(
     log.info(
         "Walk-in guest added",
         staff=staff.username,
-        guest=guest.username,
-        guest_id=mazmo_user_id,
+        guest=guest.displayname,
+        guest_id=str(guest_id),
         meetup_id=str(meetup_id),
         org_id=str(org_id),
     )
 
     ban = session.exec(
-        select(OrganizationBan).where(OrganizationBan.org_id == org_id).where(OrganizationBan.guest_id == mazmo_user_id)
+        select(OrganizationBan).where(OrganizationBan.org_id == org_id).where(OrganizationBan.guest_id == guest_id)
     ).first()
 
     return MeetupGuestPublic(
         guest=GuestWithBanPublic(
+            id=guest.id,
             mazmo_user_id=guest.mazmo_user_id,
-            username=guest.username,
+            mazmo_handle=guest.mazmo_handle,
             displayname=guest.displayname,
+            instagram_username=guest.instagram_username,
             is_banned=ban is not None,
         ),
         rsvp=RsvpPublic.model_validate(rsvp),
@@ -484,7 +488,7 @@ async def add_walkin_guest(
 
 
 @router.post(
-    "/organizations/{org_id}/meetups/{meetup_id}/guests/{mazmo_user_id}/checkin",
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{guest_id}/checkin",
     response_model=CheckInResponse,
     summary="Check in a guest at this meetup",
     responses=CHECKIN_RESPONSES,
@@ -492,7 +496,7 @@ async def add_walkin_guest(
 async def checkin_guest(
     org_id: uuid.UUID,
     meetup_id: uuid.UUID,
-    mazmo_user_id: Annotated[int, Field(gt=0, le=2_147_483_647)],
+    guest_id: uuid.UUID,
     session: Session = Depends(get_session),
     staff: User = Depends(get_org_member),
 ) -> CheckInResponse:
@@ -514,7 +518,7 @@ async def checkin_guest(
     rsvp = session.exec(
         select(MeetupRsvp)
         .where(MeetupRsvp.meetup_id == meetup_id)
-        .where(MeetupRsvp.guest_id == mazmo_user_id)
+        .where(MeetupRsvp.guest_id == guest_id)
         .with_for_update()
         .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
     ).first()
@@ -523,7 +527,7 @@ async def checkin_guest(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
-                f"Cannot check in: guest mazmo_user_id={mazmo_user_id} is not RSVPed. "
+                f"Cannot check in: guest id={guest_id} is not RSVPed. "
                 f"Either: (1) they haven't RSVPed on Mazmo yet, "
                 f"(2) RSVP list needs syncing - try POST /organizations/{org_id}/meetups/{meetup_id}/sync, "
                 f"or (3) wrong ID - check GET /organizations/{org_id}/meetups/{meetup_id}/guests."
@@ -534,11 +538,11 @@ async def checkin_guest(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Cannot check in: guest '{rsvp.guest.username}' (mazmo_user_id={mazmo_user_id}) "
+                f"Cannot check in: guest '{rsvp.guest.displayname}' (id={guest_id}) "
                 f"is already checked in. They arrived at {rsvp.arrival_time} "
                 f"(arrival #{rsvp.arrival_order}). "
                 f"To undo this, use PATCH /organizations/{org_id}/meetups/{meetup_id}"
-                f"/guests/{mazmo_user_id}/undo-checkin."
+                f"/guests/{guest_id}/undo-checkin."
             ),
         )
 
@@ -546,10 +550,10 @@ async def checkin_guest(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Cannot check in: guest '{rsvp.guest.username}' (mazmo_user_id={mazmo_user_id}) "
+                f"Cannot check in: guest '{rsvp.guest.displayname}' (id={guest_id}) "
                 f"has not paid the entrance fee for '{meetup.name}'. "
                 f"Mark the payment first via PATCH /organizations/{org_id}/meetups/{meetup_id}"
-                f"/guests/{mazmo_user_id}/payment."
+                f"/guests/{guest_id}/payment."
             ),
         )
 
@@ -559,7 +563,7 @@ async def checkin_guest(
     event = EventLog(
         event_type=EventType.CHECK_IN,
         actor_id=staff.id,
-        guest_id=mazmo_user_id,
+        guest_id=guest_id,
         meetup_id=meetup_id,
         org_id=org_id,
     )
@@ -569,13 +573,13 @@ async def checkin_guest(
     session.commit()
     session.refresh(rsvp)
 
-    guest = _refetch_guest_or_500(session, mazmo_user_id, action="check-in")
+    guest = _refetch_guest_or_500(session, guest_id, action="check-in")
 
     log.info(
         "Check-in recorded",
         staff=staff.username,
-        guest=guest.username,
-        guest_id=mazmo_user_id,
+        guest=guest.displayname,
+        guest_id=str(guest_id),
         meetup_id=str(meetup_id),
         org_id=str(org_id),
         arrival_order=rsvp.arrival_order,
@@ -599,7 +603,7 @@ class UndoCheckInRequest(BaseModel):
 
 
 @router.patch(
-    "/organizations/{org_id}/meetups/{meetup_id}/guests/{mazmo_user_id}/undo-checkin",
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{guest_id}/undo-checkin",
     response_model=GuestPublic,
     summary="Undo a guest check-in at this meetup",
     responses=UNDO_CHECKIN_RESPONSES,
@@ -607,7 +611,7 @@ class UndoCheckInRequest(BaseModel):
 async def undo_checkin_guest(
     org_id: uuid.UUID,
     meetup_id: uuid.UUID,
-    mazmo_user_id: Annotated[int, Field(gt=0, le=2_147_483_647)],
+    guest_id: uuid.UUID,
     request: Annotated[UndoCheckInRequest, Body(openapi_examples=UNDO_CHECKIN_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
     staff: User = Depends(get_org_member),
@@ -627,7 +631,7 @@ async def undo_checkin_guest(
     rsvp = session.exec(
         select(MeetupRsvp)
         .where(MeetupRsvp.meetup_id == meetup_id)
-        .where(MeetupRsvp.guest_id == mazmo_user_id)
+        .where(MeetupRsvp.guest_id == guest_id)
         .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
     ).first()
 
@@ -635,7 +639,7 @@ async def undo_checkin_guest(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
-                f"Cannot undo check-in: guest mazmo_user_id={mazmo_user_id} is not RSVPed "
+                f"Cannot undo check-in: guest id={guest_id} is not RSVPed "
                 f"to this meetup. Verify the guest ID via GET /organizations/{org_id}/meetups/{meetup_id}/guests."
             ),
         )
@@ -644,8 +648,8 @@ async def undo_checkin_guest(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Cannot undo check-in: guest '{rsvp.guest.username}' "
-                f"(mazmo_user_id={mazmo_user_id}) is not currently checked in. "
+                f"Cannot undo check-in: guest '{rsvp.guest.displayname}' "
+                f"(id={guest_id}) is not currently checked in. "
                 f"They may have been un-checked by someone else. "
                 f"See event log: GET /organizations/{org_id}/events/meetups/{meetup_id}?type=CHECK_IN,UNDO_CHECK_IN"
             ),
@@ -659,7 +663,7 @@ async def undo_checkin_guest(
     event = EventLog(
         event_type=EventType.UNDO_CHECK_IN,
         actor_id=staff.id,
-        guest_id=mazmo_user_id,
+        guest_id=guest_id,
         meetup_id=meetup_id,
         org_id=org_id,
         reason=request.reason,
@@ -669,13 +673,13 @@ async def undo_checkin_guest(
     session.add(event)
     session.commit()
 
-    guest = _refetch_guest_or_500(session, mazmo_user_id, action="undo")
+    guest = _refetch_guest_or_500(session, guest_id, action="undo")
 
     log.info(
         "Check-in undone",
         staff=staff.username,
-        guest=guest.username,
-        guest_id=guest.mazmo_user_id,
+        guest=guest.displayname,
+        guest_id=str(guest.id),
         meetup_id=str(meetup_id),
         org_id=str(org_id),
         reason=request.reason,
@@ -687,7 +691,7 @@ async def undo_checkin_guest(
 
 
 @router.patch(
-    "/organizations/{org_id}/meetups/{meetup_id}/guests/{mazmo_user_id}/payment",
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{guest_id}/payment",
     response_model=PaymentResponse,
     summary="Mark a guest's entrance as paid for this meetup (org admin only)",
     responses=MARK_PAYMENT_RESPONSES,
@@ -695,7 +699,7 @@ async def undo_checkin_guest(
 async def mark_guest_paid(
     org_id: uuid.UUID,
     meetup_id: uuid.UUID,
-    mazmo_user_id: Annotated[int, Field(gt=0, le=2_147_483_647)],
+    guest_id: uuid.UUID,
     session: Session = Depends(get_session),
     admin: User = Depends(get_org_admin),
 ) -> PaymentResponse:
@@ -723,7 +727,7 @@ async def mark_guest_paid(
     rsvp = session.exec(
         select(MeetupRsvp)
         .where(MeetupRsvp.meetup_id == meetup_id)
-        .where(MeetupRsvp.guest_id == mazmo_user_id)
+        .where(MeetupRsvp.guest_id == guest_id)
         .with_for_update()
         .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
     ).first()
@@ -732,7 +736,7 @@ async def mark_guest_paid(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
-                f"Cannot mark payment: guest mazmo_user_id={mazmo_user_id} is not RSVPed. "
+                f"Cannot mark payment: guest id={guest_id} is not RSVPed. "
                 f"Either: (1) they haven't RSVPed on Mazmo yet, "
                 f"(2) RSVP list needs syncing - try POST /organizations/{org_id}/meetups/{meetup_id}/sync, "
                 f"or (3) wrong ID - check GET /organizations/{org_id}/meetups/{meetup_id}/guests."
@@ -743,10 +747,10 @@ async def mark_guest_paid(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Cannot mark payment: guest '{rsvp.guest.username}' (mazmo_user_id={mazmo_user_id}) "
+                f"Cannot mark payment: guest '{rsvp.guest.displayname}' (id={guest_id}) "
                 f"already paid at {rsvp.paid_at}. "
                 f"To undo this, use PATCH /organizations/{org_id}/meetups/{meetup_id}"
-                f"/guests/{mazmo_user_id}/payment/undo."
+                f"/guests/{guest_id}/payment/undo."
             ),
         )
 
@@ -758,13 +762,13 @@ async def mark_guest_paid(
     # attributes (including the .guest relationship). paid_at is set in
     # Python above, not by a DB trigger, so there's nothing to refresh.
     guest_public = GuestPublic.model_validate(rsvp.guest)
-    guest_username = rsvp.guest.username
+    guest_displayname = rsvp.guest.displayname
     paid_at = rsvp.paid_at
 
     event = EventLog(
         event_type=EventType.PAYMENT_RECORDED,
         actor_id=admin.id,
-        guest_id=mazmo_user_id,
+        guest_id=guest_id,
         meetup_id=meetup_id,
         org_id=org_id,
     )
@@ -776,8 +780,8 @@ async def mark_guest_paid(
     log.info(
         "Payment recorded",
         admin=admin.username,
-        guest=guest_username,
-        guest_id=mazmo_user_id,
+        guest=guest_displayname,
+        guest_id=str(guest_id),
         meetup_id=str(meetup_id),
         org_id=str(org_id),
     )
@@ -799,7 +803,7 @@ class UndoPaymentRequest(BaseModel):
 
 
 @router.patch(
-    "/organizations/{org_id}/meetups/{meetup_id}/guests/{mazmo_user_id}/payment/undo",
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{guest_id}/payment/undo",
     response_model=GuestPublic,
     summary="Undo a guest's payment mark for this meetup (org admin only)",
     responses=UNDO_PAYMENT_RESPONSES,
@@ -807,7 +811,7 @@ class UndoPaymentRequest(BaseModel):
 async def undo_guest_payment(
     org_id: uuid.UUID,
     meetup_id: uuid.UUID,
-    mazmo_user_id: Annotated[int, Field(gt=0, le=2_147_483_647)],
+    guest_id: uuid.UUID,
     request: Annotated[UndoPaymentRequest, Body(openapi_examples=UNDO_PAYMENT_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
     admin: User = Depends(get_org_admin),
@@ -826,7 +830,7 @@ async def undo_guest_payment(
     rsvp = session.exec(
         select(MeetupRsvp)
         .where(MeetupRsvp.meetup_id == meetup_id)
-        .where(MeetupRsvp.guest_id == mazmo_user_id)
+        .where(MeetupRsvp.guest_id == guest_id)
         .with_for_update()
         .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
     ).first()
@@ -835,7 +839,7 @@ async def undo_guest_payment(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
-                f"Cannot undo payment: guest mazmo_user_id={mazmo_user_id} is not RSVPed "
+                f"Cannot undo payment: guest id={guest_id} is not RSVPed "
                 f"to this meetup. Verify the guest ID via GET /organizations/{org_id}/meetups/{meetup_id}/guests."
             ),
         )
@@ -844,8 +848,8 @@ async def undo_guest_payment(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Cannot undo payment: guest '{rsvp.guest.username}' "
-                f"(mazmo_user_id={mazmo_user_id}) is not currently marked as paid. "
+                f"Cannot undo payment: guest '{rsvp.guest.displayname}' "
+                f"(id={guest_id}) is not currently marked as paid. "
                 f"They may have had their payment undone by someone else. "
                 f"See event log: GET /organizations/{org_id}/events/meetups/{meetup_id}"
                 f"?type=PAYMENT_RECORDED,PAYMENT_REVOKED"
@@ -859,7 +863,7 @@ async def undo_guest_payment(
     event = EventLog(
         event_type=EventType.PAYMENT_REVOKED,
         actor_id=admin.id,
-        guest_id=mazmo_user_id,
+        guest_id=guest_id,
         meetup_id=meetup_id,
         org_id=org_id,
         reason=request.reason,
@@ -869,13 +873,13 @@ async def undo_guest_payment(
     session.add(event)
     session.commit()
 
-    guest = _refetch_guest_or_500(session, mazmo_user_id, action="undo")
+    guest = _refetch_guest_or_500(session, guest_id, action="undo")
 
     log.info(
         "Payment undone",
         admin=admin.username,
-        guest=guest.username,
-        guest_id=guest.mazmo_user_id,
+        guest=guest.displayname,
+        guest_id=str(guest.id),
         meetup_id=str(meetup_id),
         org_id=str(org_id),
         reason=request.reason,

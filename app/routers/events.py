@@ -79,7 +79,7 @@ def _build_event_query(
     type_param: str | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
-    guest_id: int | None = None,
+    guest_id: uuid.UUID | None = None,
     meetup_id: str | None = None,
     actor_id: int | None = None,
 ):
@@ -195,7 +195,7 @@ async def list_all_events(
     ),
     since: datetime | None = Query(default=None, description="Events after this timestamp"),
     until: datetime | None = Query(default=None, description="Events before this timestamp"),
-    guest_id: int | None = Query(default=None, description="Filter by guest mazmo_user_id"),
+    guest_id: uuid.UUID | None = Query(default=None, description="Filter by guest id"),
     meetup_id: str | None = Query(default=None, description="Filter by meetup UUID"),
     actor_id: int | None = Query(default=None, description="Filter by staff member ID"),
     limit: int = Query(default=50, ge=1, le=100, description="Events per page (max 100)"),
@@ -283,7 +283,7 @@ async def list_meetup_events(
 )
 async def list_guest_events(
     org_id: uuid.UUID,
-    guest_id: int,
+    guest_id: uuid.UUID,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_org_member),
     type: str | None = Query(
@@ -308,7 +308,7 @@ async def list_guest_events(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
-                f"Guest with mazmo_user_id={guest_id} not found. "
+                f"Guest with id={guest_id} not found. "
                 f"They may not have RSVPed to any meetup yet. "
                 f"List all guests via GET /guests/ to find valid IDs."
             ),
@@ -357,7 +357,7 @@ async def list_staff_events(
     ),
     since: datetime | None = Query(default=None, description="Events after this timestamp"),
     until: datetime | None = Query(default=None, description="Events before this timestamp"),
-    guest_id: int | None = Query(default=None, description="Filter by guest mazmo_user_id"),
+    guest_id: uuid.UUID | None = Query(default=None, description="Filter by guest id"),
     meetup_id: str | None = Query(default=None, description="Filter by meetup UUID"),
     limit: int = Query(default=50, ge=1, le=100, description="Events per page (max 100)"),
     offset: int = Query(default=0, ge=0, description="Skip N events"),
