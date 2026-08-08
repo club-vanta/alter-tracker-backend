@@ -421,8 +421,8 @@ def test_list_meetup_guests_returns_all_rsvps(
     """
     Verify that listing meetup guests returns all RSVPed guests.
     """
-    alice = make_guest(session, mazmo_user_id=101, username="alice")
-    bob = make_guest(session, mazmo_user_id=102, username="bob")
+    alice = make_guest(session, mazmo_user_id=101, mazmo_handle="alice")
+    bob = make_guest(session, mazmo_user_id=102, mazmo_handle="bob")
     make_rsvp(session, meetup=meetup, guest=alice)
     make_rsvp(session, meetup=meetup, guest=bob)
 
@@ -434,8 +434,8 @@ def test_list_meetup_guests_returns_all_rsvps(
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
     assert data["total"] == 2
-    usernames = {g["guest"]["username"] for g in data["guests"]}
-    assert usernames == {"alice", "bob"}
+    handles = {g["guest"]["mazmo_handle"] for g in data["guests"]}
+    assert handles == {"alice", "bob"}
 
 
 def test_list_meetup_guests_includes_rsvp_and_checkin_state(
@@ -451,7 +451,7 @@ def test_list_meetup_guests_includes_rsvp_and_checkin_state(
     WHY: The door staff need to know both who RSVPed and who has already
     arrived, so we include both sets of data.
     """
-    alice = make_guest(session, mazmo_user_id=201, username="alice_rsvp")
+    alice = make_guest(session, mazmo_user_id=201, mazmo_handle="alice_rsvp")
     make_rsvp(session, meetup=meetup, guest=alice, has_arrived=True, arrival_order=1)
 
     resp = client.get(
@@ -479,7 +479,7 @@ def test_list_meetup_guests_includes_is_banned_field(
     warning before a banned guest is checked in. This field must always
     be present in the response even when False.
     """
-    guest = make_guest(session, mazmo_user_id=250, username="unbanned_guest")
+    guest = make_guest(session, mazmo_user_id=250, mazmo_handle="unbanned_guest")
     make_rsvp(session, meetup=meetup, guest=guest)
 
     resp = client.get(
@@ -547,17 +547,17 @@ def test_checkin_marks_guest_as_arrived(
     WHY: Core functionality - door staff needs to mark guests as arrived
     and get confirmation with arrival order.
     """
-    guest = make_guest(session, mazmo_user_id=301, username="checkin_guest")
+    guest = make_guest(session, mazmo_user_id=301, mazmo_handle="checkin_guest")
     make_rsvp(session, meetup=meetup, guest=guest)
 
     resp = client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
 
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
-    assert data["guest"]["username"] == "checkin_guest"
+    assert data["guest"]["mazmo_handle"] == "checkin_guest"
     assert data["arrival_order"] is not None
 
 
@@ -574,15 +574,15 @@ def test_checkin_writes_event_log_entry(
 
     WHY: We need an audit trail of who checked in each guest and when.
     """
-    guest = make_guest(session, mazmo_user_id=302, username="audit_guest")
+    guest = make_guest(session, mazmo_user_id=302, mazmo_handle="audit_guest")
     make_rsvp(session, meetup=meetup, guest=guest)
 
     client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
 
-    event = session.exec(select(EventLog).where(EventLog.guest_id == guest.mazmo_user_id)).first()
+    event = session.exec(select(EventLog).where(EventLog.guest_id == guest.id)).first()
     assert event is not None
     assert event.event_type == EventType.CHECK_IN
     assert event.actor_id == staff_user.id
@@ -602,7 +602,7 @@ def test_checkin_returns_404_when_guest_not_rsvped(
     or who needs to be synced first. Clear 404 prompts them to sync.
     """
     resp = client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/99999/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{uuid.uuid4()}/checkin",
         headers=staff_headers,
     )
 
@@ -622,7 +622,7 @@ def test_checkin_returns_409_when_already_checked_in(
     WHY: Prevents accidentally checking in the same guest twice.
     The error message includes undo instructions.
     """
-    guest = make_guest(session, mazmo_user_id=303, username="double_checkin")
+    guest = make_guest(session, mazmo_user_id=303, mazmo_handle="double_checkin")
     make_rsvp(
         session,
         meetup=meetup,
@@ -633,7 +633,7 @@ def test_checkin_returns_409_when_already_checked_in(
     )
 
     resp = client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
 
@@ -651,7 +651,7 @@ def test_checkin_returns_404_for_unknown_meetup(
     """
     fake_id = uuid.uuid4()
     resp = client.post(
-        f"/organizations/{org.id}/meetups/{fake_id}/guests/123/checkin",
+        f"/organizations/{org.id}/meetups/{fake_id}/guests/{uuid.uuid4()}/checkin",
         headers=staff_headers,
     )
 
@@ -686,17 +686,17 @@ def test_checkin_second_attempt_after_first_succeeds_returns_409(
     FOR UPDATE releases the lock -- has_arrived is True, so it gets 409.
     The first check-in won; the second must not silently succeed or 500.
     """
-    guest = make_guest(session, mazmo_user_id=350, username="concurrent_checkin")
+    guest = make_guest(session, mazmo_user_id=350, mazmo_handle="concurrent_checkin")
     make_rsvp(session, meetup=meetup, guest=guest)
 
     resp1 = client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
     assert resp1.status_code == status.HTTP_200_OK
 
     resp2 = client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
     assert resp2.status_code == status.HTTP_409_CONFLICT
@@ -717,21 +717,21 @@ def test_checkin_produces_exactly_one_event_log_entry_on_duplicate_attempt(
     actually performed the first check-in should appear in the log.
     A second concurrent request must not inject its own event log entry.
     """
-    guest = make_guest(session, mazmo_user_id=351, username="one_event_guest")
+    guest = make_guest(session, mazmo_user_id=351, mazmo_handle="one_event_guest")
     make_rsvp(session, meetup=meetup, guest=guest)
 
     client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
     client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
 
     events = session.exec(
         select(EventLog)
-        .where(EventLog.guest_id == guest.mazmo_user_id)
+        .where(EventLog.guest_id == guest.id)
         .where(EventLog.event_type == EventType.CHECK_IN)
     ).all()
     assert len(events) == 1
@@ -755,23 +755,23 @@ def test_checkin_event_log_records_first_staff_not_second(
     WHY: In a real race, two different staff members at two terminals could
     both scan the same guest. Only the first one should appear in the audit log.
     """
-    guest = make_guest(session, mazmo_user_id=352, username="race_guest")
+    guest = make_guest(session, mazmo_user_id=352, mazmo_handle="race_guest")
     make_rsvp(session, meetup=meetup, guest=guest)
 
     # Staff checks in first
     client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
     # Admin tries to check in the same guest (arrives second)
     client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
         headers=admin_headers,
     )
 
     event = session.exec(
         select(EventLog)
-        .where(EventLog.guest_id == guest.mazmo_user_id)
+        .where(EventLog.guest_id == guest.id)
         .where(EventLog.event_type == EventType.CHECK_IN)
     ).first()
     assert event is not None
@@ -794,7 +794,7 @@ def test_undo_checkin_clears_arrival_data(
     WHY: Staff might check in the wrong person. Undo must fully clear
     all arrival fields so the guest can be checked in again correctly.
     """
-    guest = make_guest(session, mazmo_user_id=401, username="undo_guest")
+    guest = make_guest(session, mazmo_user_id=401, mazmo_handle="undo_guest")
     rsvp = make_rsvp(
         session,
         meetup=meetup,
@@ -805,7 +805,7 @@ def test_undo_checkin_clears_arrival_data(
     )
 
     resp = client.patch(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/undo-checkin",
         json={"reason": "Checked in by mistake"},
         headers=staff_headers,
     )
@@ -831,7 +831,7 @@ def test_undo_checkin_writes_event_log_with_reason(
 
     WHY: We need to know why a check-in was undone for accountability.
     """
-    guest = make_guest(session, mazmo_user_id=402, username="undo_audit")
+    guest = make_guest(session, mazmo_user_id=402, mazmo_handle="undo_audit")
     make_rsvp(
         session,
         meetup=meetup,
@@ -842,14 +842,14 @@ def test_undo_checkin_writes_event_log_with_reason(
     )
 
     client.patch(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/undo-checkin",
         json={"reason": "Wrong person scanned"},
         headers=staff_headers,
     )
 
     event = session.exec(
         select(EventLog)
-        .where(EventLog.guest_id == guest.mazmo_user_id)
+        .where(EventLog.guest_id == guest.id)
         .where(EventLog.event_type == EventType.UNDO_CHECK_IN)
     ).first()
     assert event is not None
@@ -867,7 +867,7 @@ def test_undo_checkin_returns_404_when_guest_not_rsvped(
     Verify that undo on a non-RSVPed guest returns 404.
     """
     resp = client.patch(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/99999/undo-checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{uuid.uuid4()}/undo-checkin",
         json={"reason": "Test reason"},
         headers=staff_headers,
     )
@@ -887,11 +887,11 @@ def test_undo_checkin_returns_409_when_guest_not_checked_in(
 
     WHY: Can't undo something that didn't happen. Clear error prevents confusion.
     """
-    guest = make_guest(session, mazmo_user_id=403, username="not_arrived")
+    guest = make_guest(session, mazmo_user_id=403, mazmo_handle="not_arrived")
     make_rsvp(session, meetup=meetup, guest=guest, has_arrived=False)
 
     resp = client.patch(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/undo-checkin",
         json={"reason": "Oops!"},
         headers=staff_headers,
     )
@@ -912,7 +912,7 @@ def test_undo_checkin_rejects_reason_that_is_too_short(
     WHY: "ok" or "x" are not useful audit entries. We enforce a minimum
     length to ensure reasons are actually informative.
     """
-    guest = make_guest(session, mazmo_user_id=404, username="short_reason")
+    guest = make_guest(session, mazmo_user_id=404, mazmo_handle="short_reason")
     make_rsvp(
         session,
         meetup=meetup,
@@ -923,7 +923,7 @@ def test_undo_checkin_rejects_reason_that_is_too_short(
     )
 
     resp = client.patch(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/undo-checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/undo-checkin",
         json={"reason": "no"},
         headers=staff_headers,
     )
@@ -942,7 +942,7 @@ def test_undo_checkin_returns_404_for_unknown_meetup(
     """
     fake_id = uuid.uuid4()
     resp = client.patch(
-        f"/organizations/{org.id}/meetups/{fake_id}/guests/123/undo-checkin",
+        f"/organizations/{org.id}/meetups/{fake_id}/guests/{uuid.uuid4()}/undo-checkin",
         json={"reason": "Test reason"},
         headers=staff_headers,
     )
@@ -1097,12 +1097,12 @@ def test_checkin_returns_409_when_meetup_is_finalized(
     finalized.is_finalized = True
     finalized.finalized_at = datetime.now(UTC)
     session.add(finalized)
-    guest = make_guest(session, mazmo_user_id=501, username="blocked_guest")
+    guest = make_guest(session, mazmo_user_id=501, mazmo_handle="blocked_guest")
     make_rsvp(session, meetup=finalized, guest=guest)
     session.flush()
 
     resp = client.post(
-        f"/organizations/{org.id}/meetups/{finalized.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{org.id}/meetups/{finalized.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
 
@@ -1225,7 +1225,7 @@ def test_checkin_works_after_unfinalize(
     finalized.is_finalized = True
     finalized.finalized_at = datetime.now(UTC)
     session.add(finalized)
-    guest = make_guest(session, mazmo_user_id=502, username="restored_guest")
+    guest = make_guest(session, mazmo_user_id=502, mazmo_handle="restored_guest")
     make_rsvp(session, meetup=finalized, guest=guest)
     session.flush()
 
@@ -1235,7 +1235,7 @@ def test_checkin_works_after_unfinalize(
     )
 
     resp = client.post(
-        f"/organizations/{org.id}/meetups/{finalized.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{org.id}/meetups/{finalized.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
     assert resp.status_code == status.HTTP_200_OK
@@ -1296,16 +1296,16 @@ def test_add_walkin_returns_201_with_is_walkin_true(
     but didn't RSVP. The is_walkin flag must be set so the frontend can show
     the badge.
     """
-    guest = make_guest(session, mazmo_user_id=601, username="walkin_guest")
+    guest = make_guest(session, mazmo_user_id=601, mazmo_handle="walkin_guest")
 
     resp = client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/add-walkin",
         headers=staff_headers,
     )
 
     assert resp.status_code == status.HTTP_201_CREATED
     data = resp.json()
-    assert data["guest"]["username"] == "walkin_guest"
+    assert data["guest"]["mazmo_handle"] == "walkin_guest"
     assert data["rsvp"]["is_walkin"] is True
 
 
@@ -1322,15 +1322,15 @@ def test_add_walkin_writes_event_log_entry(
 
     WHY: We need a full audit trail of who added each walk-in and when.
     """
-    guest = make_guest(session, mazmo_user_id=602, username="walkin_audit")
+    guest = make_guest(session, mazmo_user_id=602, mazmo_handle="walkin_audit")
 
     client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/add-walkin",
         headers=staff_headers,
     )
 
     event = session.exec(
-        select(EventLog).where(EventLog.guest_id == guest.mazmo_user_id).where(EventLog.event_type == EventType.WALKIN)
+        select(EventLog).where(EventLog.guest_id == guest.id).where(EventLog.event_type == EventType.WALKIN)
     ).first()
     assert event is not None
     assert event.actor_id == staff_user.id
@@ -1350,7 +1350,7 @@ def test_add_walkin_returns_404_when_guest_not_in_system(
     doesn't exist at all, the request is invalid.
     """
     resp = client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/99999/add-walkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{uuid.uuid4()}/add-walkin",
         headers=staff_headers,
     )
 
@@ -1370,11 +1370,11 @@ def test_add_walkin_returns_409_when_rsvp_already_exists(
     WHY: Prevents duplicate RSVPs -- the guest may have RSVPed on Mazmo or
     already been added as a walk-in.
     """
-    guest = make_guest(session, mazmo_user_id=603, username="already_rsvped")
+    guest = make_guest(session, mazmo_user_id=603, mazmo_handle="already_rsvped")
     make_rsvp(session, meetup=meetup, guest=guest)
 
     resp = client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/add-walkin",
         headers=staff_headers,
     )
 
@@ -1403,11 +1403,11 @@ def test_add_walkin_returns_409_when_meetup_is_finalized(
     finalized.is_finalized = True
     finalized.finalized_at = datetime.now(UTC)
     session.add(finalized)
-    guest = make_guest(session, mazmo_user_id=604, username="walkin_blocked")
+    guest = make_guest(session, mazmo_user_id=604, mazmo_handle="walkin_blocked")
     session.flush()
 
     resp = client.post(
-        f"/organizations/{org.id}/meetups/{finalized.id}/guests/{guest.mazmo_user_id}/add-walkin",
+        f"/organizations/{org.id}/meetups/{finalized.id}/guests/{guest.id}/add-walkin",
         headers=staff_headers,
     )
 
@@ -1415,21 +1415,21 @@ def test_add_walkin_returns_409_when_meetup_is_finalized(
     assert "finalized" in resp.json()["detail"].lower()
 
 
-# -- mazmo_user_id range validation -------------------------------------------
+# -- guest_id path param validation --------------------------------------------
 
 
-def test_checkin_rejects_out_of_range_mazmo_user_id(
+def test_checkin_rejects_malformed_guest_id(
     client: TestClient,
     staff_headers: dict,
     meetup,
     org_staff_member,
 ):
     """
-    Verify that a mazmo_user_id larger than Postgres INTEGER max returns 422.
+    Verify that a non-UUID guest_id path segment returns 422.
 
-    WHY: The guests table uses a Postgres INTEGER column for mazmo_user_id, which
-    caps at 2,147,483,647. Without this validation the DB raises a NumericValueOutOfRange
-    error, which surfaces as an unhandled 500. We validate at the API boundary instead.
+    WHY: guest_id is now a UUID path param (Guest.id), not the old Postgres
+    INTEGER mazmo_user_id. FastAPI/Pydantic reject malformed UUIDs at the API
+    boundary before the request ever reaches the database.
     """
     resp = client.post(
         f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/123123123123/checkin",
@@ -1439,17 +1439,17 @@ def test_checkin_rejects_out_of_range_mazmo_user_id(
     assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
-def test_undo_checkin_rejects_out_of_range_mazmo_user_id(
+def test_undo_checkin_rejects_malformed_guest_id(
     client: TestClient,
     staff_headers: dict,
     meetup,
     org_staff_member,
 ):
     """
-    Verify that a mazmo_user_id larger than Postgres INTEGER max returns 422.
+    Verify that a non-UUID guest_id path segment returns 422.
 
-    WHY: Same reason as test_checkin_rejects_out_of_range_mazmo_user_id -- all
-    endpoints that accept mazmo_user_id as a path parameter must enforce this limit.
+    WHY: Same reason as test_checkin_rejects_malformed_guest_id -- all
+    endpoints that accept guest_id as a path parameter require a valid UUID.
     """
     resp = client.patch(
         f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/123123123123/undo-checkin",
@@ -1460,17 +1460,17 @@ def test_undo_checkin_rejects_out_of_range_mazmo_user_id(
     assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
-def test_add_walkin_rejects_out_of_range_mazmo_user_id(
+def test_add_walkin_rejects_malformed_guest_id(
     client: TestClient,
     staff_headers: dict,
     meetup,
     org_staff_member,
 ):
     """
-    Verify that a mazmo_user_id larger than Postgres INTEGER max returns 422.
+    Verify that a non-UUID guest_id path segment returns 422.
 
-    WHY: Same reason as test_checkin_rejects_out_of_range_mazmo_user_id -- all
-    endpoints that accept mazmo_user_id as a path parameter must enforce this limit.
+    WHY: Same reason as test_checkin_rejects_malformed_guest_id -- all
+    endpoints that accept guest_id as a path parameter require a valid UUID.
     """
     resp = client.post(
         f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/123123123123/add-walkin",
@@ -1513,23 +1513,23 @@ def test_mark_payment_sets_has_paid_and_writes_event_log(
     WHY: The organizer needs a record of who confirmed each guest's payment
     and when, since the actual money changes hands outside the system.
     """
-    guest = make_guest(session, mazmo_user_id=401, username="payer")
+    guest = make_guest(session, mazmo_user_id=401, mazmo_handle="payer")
     make_rsvp(session, meetup=paid_meetup, guest=guest)
 
     resp = client.patch(
-        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment",
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/payment",
         headers=admin_headers,
     )
 
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
-    assert data["guest"]["username"] == "payer"
+    assert data["guest"]["mazmo_handle"] == "payer"
     assert data["paid_at"] is not None
     assert data["paid_by"]["username"] == "admin"
 
     event = session.exec(
         select(EventLog)
-        .where(EventLog.guest_id == guest.mazmo_user_id)
+        .where(EventLog.guest_id == guest.id)
         .where(EventLog.event_type == EventType.PAYMENT_RECORDED)
     ).first()
     assert event is not None
@@ -1549,11 +1549,11 @@ def test_mark_payment_returns_409_when_meetup_does_not_require_payment(
     WHY: Payment tracking is opt-in per meetup; marking it on a free event
     would be a no-op that could confuse the audit trail.
     """
-    guest = make_guest(session, mazmo_user_id=402, username="free_event_guest")
+    guest = make_guest(session, mazmo_user_id=402, mazmo_handle="free_event_guest")
     make_rsvp(session, meetup=meetup, guest=guest)
 
     resp = client.patch(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/payment",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/payment",
         headers=admin_headers,
     )
 
@@ -1571,11 +1571,11 @@ def test_mark_payment_returns_409_when_already_paid(
 
     WHY: Prevents accidentally double-recording a payment.
     """
-    guest = make_guest(session, mazmo_user_id=403, username="already_paid")
+    guest = make_guest(session, mazmo_user_id=403, mazmo_handle="already_paid")
     make_rsvp(session, meetup=paid_meetup, guest=guest, has_paid=True, paid_at=datetime.now(UTC))
 
     resp = client.patch(
-        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment",
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/payment",
         headers=admin_headers,
     )
 
@@ -1591,7 +1591,7 @@ def test_mark_payment_returns_404_when_guest_not_rsvped(
     Verify that marking payment for a non-RSVPed guest returns 404.
     """
     resp = client.patch(
-        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/99999/payment",
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{uuid.uuid4()}/payment",
         headers=admin_headers,
     )
 
@@ -1611,11 +1611,11 @@ def test_mark_payment_returns_403_for_org_staff_without_admin_role(
     WHY: Payment confirmation is admin-only, same permission level as
     finalize/bans -- staff can check guests in but not confirm payment.
     """
-    guest = make_guest(session, mazmo_user_id=404, username="staff_blocked")
+    guest = make_guest(session, mazmo_user_id=404, mazmo_handle="staff_blocked")
     make_rsvp(session, meetup=paid_meetup, guest=guest)
 
     resp = client.patch(
-        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment",
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/payment",
         headers=staff_headers,
     )
 
@@ -1634,7 +1634,7 @@ def test_mark_payment_returns_409_when_meetup_finalized(
     WHY: A finalized meetup is frozen -- same rule as check-in, sync, and
     walk-ins, which are also blocked once the event is closed out.
     """
-    guest = make_guest(session, mazmo_user_id=405, username="finalized_event_guest")
+    guest = make_guest(session, mazmo_user_id=405, mazmo_handle="finalized_event_guest")
     make_rsvp(session, meetup=paid_meetup, guest=guest)
     paid_meetup.is_finalized = True
     paid_meetup.finalized_at = datetime.now(UTC)
@@ -1642,7 +1642,7 @@ def test_mark_payment_returns_409_when_meetup_finalized(
     session.flush()
 
     resp = client.patch(
-        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment",
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/payment",
         headers=admin_headers,
     )
 
@@ -1666,11 +1666,11 @@ def test_undo_payment_clears_has_paid_and_writes_event_log_with_reason(
     WHY: Same pattern as undo-checkin -- reverting a payment mark is a
     sensitive action that needs a reason for the audit trail.
     """
-    guest = make_guest(session, mazmo_user_id=406, username="undo_payment_guest")
+    guest = make_guest(session, mazmo_user_id=406, mazmo_handle="undo_payment_guest")
     make_rsvp(session, meetup=paid_meetup, guest=guest, has_paid=True, paid_at=datetime.now(UTC))
 
     resp = client.patch(
-        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment/undo",
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/payment/undo",
         headers=admin_headers,
         json={"reason": "Marked the wrong guest as paid"},
     )
@@ -1680,7 +1680,7 @@ def test_undo_payment_clears_has_paid_and_writes_event_log_with_reason(
     rsvp = session.exec(
         select(MeetupRsvp)
         .where(MeetupRsvp.meetup_id == paid_meetup.id)
-        .where(MeetupRsvp.guest_id == guest.mazmo_user_id)
+        .where(MeetupRsvp.guest_id == guest.id)
     ).one()
     assert rsvp.has_paid is False
     assert rsvp.paid_at is None
@@ -1688,7 +1688,7 @@ def test_undo_payment_clears_has_paid_and_writes_event_log_with_reason(
 
     event = session.exec(
         select(EventLog)
-        .where(EventLog.guest_id == guest.mazmo_user_id)
+        .where(EventLog.guest_id == guest.id)
         .where(EventLog.event_type == EventType.PAYMENT_REVOKED)
     ).first()
     assert event is not None
@@ -1705,11 +1705,11 @@ def test_undo_payment_returns_409_when_not_paid(
     """
     Verify that undoing payment for a guest who hasn't paid returns 409.
     """
-    guest = make_guest(session, mazmo_user_id=407, username="never_paid")
+    guest = make_guest(session, mazmo_user_id=407, mazmo_handle="never_paid")
     make_rsvp(session, meetup=paid_meetup, guest=guest)
 
     resp = client.patch(
-        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment/undo",
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/payment/undo",
         headers=admin_headers,
         json={"reason": "Trying to undo a non-existent payment"},
     )
@@ -1729,11 +1729,11 @@ def test_undo_payment_rejects_reason_that_is_too_short(
     WHY: Same 5-500 char validation as undo-checkin, enforced at the
     schema level via Field(min_length=5, max_length=500).
     """
-    guest = make_guest(session, mazmo_user_id=408, username="short_reason_guest")
+    guest = make_guest(session, mazmo_user_id=408, mazmo_handle="short_reason_guest")
     make_rsvp(session, meetup=paid_meetup, guest=guest, has_paid=True, paid_at=datetime.now(UTC))
 
     resp = client.patch(
-        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment/undo",
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/payment/undo",
         headers=admin_headers,
         json={"reason": "bad"},
     )
@@ -1751,11 +1751,11 @@ def test_undo_payment_returns_403_for_org_staff_without_admin_role(
     """
     Verify that a STAFF-role org member cannot undo a payment mark.
     """
-    guest = make_guest(session, mazmo_user_id=409, username="staff_undo_blocked")
+    guest = make_guest(session, mazmo_user_id=409, mazmo_handle="staff_undo_blocked")
     make_rsvp(session, meetup=paid_meetup, guest=guest, has_paid=True, paid_at=datetime.now(UTC))
 
     resp = client.patch(
-        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/payment/undo",
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/payment/undo",
         headers=staff_headers,
         json={"reason": "Testing staff cannot undo payment"},
     )
@@ -1780,11 +1780,11 @@ def test_checkin_returns_409_when_meetup_requires_payment_and_guest_unpaid(
     WHY: This is the core requirement of the feature -- a guest cannot
     physically enter a paid event without having paid first.
     """
-    guest = make_guest(session, mazmo_user_id=410, username="unpaid_at_door")
+    guest = make_guest(session, mazmo_user_id=410, mazmo_handle="unpaid_at_door")
     make_rsvp(session, meetup=paid_meetup, guest=guest)
 
     resp = client.post(
-        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
 
@@ -1801,11 +1801,11 @@ def test_checkin_succeeds_when_meetup_requires_payment_and_guest_paid(
     """
     Verify that check-in succeeds once the guest is marked as paid.
     """
-    guest = make_guest(session, mazmo_user_id=411, username="paid_at_door")
+    guest = make_guest(session, mazmo_user_id=411, mazmo_handle="paid_at_door")
     make_rsvp(session, meetup=paid_meetup, guest=guest, has_paid=True, paid_at=datetime.now(UTC))
 
     resp = client.post(
-        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
 
@@ -1825,11 +1825,11 @@ def test_checkin_ignores_payment_requirement_when_meetup_does_not_require_it(
     WHY: Regression guard -- the payment enforcement must not leak into
     the existing free-event check-in flow that every other test relies on.
     """
-    guest = make_guest(session, mazmo_user_id=412, username="free_event_checkin")
+    guest = make_guest(session, mazmo_user_id=412, mazmo_handle="free_event_checkin")
     make_rsvp(session, meetup=meetup, guest=guest)
 
     resp = client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
 
@@ -2010,11 +2010,11 @@ def test_enable_payment_does_not_retroactively_block_already_checked_in_guest(
     requires_payment only affects check-ins from that point forward. A
     guest who already entered for free must not be retroactively affected.
     """
-    guest = make_guest(session, mazmo_user_id=413, username="already_in_before_toggle")
+    guest = make_guest(session, mazmo_user_id=413, mazmo_handle="already_in_before_toggle")
     make_rsvp(session, meetup=meetup, guest=guest)
 
     checkin_resp = client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
     assert checkin_resp.status_code == status.HTTP_200_OK
@@ -2026,7 +2026,7 @@ def test_enable_payment_does_not_retroactively_block_already_checked_in_guest(
     assert enable_resp.status_code == status.HTTP_200_OK
 
     rsvp = session.exec(
-        select(MeetupRsvp).where(MeetupRsvp.meetup_id == meetup.id).where(MeetupRsvp.guest_id == guest.mazmo_user_id)
+        select(MeetupRsvp).where(MeetupRsvp.meetup_id == meetup.id).where(MeetupRsvp.guest_id == guest.id)
     ).one()
     assert rsvp.has_arrived is True
 
@@ -2043,7 +2043,7 @@ def test_new_checkin_blocked_after_enabling_payment_on_previously_free_meetup(
     Verify that a guest who hasn't checked in yet is blocked once payment
     is enabled, even though the meetup started out free.
     """
-    guest = make_guest(session, mazmo_user_id=414, username="not_yet_in_before_toggle")
+    guest = make_guest(session, mazmo_user_id=414, mazmo_handle="not_yet_in_before_toggle")
     make_rsvp(session, meetup=meetup, guest=guest)
 
     enable_resp = client.patch(
@@ -2053,7 +2053,7 @@ def test_new_checkin_blocked_after_enabling_payment_on_previously_free_meetup(
     assert enable_resp.status_code == status.HTTP_200_OK
 
     checkin_resp = client.post(
-        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.mazmo_user_id}/checkin",
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
         headers=staff_headers,
     )
     assert checkin_resp.status_code == status.HTTP_409_CONFLICT
@@ -2072,7 +2072,7 @@ def test_disable_payment_preserves_has_paid_data(
     should still count -- has_paid data is inert, not deleted, when the
     requirement is switched off.
     """
-    guest = make_guest(session, mazmo_user_id=415, username="paid_before_disable")
+    guest = make_guest(session, mazmo_user_id=415, mazmo_handle="paid_before_disable")
     make_rsvp(session, meetup=paid_meetup, guest=guest, has_paid=True, paid_at=datetime.now(UTC))
 
     resp = client.patch(
@@ -2084,6 +2084,6 @@ def test_disable_payment_preserves_has_paid_data(
     rsvp = session.exec(
         select(MeetupRsvp)
         .where(MeetupRsvp.meetup_id == paid_meetup.id)
-        .where(MeetupRsvp.guest_id == guest.mazmo_user_id)
+        .where(MeetupRsvp.guest_id == guest.id)
     ).one()
     assert rsvp.has_paid is True
