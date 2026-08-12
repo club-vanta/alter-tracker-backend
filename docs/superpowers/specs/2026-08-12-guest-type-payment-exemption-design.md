@@ -264,6 +264,10 @@ niveles se interpretan asi:
 - `test_guest_type_enum_has_exactly_four_values` - guarda de regresion:
   si alguien agrega un valor al enum sin actualizar las formulas de
   stats, este test lo hace ruidoso en vez de fallar en silencio.
+- `test_migration_backfills_existing_rsvps_with_guest_type_normal` (a
+  nivel de migracion/DB, no HTTP) - RSVPs creadas antes de esta
+  migracion quedan con `guest_type='NORMAL'` despues de
+  `alembic upgrade head`, via el `server_default`.
 
 ### Integracion
 
@@ -274,6 +278,10 @@ niveles se interpretan asi:
 - `test_update_guest_type_returns_403_for_staff_non_admin`.
 - `test_update_guest_type_returns_401_without_auth`.
 - `test_update_guest_type_returns_404_when_guest_not_rsvped_to_meetup`.
+- `test_update_guest_type_returns_404_for_nonexistent_meetup`.
+- `test_update_guest_type_returns_403_for_admin_of_different_org` -
+  aislamiento multi-tenant: un admin de la Org A no puede cambiar
+  `guest_type` en un meetup de la Org B.
 - `test_update_guest_type_creates_audit_log_with_old_and_new_reason` -
   `EventLog.event_type == GUEST_TYPE_CHANGED`, `reason` menciona el
   valor viejo y el nuevo.
@@ -292,14 +300,23 @@ niveles se interpretan asi:
   regresion, sigue funcionando igual.
 - `test_checkin_allows_normal_guest_when_requires_payment_false` -
   regresion, el flag de meetup sigue mandando cuando no hay exencion.
+- `test_checkin_still_blocked_for_banned_guest_even_if_exempt_from_payment` -
+  la exencion de pago (`guest_type != NORMAL`) NO debe pisar el chequeo
+  de ban: un guest baneado con `guest_type=STAFF` sigue bloqueado en el
+  check-in. Este gate es independiente del de pago y no se toca en este
+  feature, pero hay que probar explicitamente que ambos gates componen
+  bien (dado que ban-evasion ya fue una preocupacion de seguridad
+  explicita en el feature de guest identity).
 
 **`GET .../meetups/{meetup_id}/stats`:**
 
 - `test_meetup_stats_returns_200_with_grouped_shape` - la respuesta
   tiene los 4 sub-objetos (`attendance`, `cancellations`, `guest_types`,
   `payment`) con sus campos.
+- `test_meetup_stats_returns_401_without_auth`.
 - `test_meetup_stats_returns_403_for_member_of_different_org` -
   aislamiento entre organizaciones.
+- `test_meetup_stats_returns_404_for_nonexistent_meetup`.
 - `test_meetup_stats_returns_zero_counts_for_meetup_with_no_rsvps` -
   caso borde, meetup recien creado.
 - `test_meetup_stats_counts_arrived_and_not_arrived_correctly`.
@@ -308,6 +325,10 @@ niveles se interpretan asi:
 - `test_meetup_stats_counts_cancelled_but_paid_correctly`.
 - `test_meetup_stats_counts_all_four_guest_types_correctly` - un guest de
   cada tipo, verificar los 4 counters.
+- `test_meetup_stats_counts_multiple_guests_per_type_correctly` - varios
+  guests del mismo tipo (ej: 3 `VENDOR`) deben sumar en el counter
+  correspondiente (`vendor_count == 3`), no solo detectar presencia.
+  Cubre el caso de un `COUNT` mal escrito que solo detecta existencia.
 - `test_meetup_stats_paid_and_unpaid_scoped_to_normal_guest_type` -
   regresion critica: un guest `VENDOR` con `has_paid=True` (caso raro
   pero posible) NO debe sumar a `payment.paid_count` ni a

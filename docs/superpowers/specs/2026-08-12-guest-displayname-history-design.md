@@ -85,19 +85,38 @@ Nuevo valor de `EventType`:
 GUEST_DISPLAYNAME_CHANGED = "GUEST_DISPLAYNAME_CHANGED"
 ```
 
-## EventLog tambien se actualiza
+Sumar tambien `GUEST_DISPLAYNAME_CHANGED` a `EventTypeFilter`
+(`app/schemas/events.py`), mismo motivo que en el feature de
+`guest_type`: sin esto el filtro `?type=GUEST_DISPLAYNAME_CHANGED` en
+`GET /events` no acepta el valor.
+
+## EventLog tambien se actualiza - solo para cambios reales
 
 `EventLog.org_id` ya es nullable especificamente para eventos globales
 de guest (`GUEST_CREATED`, `GUEST_MAZMO_LINKED`, `GUEST_MAZMO_UNLINKED`
 ya loguean con `org_id=NULL`). Los 3 puntos de escritura de abajo
 tambien crean un `EventLog(GUEST_DISPLAYNAME_CHANGED, org_id=None, ...)`
 en el mismo commit que la fila de `GuestDisplaynameHistory`, con
-`reason=f"Displayname changed from '{old}' to '{new}'"`.
+`reason=f"Displayname changed from '{old}' to '{new}'"` - **pero
+unicamente cuando hay un valor previo real que cambio**, nunca para la
+primera fila de un guest recien creado (via sync, o via cualquier otro
+camino). Un guest nuevo no tiene un "cambio" que loguear como evento -
+solo un valor inicial, que `GuestDisplaynameHistory` igual registra sin
+necesidad de un `EventLog` asociado.
 
-En el caso de `link-mazmo`, esto queda junto al `EventLog(GUEST_MAZMO_LINKED)`
-que ya se crea ahi mismo - dos eventos relacionados en el mismo commit,
-uno por cada hecho (se vinculo Mazmo / cambio el nombre), en vez de un
-tercer mecanismo desconectado.
+Esto importa especialmente para el sync: como trae guests en lote, si
+cada guest nuevo generara un `EventLog`, cualquier sync grande podria
+volcar cientos de eventos "de cambio" al timeline de la organizacion
+por altas que no son cambios de nada. `GUEST_CREATED` ya es el evento
+que corresponde a un alta (cuando aplica); `GUEST_DISPLAYNAME_CHANGED`
+se reserva para cuando el valor de un guest **existente** difiere del
+que ya teniamos.
+
+En el caso de `link-mazmo`, cuando si hay un valor previo que cambia,
+esto queda junto al `EventLog(GUEST_MAZMO_LINKED)` que ya se crea ahi
+mismo - dos eventos relacionados en el mismo commit, uno por cada hecho
+(se vinculo Mazmo / cambio el nombre), en vez de un tercer mecanismo
+desconectado.
 
 ## Migration (Alembic)
 
@@ -136,9 +155,16 @@ RETURNING id, displayname
 
 Cada fila que devuelve el `RETURNING` (sea porque se inserto de cero, o
 porque se actualizo por tener un nombre distinto) obtiene una fila nueva
-en `GuestDisplaynameHistory` con `source=SYNC`, `actor_id=None`, mas el
-`EventLog(GUEST_DISPLAYNAME_CHANGED, org_id=None)` correspondiente. Los
-guests que no cambiaron no aparecen en el `RETURNING` y no generan
+en `GuestDisplaynameHistory` con `source=SYNC`, `actor_id=None`. El
+`EventLog(GUEST_DISPLAYNAME_CHANGED, org_id=None)` **solo** se crea para
+las filas que corresponden a una actualizacion real (el guest ya
+existia con otro nombre) - no para las que corresponden a una insercion
+nueva, por lo explicado arriba. Distinguir ambos casos en el
+`RETURNING` requiere el truco `(xmax = 0) AS was_insert` de Postgres
+(`xmax = 0` significa que la fila nunca fue tocada por un UPDATE, o sea
+que se acaba de insertar).
+
+Los guests que no cambiaron no aparecen en el `RETURNING` y no generan
 ninguna fila nueva - mismo comportamiento que el `DO NOTHING` de hoy
 para ese caso.
 
@@ -184,6 +210,10 @@ Response `GuestDisplaynameHistoryListResponse`, lista ordenada por
 `recorded_at`, y `actor` (nombre del admin/staff cuando `actor_id` no es
 `None`).
 
+Sin paginacion: un `displayname` cambia pocas veces en la vida de un
+guest, no justifica la complejidad de paginar a este volumen. Se
+devuelve la lista completa siempre.
+
 ## Fuera de alcance
 
 - No se toca `unlink-mazmo`: no cambia `displayname` hoy (docstring
@@ -221,14 +251,31 @@ la DB, integracion por endpoint via `TestClient`, E2E multi-endpoint).
   se actualiza.
 - `test_sync_does_not_update_displayname_when_unchanged` - mismo nombre,
   no se genera fila de historico ni de EventLog (regresion, evita ruido).
-- `test_sync_creates_history_row_with_source_sync_on_change`.
-- `test_sync_creates_history_row_with_source_sync_on_new_guest`.
-- `test_sync_creates_eventlog_guest_displayname_changed_with_org_id_null`.
+- `test_sync_creates_history_row_with_source_sync_on_change_to_existing_guest`.
+- `test_sync_creates_eventlog_for_change_to_existing_guest_with_org_id_null`.
+- `test_sync_new_guest_creates_history_row_but_no_eventlog` - un guest
+  visto por primera vez genera su fila inicial en
+  `GuestDisplaynameHistory` (`source=SYNC`), pero **no** genera
+  `EventLog(GUEST_DISPLAYNAME_CHANGED)` - decision explicita para no
+  inundar el timeline de la org con altas masivas via sync.
+- `test_sync_batch_with_mixed_new_and_changed_guests` - un sync que trae
+  varios guests a la vez, algunos nuevos y algunos con nombre
+  cambiado: verificar que cada uno recibe el tratamiento correcto
+  (historico si y solo si corresponde, EventLog solo para los
+  cambiados), no solo el caso de a uno por vez.
 - `test_sync_never_downgrades_manual_or_link_history` - un guest con una
   fila `MANUAL_EDIT` mas reciente que lo que trae Mazmo: si el sync
   reporta un nombre distinto igual, se agrega una fila `SYNC` nueva (el
   sync no "sabe" de ediciones manuales, siempre refleja Mazmo) - test
   documenta este comportamiento esperado explicitamente.
+- `test_sync_concurrent_upserts_do_not_create_duplicate_history_rows` -
+  dos upserts para el mismo guest con el mismo nombre nuevo, disparados
+  uno detras del otro sin que el segundo vea el commit del primero
+  (simulando la ventana de carrera entre dos syncs de meetups
+  distintos): el `WHERE ... IS DISTINCT FROM` atomico debe garantizar
+  que solo una de las dos sentencias efectivamente actualiza la fila y
+  aparece en el `RETURNING`, por lo tanto solo se crea una fila de
+  historico, no dos.
 
 **`PATCH /guests/{id}`:**
 
@@ -253,6 +300,7 @@ la DB, integracion por endpoint via `TestClient`, E2E multi-endpoint).
 **`GET /guests/{guest_id}/displayname-history`:**
 
 - `test_get_displayname_history_returns_200_ordered_by_recorded_at_desc`.
+- `test_get_displayname_history_returns_401_without_auth`.
 - `test_get_displayname_history_includes_source_and_actor`.
 - `test_get_displayname_history_returns_404_for_nonexistent_guest`.
 - `test_get_displayname_history_returns_single_row_for_guest_with_no_changes_since_creation` -
@@ -261,6 +309,12 @@ la DB, integracion por endpoint via `TestClient`, E2E multi-endpoint).
   `MANUAL_EDIT` segun como se creo), no una lista vacia.
 - `test_get_displayname_history_accessible_by_any_approved_staff` -
   no requiere pertenecer a una org especifica (dependencia global).
+
+**Filtro de eventos:**
+
+- `test_event_log_filters_by_guest_displayname_changed` -
+  `EventTypeFilter` acepta `GUEST_DISPLAYNAME_CHANGED` y el filtro
+  devuelve solo esos eventos.
 
 ### E2E (escenarios multi-endpoint)
 
@@ -283,3 +337,9 @@ la DB, integracion por endpoint via `TestClient`, E2E multi-endpoint).
   queda 1 fila `MANUAL_EDIT` (creacion) + 1 fila `MAZMO_LINK`, y que el
   timeline de eventos tiene ambos `GUEST_MAZMO_LINKED` y
   `GUEST_DISPLAYNAME_CHANGED` en el mismo commit (mismo timestamp).
+- `test_backfilled_guest_then_manual_edit_end_to_end` - un guest que
+  existia antes de esta migracion (su unica fila es `BACKFILL`, sin
+  `EventLog` asociado) recibe despues una edicion manual: verificar que
+  queda `[BACKFILL, MANUAL_EDIT]` en orden correcto, y que el timeline
+  de eventos tiene exactamente 1 entrada `GUEST_DISPLAYNAME_CHANGED`
+  (la del `MANUAL_EDIT`, ninguna para el `BACKFILL`).
