@@ -239,12 +239,121 @@ que devolverles la entrada.
 
 ## Tests
 
-- Default `NORMAL` al crear una RSVP nueva (via sync y via walk-in).
-- `PATCH .../type`: permisos (admin OK, staff normal 403), guarda el
-  audit log con el `reason` correcto, valores invalidos rechazados (422).
-- Check-in: guest `INVITED`/`VENDOR`/`STAFF` con `has_paid=False` pasa el
-  check-in en un meetup con `requires_payment=True`; guest `NORMAL` en
-  las mismas condiciones sigue bloqueado (409).
-- Stats: cada campo con datos de prueba que cubran los 4 `guest_type`,
-  arrived/not-arrived, walk-in, cancelado con y sin pago; verificar que
-  las 3 invariantes numericas cierran.
+Cobertura exhaustiva en 3 niveles. Este repo no tiene frontend, y nunca
+mockea la DB (usa Postgres real de test - ver `CLAUDE.md`), asi que los
+niveles se interpretan asi:
+
+- **Unitario**: comportamiento aislado de una sola pieza (un schema, un
+  default, un enum), armado con los helpers de `conftest.py`
+  (`make_guest`, `make_meetup`, `make_rsvp`) sin pasar por HTTP.
+- **Integracion**: un endpoint completo via `TestClient`, request/response
+  contra la DB real de test, un escenario por test.
+- **E2E**: flujos multi-endpoint que encadenan varias llamadas HTTP en un
+  solo test, replicando el uso real de principio a fin (equivalente a lo
+  que en un repo con frontend seria un test de browser, pero aca contra
+  la API directamente).
+
+### Unitario
+
+- `test_new_rsvp_defaults_to_guest_type_normal_via_sync` - el sync crea
+  RSVPs con `guest_type=NORMAL` cuando no se especifica nada.
+- `test_new_rsvp_defaults_to_guest_type_normal_via_walkin` - idem para
+  walk-ins.
+- `test_guest_type_update_request_rejects_invalid_value` - el schema
+  `GuestTypeUpdateRequest` rechaza un valor fuera del enum (422).
+- `test_guest_type_enum_has_exactly_four_values` - guarda de regresion:
+  si alguien agrega un valor al enum sin actualizar las formulas de
+  stats, este test lo hace ruidoso en vez de fallar en silencio.
+
+### Integracion
+
+**`PATCH .../guests/{guest_id}/type`:**
+
+- `test_update_guest_type_returns_200_and_updates_rsvp` (admin, ej. a
+  `VENDOR`).
+- `test_update_guest_type_returns_403_for_staff_non_admin`.
+- `test_update_guest_type_returns_401_without_auth`.
+- `test_update_guest_type_returns_404_when_guest_not_rsvped_to_meetup`.
+- `test_update_guest_type_creates_audit_log_with_old_and_new_reason` -
+  `EventLog.event_type == GUEST_TYPE_CHANGED`, `reason` menciona el
+  valor viejo y el nuevo.
+- `test_update_guest_type_does_not_modify_has_paid` - reclasificar un
+  guest que ya habia pagado no le toca `has_paid`/`paid_at`/`paid_by_id`.
+- `test_update_guest_type_back_to_normal` - round-trip `VENDOR -> NORMAL`.
+
+**Check-in (gate de pago):**
+
+- `test_checkin_blocks_normal_unpaid_guest_when_requires_payment` -
+  regresion del comportamiento actual, sin tocar.
+- `test_checkin_allows_invited_unpaid_guest_when_requires_payment`.
+- `test_checkin_allows_vendor_unpaid_guest_when_requires_payment`.
+- `test_checkin_allows_staff_unpaid_guest_when_requires_payment`.
+- `test_checkin_allows_normal_paid_guest_when_requires_payment` -
+  regresion, sigue funcionando igual.
+- `test_checkin_allows_normal_guest_when_requires_payment_false` -
+  regresion, el flag de meetup sigue mandando cuando no hay exencion.
+
+**`GET .../meetups/{meetup_id}/stats`:**
+
+- `test_meetup_stats_returns_200_with_grouped_shape` - la respuesta
+  tiene los 4 sub-objetos (`attendance`, `cancellations`, `guest_types`,
+  `payment`) con sus campos.
+- `test_meetup_stats_returns_403_for_member_of_different_org` -
+  aislamiento entre organizaciones.
+- `test_meetup_stats_returns_zero_counts_for_meetup_with_no_rsvps` -
+  caso borde, meetup recien creado.
+- `test_meetup_stats_counts_arrived_and_not_arrived_correctly`.
+- `test_meetup_stats_counts_walkins_correctly`.
+- `test_meetup_stats_excludes_cancelled_from_attendance_totals`.
+- `test_meetup_stats_counts_cancelled_but_paid_correctly`.
+- `test_meetup_stats_counts_all_four_guest_types_correctly` - un guest de
+  cada tipo, verificar los 4 counters.
+- `test_meetup_stats_paid_and_unpaid_scoped_to_normal_guest_type` -
+  regresion critica: un guest `VENDOR` con `has_paid=True` (caso raro
+  pero posible) NO debe sumar a `payment.paid_count` ni a
+  `payment.unpaid_count`, solo a `payment.exempt_from_payment_count`.
+  Este es el bug de doble conteo que se descarto en el diseno.
+- `test_meetup_stats_invariants_hold_across_mixed_fixture` - con un
+  fixture que mezcla los 4 tipos, pagados/no pagados, cancelados,
+  walk-ins, verificar numericamente las 3 invariantes documentadas
+  arriba.
+
+**Filtro de eventos:**
+
+- `test_event_log_filters_by_guest_type_changed` - `EventTypeFilter`
+  acepta `GUEST_TYPE_CHANGED` y el filtro devuelve solo esos eventos.
+
+**Sync:**
+
+- `test_sync_never_overwrites_existing_guest_type` - un guest ya
+  clasificado como `VENDOR`, al correr el sync de nuevo (`ON CONFLICT`),
+  mantiene `VENDOR` y no vuelve a `NORMAL`.
+
+**Guest list:**
+
+- `test_guest_list_response_includes_guest_type` - `RsvpPublic` expone
+  el campo en `GET .../guests`.
+
+### E2E (escenarios multi-endpoint)
+
+- `test_eros_scenario_invited_vendor_staff_and_normal_guests_end_to_end` -
+  el test insignia, replica el caso real que origino este feature en un
+  solo flujo:
+  1. Sync de un meetup con varios guests.
+  2. Admin habilita `requires_payment`.
+  3. Admin clasifica un guest como `INVITED`, otro como `VENDOR`, otro
+     como `STAFF`; el resto queda `NORMAL`.
+  4. Staff hace check-in de los 3 exentos sin pago -> 200 cada uno.
+  5. Staff intenta check-in de un `NORMAL` sin pagar -> 409.
+  6. Admin marca a ese guest como pagado; reintento de check-in -> 200.
+  7. Un guest que ya habia pagado cancela su RSVP.
+  8. Staff registra un walk-in.
+  9. `GET .../stats` - verificar cada campo contra los numeros esperados
+     a mano segun los pasos anteriores.
+  10. `GET .../events?type=GUEST_TYPE_CHANGED` - verificar 3 entradas
+      (INVITED, VENDOR, STAFF) con el `reason` correcto cada una.
+- `test_reclassify_after_checkin_does_not_affect_already_checked_in_guest` -
+  caso borde: un guest hace check-in como `NORMAL` habiendo pagado: el
+  admin lo reclasifica despues como `VENDOR` retroactivamente; verificar
+  que `has_arrived`/`arrival_time`/`arrival_order` no cambian, no hay
+  re-check ni bloqueo retroactivo.
