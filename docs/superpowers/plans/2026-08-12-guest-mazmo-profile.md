@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Persist 6 extended Mazmo profile fields (avatar, age, gender, pronoun, and Mazmo's own suspended/banned flags) per linked guest, sourced from sync, from linking a Mazmo account, and from creating a guest by Mazmo username, and expose them via `GuestPublic.mazmo_profile`.
+**Goal:** Persist 6 extended Mazmo profile fields (avatar, age, gender, pronoun, and Mazmo's own suspended/banned flags) per linked guest, sourced from sync, from linking a Mazmo account, and from creating a guest by Mazmo username, and expose them via `GuestPublic.mazmo_profile` (inherited by `GuestWithBanPublic`, and explicitly wired into the meetup guest list and walk-in endpoints that build it by hand).
 
-**Architecture:** A new `GuestMazmoProfile` table (1:1 with `Guest`, `guest_id` as its own primary key - a new pattern in this codebase) stores a flat, unversioned snapshot. `MazmoUserEntry` (`app/schemas/mazmo.py`) is extended with the 6 new fields and becomes the single parser both `fetch_users()` (batch, used by sync) and `fetch_user_by_username()` (single lookup, used by link-mazmo and create-guest-from-mazmo) validate through - replacing `fetch_user_by_username()`'s old hand-rolled parsing, which silently dropped everything except `id`/`username`/`displayname`. Four write paths keep the table current: the sync's unconditional bulk upsert (every guest in the batch, every sync, regardless of whether displayname changed), `link-mazmo`'s upsert and `create-guest-from-mazmo`'s insert (both from the same lookup response already in memory, no extra Mazmo call), and `unlink-mazmo`'s delete. `GuestPublic.mazmo_profile` exposes the data, with a `selectinload` fix on the guests router to avoid N+1.
+**Architecture:** A new `GuestMazmoProfile` table (1:1 with `Guest`, `guest_id` as its own primary key - a new pattern in this codebase) stores a flat, unversioned snapshot. `MazmoUserEntry` (`app/schemas/mazmo.py`) is extended with the 6 new fields and becomes the single parser both `fetch_users()` (batch, used by sync) and `fetch_user_by_username()` (single lookup, used by link-mazmo and create-guest-from-mazmo) validate through - replacing `fetch_user_by_username()`'s old hand-rolled parsing, which silently dropped everything except `id`/`username`/`displayname`. Four write paths keep the table current: the sync's unconditional bulk upsert (every guest in the batch, every sync, regardless of whether displayname changed), `link-mazmo`'s upsert and `create-guest-from-mazmo`'s insert (both from the same lookup response already in memory, no extra Mazmo call), and `unlink-mazmo`'s delete. `GuestPublic.mazmo_profile` exposes the data, with a `selectinload` fix on the guests router to avoid N+1. `app/routers/meetups.py`'s `list_meetup_guests` and `add_walkin_guest` build `GuestWithBanPublic` via explicit keyword arguments rather than `.model_validate()`, so they separately pass `mazmo_profile=...` through, with the equivalent nested `selectinload` fix applied to `list_meetup_guests`'s query.
 
 **Tech Stack:** FastAPI, SQLModel (Pydantic v2 + SQLAlchemy 2.0), PostgreSQL (`INSERT ... ON CONFLICT ... DO UPDATE`), Alembic, pytest (real Postgres test DB, no mocked sessions), httpx (mocked in tests).
 
@@ -33,6 +33,8 @@ The approved spec at `docs/superpowers/specs/2026-08-12-guest-mazmo-profile-desi
 2. **`POST /guests/mazmo` (`create_guest_from_mazmo`) DOES populate `GuestMazmoProfile` at creation time.** The approved spec's `POST /guests/mazmo` section states this explicitly: this endpoint also calls `fetch_user_by_username()` and has the full profile in memory, so it creates the `GuestMazmoProfile` row in the same commit as `Guest` and `EventLog(GUEST_CREATED, ...)` - same pattern as `link-mazmo`, no extra Mazmo call. Handled in Task 5 alongside `link-mazmo`, since both endpoints share the same `MazmoUserWithId` -> `GuestMazmoProfile` construction logic.
 
 3. **The N+1 `selectinload` fix is scoped to `app/routers/guests.py`; `app/routers/meetups.py`'s meetup guest list endpoint needs no fix.** The spec says "todo router que devuelva `GuestPublic` (list y detail)" but then gives exactly one concrete, "puntualmente" actionable instance (`GET /guests/`) and exactly one N+1 test, both scoped to `guests.py`. `GuestWithBanPublic` (used by `app/routers/meetups.py`'s `GET /organizations/{org_id}/meetups/{meetup_id}/guests` guest list, in `list_meetup_guests`) does inherit the new `mazmo_profile` field via its `GuestPublic` base class, but `list_meetup_guests` builds `GuestWithBanPublic(id=..., mazmo_user_id=..., mazmo_handle=..., displayname=..., instagram_username=..., is_banned=...)` via explicit keyword arguments (not `GuestWithBanPublic.model_validate(rsvp.guest)`), and never passes `mazmo_profile`. Since the field has a `= None` default, the ORM attribute `rsvp.guest.mazmo_profile` is never read, so no lazy-load and no N+1 query is ever triggered there - the response's `mazmo_profile` is simply always `null` for this endpoint today, a data-completeness gap (out of scope here), not a performance one. `add_walkin_guest`'s single-guest response builds `GuestWithBanPublic` the same explicit-keyword way, so the same reasoning applies. No `selectinload` fix is needed in `meetups.py`.
+
+   **Update:** the approved spec has since been extended with a new "Exposicion en `GuestWithBanPublic`" section that explicitly closes this exact data-completeness gap (it is the view staff use at the door, the original reason for this whole feature). Task 8 below adds the `mazmo_profile=...` keyword to both `GuestWithBanPublic` constructions in `meetups.py` and, because that makes `rsvp.guest.mazmo_profile` an attribute that actually gets read for the first time, extends `list_meetup_guests`'s existing `.options(selectinload(MeetupRsvp.guest))` to `.options(selectinload(MeetupRsvp.guest).selectinload(Guest.mazmo_profile))` to avoid the N+1 this reasoning predicted would appear the moment the attribute was read. The analysis above (why this was a data-completeness gap, not a performance one, *prior to* that task) still stands as the reasoning for why Tasks 1-7 left `meetups.py` untouched.
 
 4. **`GuestMazmoProfilePublic` and the `mazmo_profile` field on `GuestPublic` use plain Pydantic `BaseModel`, not `SQLModel`.** The spec's illustrative code sample writes `class GuestMazmoProfilePublic(SQLModel): model_config = ConfigDict(from_attributes=True)`, matching CLAUDE.md's generic schema example. However, `app/schemas/guests.py`'s actual, established convention (read in full before writing this plan) uses plain `BaseModel` with `ConfigDict(from_attributes=True)` throughout - `GuestPublic` itself is `BaseModel`, not `SQLModel`. This plan follows the real file's convention over the spec's illustrative snippet.
 
@@ -2320,13 +2322,380 @@ git commit -m "feat: expose GuestPublic.mazmo_profile, fix N+1 in guests router"
 
 ---
 
-## Task 8: End-to-end lifecycle test
+## Task 8: Expose `mazmo_profile` on `GuestWithBanPublic` in `app/routers/meetups.py`
+
+**Files:**
+- Modify: `app/routers/meetups.py` (imports, `list_meetup_guests`, `add_walkin_guest`)
+- Test: `tests/test_meetups.py` (append)
+
+**Interfaces:**
+- Consumes: `GuestMazmoProfilePublic` (Task 7), `Guest.mazmo_profile` relationship (Task 1).
+- No schema change in `app/schemas/guests.py`: `GuestWithBanPublic(GuestPublic)` already inherits `mazmo_profile: GuestMazmoProfilePublic | None = None` from `GuestPublic` the moment Task 7 lands (Pydantic v2 subclasses inherit parent field declarations automatically - verified directly: a `B(A)` subclass with `A.y: int | None = None` accepts both `B(x=1)` and `B(x=1, y=...)` without redeclaring `y`). The only reason the field reads as `null` in `list_meetup_guests`/`add_walkin_guest` today is that both build `GuestWithBanPublic` via explicit keyword arguments and neither passes `mazmo_profile` - a call-site gap, not a schema gap. This matches what the spec itself states plainly: "no se construye via `.model_validate()`... Si no se toca, `mazmo_profile` quedaria siempre implicitamente `None` ahi... porque el dato nunca llega a esa respuesta."
+
+- [ ] **Step 1: Pass `mazmo_profile` in `list_meetup_guests` and extend its `selectinload`**
+
+In `app/routers/meetups.py`, change:
+
+```python
+    rsvps = session.exec(
+        select(MeetupRsvp)
+        .where(MeetupRsvp.meetup_id == meetup_id)
+        .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
+        .order_by(MeetupRsvp.rsvp_time)  # type: ignore[attr-defined]
+    ).all()
+
+    # Batch-load bans to avoid N+1 queries
+    guest_ids = [rsvp.guest_id for rsvp in rsvps]
+    banned_ids: set[uuid.UUID] = set()
+    if guest_ids:
+        bans = session.exec(
+            select(OrganizationBan)
+            .where(OrganizationBan.org_id == org_id)
+            .where(OrganizationBan.guest_id.in_(guest_ids))  # type: ignore[union-attr]
+        ).all()
+        banned_ids = {ban.guest_id for ban in bans}
+
+    guests = [
+        MeetupGuestPublic(
+            guest=GuestWithBanPublic(
+                id=rsvp.guest.id,
+                mazmo_user_id=rsvp.guest.mazmo_user_id,
+                mazmo_handle=rsvp.guest.mazmo_handle,
+                displayname=rsvp.guest.displayname,
+                instagram_username=rsvp.guest.instagram_username,
+                is_banned=rsvp.guest_id in banned_ids,
+            ),
+            rsvp=RsvpPublic.model_validate(rsvp),
+        )
+        for rsvp in rsvps
+    ]
+```
+
+to:
+
+```python
+    rsvps = session.exec(
+        select(MeetupRsvp)
+        .where(MeetupRsvp.meetup_id == meetup_id)
+        .options(selectinload(MeetupRsvp.guest).selectinload(Guest.mazmo_profile))  # type: ignore[arg-type]
+        .order_by(MeetupRsvp.rsvp_time)  # type: ignore[attr-defined]
+    ).all()
+
+    # Batch-load bans to avoid N+1 queries
+    guest_ids = [rsvp.guest_id for rsvp in rsvps]
+    banned_ids: set[uuid.UUID] = set()
+    if guest_ids:
+        bans = session.exec(
+            select(OrganizationBan)
+            .where(OrganizationBan.org_id == org_id)
+            .where(OrganizationBan.guest_id.in_(guest_ids))  # type: ignore[union-attr]
+        ).all()
+        banned_ids = {ban.guest_id for ban in bans}
+
+    guests = [
+        MeetupGuestPublic(
+            guest=GuestWithBanPublic(
+                id=rsvp.guest.id,
+                mazmo_user_id=rsvp.guest.mazmo_user_id,
+                mazmo_handle=rsvp.guest.mazmo_handle,
+                displayname=rsvp.guest.displayname,
+                instagram_username=rsvp.guest.instagram_username,
+                is_banned=rsvp.guest_id in banned_ids,
+                mazmo_profile=GuestMazmoProfilePublic.model_validate(rsvp.guest.mazmo_profile)
+                if rsvp.guest.mazmo_profile
+                else None,
+            ),
+            rsvp=RsvpPublic.model_validate(rsvp),
+        )
+        for rsvp in rsvps
+    ]
+```
+
+Only the query's `.options(...)` line and the added `mazmo_profile=...` keyword change - nothing else in this function moves.
+
+- [ ] **Step 2: Pass `mazmo_profile` in `add_walkin_guest`**
+
+Still in `app/routers/meetups.py`, change:
+
+```python
+    return MeetupGuestPublic(
+        guest=GuestWithBanPublic(
+            id=guest.id,
+            mazmo_user_id=guest.mazmo_user_id,
+            mazmo_handle=guest.mazmo_handle,
+            displayname=guest.displayname,
+            instagram_username=guest.instagram_username,
+            is_banned=ban is not None,
+        ),
+        rsvp=RsvpPublic.model_validate(rsvp),
+    )
+```
+
+to:
+
+```python
+    return MeetupGuestPublic(
+        guest=GuestWithBanPublic(
+            id=guest.id,
+            mazmo_user_id=guest.mazmo_user_id,
+            mazmo_handle=guest.mazmo_handle,
+            displayname=guest.displayname,
+            instagram_username=guest.instagram_username,
+            is_banned=ban is not None,
+            mazmo_profile=GuestMazmoProfilePublic.model_validate(guest.mazmo_profile) if guest.mazmo_profile else None,
+        ),
+        rsvp=RsvpPublic.model_validate(rsvp),
+    )
+```
+
+`guest` here comes from a plain `session.get(Guest, guest_id)` a few lines above (single guest, not a list) - no `selectinload` needed, reading `guest.mazmo_profile` triggers at most one lazy-load query for this one guest, matching the spec's own reasoning ("no hay riesgo de N+1 real").
+
+- [ ] **Step 3: Import `GuestMazmoProfilePublic` in `app/routers/meetups.py`**
+
+Change:
+
+```python
+from app.schemas import (
+    CheckedInByPublic,
+    CheckInResponse,
+    GuestPublic,
+    GuestWithBanPublic,
+    MeetupCreate,
+    MeetupGuestListResponse,
+    MeetupGuestPublic,
+    MeetupListResponse,
+    MeetupPublic,
+    PaymentResponse,
+    RsvpPublic,
+    SyncResponse,
+)
+```
+
+to:
+
+```python
+from app.schemas import (
+    CheckedInByPublic,
+    CheckInResponse,
+    GuestMazmoProfilePublic,
+    GuestPublic,
+    GuestWithBanPublic,
+    MeetupCreate,
+    MeetupGuestListResponse,
+    MeetupGuestPublic,
+    MeetupListResponse,
+    MeetupPublic,
+    PaymentResponse,
+    RsvpPublic,
+    SyncResponse,
+)
+```
+
+(`selectinload` is already imported at the top of this file from Task-1-era code, and `Guest` is already imported from `app.models.models` - no other import changes needed.)
+
+- [ ] **Step 4: Run the existing meetups test suite to confirm nothing broke**
+
+Run: `uv run pytest tests/test_meetups.py -v`
+Expected: all existing tests still PASS (including `test_list_meetup_guests_includes_is_banned_field`, which doesn't assert on `mazmo_profile`).
+
+- [ ] **Step 5: Add the new tests**
+
+In `tests/test_meetups.py`, change the imports at the top from:
+
+```python
+from app.models.models import EventLog, EventType, MeetupRsvp, Organization, OrgRole, User
+from app.services.mazmo import MazmoAPIError, MazmoNetworkError
+from tests.conftest import make_guest, make_meetup, make_org_member, make_rsvp
+```
+
+to:
+
+```python
+from sqlalchemy import event
+
+from app.models.models import EventLog, EventType, GuestMazmoProfile, MeetupRsvp, Organization, OrgRole, User
+from app.services.mazmo import MazmoAPIError, MazmoNetworkError
+from tests.conftest import make_guest, make_meetup, make_org_member, make_rsvp, test_engine
+```
+
+(Keep this import ordered per this file's existing groups - stdlib/third-party first, then `app.*`, then `tests.*` - `sqlalchemy` goes with the other third-party imports near the top of the file, alongside `pytest`/`fastapi`/`sqlmodel`.)
+
+Then append, after the existing `# -- List meetup guests --` and `# -- Add walk-in guest --` test blocks (near the end of their respective sections, right before the next `# --` section header each) or simply at the end of the file - either placement is fine, since these are independent, self-contained test functions:
+
+```python
+# -- Exposure of mazmo_profile on GuestWithBanPublic --------------------------
+
+
+def test_meetup_guest_list_includes_mazmo_profile_when_linked_and_synced(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
+    """
+    Verify GET .../meetups/{id}/guests includes mazmo_profile for a
+    guest that is linked to Mazmo and has been synced.
+
+    WHY: list_meetup_guests builds GuestWithBanPublic by hand via
+    keyword arguments, not .model_validate() - unlike GuestPublic's
+    other consumers, the field has to be wired through explicitly or it
+    silently stays null forever, regardless of what's in the DB.
+    """
+    guest = make_guest(session, mazmo_user_id=801, mazmo_handle="synced_meetup_guest")
+    session.add(
+        GuestMazmoProfile(
+            guest_id=guest.id,
+            avatar_url="https://cdn.mazmo.net/avatars/801/default.jpg",
+            age=27,
+            gender="female",
+            pronoun="she/her",
+            mazmo_suspended=False,
+            mazmo_banned=False,
+        )
+    )
+    make_rsvp(session, meetup=meetup, guest=guest)
+    session.flush()
+
+    resp = client.get(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    profile = resp.json()["guests"][0]["guest"]["mazmo_profile"]
+    assert profile is not None
+    assert profile["avatar_url"] == "https://cdn.mazmo.net/avatars/801/default.jpg"
+    assert profile["age"] == 27
+    assert profile["gender"] == "female"
+    assert profile["pronoun"] == "she/her"
+    assert profile["mazmo_suspended"] is False
+    assert profile["mazmo_banned"] is False
+
+
+def test_meetup_guest_list_mazmo_profile_null_when_not_linked(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
+    """Verify mazmo_profile is null in the meetup guest list for a guest with no GuestMazmoProfile row."""
+    guest = make_guest(session, mazmo_user_id=802, mazmo_handle="unsynced_meetup_guest")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    resp = client.get(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["guests"][0]["guest"]["mazmo_profile"] is None
+
+
+def test_walkin_guest_response_includes_mazmo_profile_when_linked_and_synced(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
+    """
+    Verify the add-walkin response includes mazmo_profile for a guest
+    that is linked to Mazmo and has been synced.
+
+    WHY: add_walkin_guest builds GuestWithBanPublic the same
+    hand-assembled way as list_meetup_guests - same gap, same fix.
+    """
+    guest = make_guest(session, mazmo_user_id=803, mazmo_handle="walkin_with_profile")
+    session.add(GuestMazmoProfile(guest_id=guest.id, age=45, mazmo_suspended=True))
+    session.flush()
+
+    resp = client.post(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/add-walkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_201_CREATED
+    profile = resp.json()["guest"]["mazmo_profile"]
+    assert profile is not None
+    assert profile["age"] == 45
+    assert profile["mazmo_suspended"] is True
+
+
+def test_meetup_guest_list_does_not_trigger_n_plus_1_for_mazmo_profile(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
+    """
+    Verify GET .../meetups/{id}/guests loads mazmo_profile for every
+    RSVPed guest via a single extra query (the nested selectinload), not
+    one query per guest.
+    """
+    for i in range(810, 816):
+        guest = make_guest(session, mazmo_user_id=i, mazmo_handle=f"meetup_guest{i}")
+        session.add(GuestMazmoProfile(guest_id=guest.id, age=i - 800))
+        make_rsvp(session, meetup=meetup, guest=guest)
+    session.flush()
+
+    statements: list[str] = []
+
+    def _listener(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    event.listen(test_engine, "before_cursor_execute", _listener)
+    try:
+        resp = client.get(
+            f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests",
+            headers=staff_headers,
+        )
+    finally:
+        event.remove(test_engine, "before_cursor_execute", _listener)
+
+    assert resp.status_code == status.HTTP_200_OK
+    profile_statements = [s for s in statements if "guest_mazmo_profile" in s.lower()]
+    assert len(profile_statements) == 1
+```
+
+- [ ] **Step 6: Run the new tests**
+
+Run: `uv run pytest tests/test_meetups.py -v -k mazmo_profile`
+Expected: all 4 new tests PASS.
+
+- [ ] **Step 7: Run the full test suite**
+
+Run: `uv run pytest tests/ -v`
+Expected: all PASS.
+
+- [ ] **Step 8: Run basedpyright**
+
+Run: `uv run basedpyright`
+Expected: no new errors.
+
+- [ ] **Step 9: Run ruff**
+
+Run: `uv run ruff format . && uv run ruff check .`
+Expected: no formatting changes needed (or apply them), no lint errors.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add app/routers/meetups.py tests/test_meetups.py
+git commit -m "feat: expose GuestWithBanPublic.mazmo_profile in meetup guest list and walk-in endpoints"
+```
+
+---
+
+## Task 9: End-to-end lifecycle test
 
 **Files:**
 - Test: `tests/test_guest_mazmo_profile.py` (append)
 
 **Interfaces:**
-- Consumes: everything from Tasks 1-7. This task adds no new production code, only a test exercising the full stack together.
+- Consumes: everything from Tasks 1-8. This task adds no new production code, only a test exercising the full stack together.
 
 - [ ] **Step 1: Add the remaining imports needed for the E2E test**
 
@@ -2467,3 +2836,30 @@ Expected: no formatting changes needed (or apply them), no lint errors.
 git add tests/test_guest_mazmo_profile.py
 git commit -m "test: add guest Mazmo profile end-to-end lifecycle test"
 ```
+
+---
+
+## Self-Review
+
+**1. Spec coverage:**
+
+- `GuestMazmoProfile` table (`guest_id` PK, `avatar_url`/`age`/`gender`/`pronoun`/`mazmo_suspended`/`mazmo_banned`/`synced_at`, all shape decisions documented in the class docstring) - Task 1, Step 3. Covered.
+- `Guest.mazmo_profile` relationship - Task 1, Step 2. Covered.
+- Migration, no backfill, FK to `guests.id` - Task 2. Covered.
+- `MazmoAvatarEntry` + `MazmoUserEntry`'s 6 new optional fields - Task 3, Step 1. Covered.
+- Unified parsing: `fetch_user_by_username()` validates through `MazmoUserEntry.model_validate()` instead of hand-rolled parsing, extracts `id` separately - Task 3, Step 3. Covered.
+- Sync's unconditional bulk upsert (`INSERT ... ON CONFLICT (guest_id) DO UPDATE`, every guest in the batch regardless of displayname change) - Task 4, Step 4. Covered.
+- `link-mazmo` upserts `GuestMazmoProfile` from the already-in-memory lookup, no extra Mazmo call - Task 5, Step 2. Covered.
+- `POST /guests/mazmo` (`create_guest_from_mazmo`) creates `GuestMazmoProfile` in the same commit as `Guest`/`EventLog(GUEST_CREATED, ...)` - Task 5, Step 4. Covered.
+- `unlink-mazmo` deletes the profile row, delete-if-exists, runs after the ban-evasion guard - Task 6, Step 1. Covered.
+- `GuestMazmoProfilePublic` schema + `GuestPublic.mazmo_profile` (`None` for both "never linked" and "linked but not yet synced") - Task 7, Step 1. Covered.
+- N+1 fix on `GET /guests/` (`list_guests`) plus the same fix on `_get_guest_or_404` and `get_guest_by_mazmo_handle` - Task 7, Steps 3-6. Covered.
+- **`GuestWithBanPublic` exposure (new spec section "Exposicion en `GuestWithBanPublic`")** - `mazmo_profile=GuestMazmoProfilePublic.model_validate(rsvp.guest.mazmo_profile) if rsvp.guest.mazmo_profile else None` in `list_meetup_guests`, the matching nested `selectinload(MeetupRsvp.guest).selectinload(Guest.mazmo_profile)`, and the equivalent `mazmo_profile=...` kwarg in `add_walkin_guest` (no `selectinload` needed there - single guest) - Task 8, Steps 1-2. Covered.
+- Out-of-scope items respected: no history/versioning table for these 6 fields, no "refresh now" endpoint, no retroactive backfill for guests not in an upcoming meetup, no frontend page design. Confirmed no task does any of these.
+- Every test named in the spec's "Tests" section has a corresponding step: 3 unit (Task 3, Step 8), 4 sync integration (Task 4, Step 6), 1 link-mazmo (Task 5, Step 7), 1 create-from-mazmo (Task 5, Step 7), 2 unlink-mazmo (Task 6, Step 4), 4 `GuestPublic` exposure (Task 7, Step 8), **4 `GuestWithBanPublic` exposure (Task 8, Step 5)**, 1 E2E (Task 9, Step 2) = 20 spec items, all present.
+
+**2. Placeholder scan:** No "TBD"/"TODO"/"handle appropriately" language anywhere in the steps above, including the new Task 8. The one place Task 8 asks the implementer to pick between two equally-valid options (Step 5's note that the new tests can go at the end of the file or interleaved after their matching existing sections) gives both options explicitly and states they are behaviorally equivalent - not a gap.
+
+**3. Type consistency:** `GuestMazmoProfilePublic` (defined once, in Task 7 Step 1) is constructed identically in both places that build it by hand: Task 8 Step 1's `list_meetup_guests` (`GuestMazmoProfilePublic.model_validate(rsvp.guest.mazmo_profile) if rsvp.guest.mazmo_profile else None`) and Task 8 Step 2's `add_walkin_guest` (`GuestMazmoProfilePublic.model_validate(guest.mazmo_profile) if guest.mazmo_profile else None`) - same `.model_validate()` call, same `if ... else None` guard, same source attribute name (`.mazmo_profile`) read off a `Guest` ORM instance either way. `GuestWithBanPublic.mazmo_profile` itself is not redeclared anywhere - Task 8 relies on the field `GuestPublic` already declares in Task 7 Step 1, inherited automatically by the `GuestWithBanPublic(GuestPublic)` subclass, which keeps exactly one place in the codebase (`app/schemas/guests.py`) owning that field's type (`GuestMazmoProfilePublic | None = None`) rather than two schemas independently declaring the same annotation and risking drift. The nested `selectinload(MeetupRsvp.guest).selectinload(Guest.mazmo_profile)` added in Task 8 Step 1 walks the exact same `Guest.mazmo_profile` relationship (Task 1 Step 2) that `app/routers/guests.py`'s `selectinload(Guest.mazmo_profile)` calls walk in Task 7 - same relationship, same target type, two different starting points (`Guest` directly vs. `MeetupRsvp.guest`).
+
+**Resolved during design (no longer a discrepancy):** the spec originally scoped the N+1 `selectinload` fix and the `mazmo_profile` field wiring to `app/routers/guests.py` only (see Design decision 3 above), reasoning that `app/routers/meetups.py`'s `GuestWithBanPublic` construction was a pre-existing data-completeness gap, not something this plan needed to touch. The spec was subsequently extended with the "Exposicion en `GuestWithBanPublic`" section specifically to close that gap - staff at the door use this endpoint, and leaving `mazmo_profile` permanently `null` there would have made the whole feature invisible in the one view it was originally requested for. Task 8 above implements that extension; Design decision 3's original reasoning is left in place (annotated with an "Update" note) since it correctly explains the state of the code through Task 7, not an error to be silently erased.
