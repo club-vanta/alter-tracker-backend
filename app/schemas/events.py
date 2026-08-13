@@ -34,6 +34,7 @@ class EventTypeFilter(StrEnum):
     UNDO_CHECK_IN = "UNDO_CHECK_IN"
     BAN = "BAN"
     UNBAN = "UNBAN"
+    GUEST_TYPE_CHANGED = "GUEST_TYPE_CHANGED"
 
 
 # ── Nested objects for event responses ────────────────────────────────────────

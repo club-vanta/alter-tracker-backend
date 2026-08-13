@@ -13,6 +13,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.models.models import GuestType
+
 
 def _strip_leading_at(value: str | None) -> str | None:
     """Normalizes an Instagram handle so '@user' and 'user' store the same way."""
@@ -66,7 +68,8 @@ class RsvpPublic(BaseModel):
     Event-specific RSVP state for a guest at a meetup.
 
     arrival_time and arrival_order are set by a database trigger when
-    has_arrived flips to True during check-in.
+    has_arrived flips to True during check-in. guest_type defaults to
+    NORMAL and is only ever changed via PATCH .../guests/{id}/type.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -79,6 +82,13 @@ class RsvpPublic(BaseModel):
     is_walkin: bool = False
     has_paid: bool = False
     paid_at: datetime | None = None
+    guest_type: str = "NORMAL"
+
+
+class GuestTypeUpdateRequest(BaseModel):
+    """Request body for changing a guest's category at a specific meetup."""
+
+    guest_type: GuestType
 
 
 class MeetupGuestPublic(BaseModel):

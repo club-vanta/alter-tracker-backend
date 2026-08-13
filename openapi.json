@@ -8718,6 +8718,11 @@
               }
             ],
             "title": "Paid At"
+          },
+          "guest_type": {
+            "type": "string",
+            "title": "Guest Type",
+            "default": "NORMAL"
           }
         },
         "type": "object",
@@ -8727,7 +8732,7 @@
           "has_arrived"
         ],
         "title": "RsvpPublic",
-        "description": "Event-specific RSVP state for a guest at a meetup.\n\narrival_time and arrival_order are set by a database trigger when\nhas_arrived flips to True during check-in."
+        "description": "Event-specific RSVP state for a guest at a meetup.\n\narrival_time and arrival_order are set by a database trigger when\nhas_arrived flips to True during check-in. guest_type defaults to\nNORMAL and is only ever changed via PATCH .../guests/{id}/type."
       },
       "ServiceCheck": {
         "properties": {
