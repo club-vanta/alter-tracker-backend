@@ -832,8 +832,10 @@ async def update_guest_type(
     has_paid, paid_at, or paid_by_id.
 
     Returns 404 if the guest is not RSVPed to this meetup.
+    Returns 409 if the meetup is finalized.
     """
-    _get_meetup_or_404_in_org(session, meetup_id, org_id)
+    meetup = _get_meetup_or_404_in_org(session, meetup_id, org_id)
+    _raise_if_finalized(meetup)
 
     rsvp = session.exec(
         select(MeetupRsvp)

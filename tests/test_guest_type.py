@@ -313,6 +313,42 @@ def test_update_guest_type_back_to_normal(
     assert rsvp.guest_type == "NORMAL"
 
 
+def test_update_guest_type_returns_409_when_meetup_is_finalized(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    org: Organization,
+):
+    """
+    Verify that reclassifying a guest is blocked on a finalized meetup.
+
+    WHY: Finalization freezes the meetup's state. Guest type controls the
+    payment gate and the stats breakdown, so allowing reclassification
+    after the books are closed would let an admin retroactively change
+    who owed payment for an event that is already settled.
+    """
+    finalized = make_meetup(
+        session,
+        org=org,
+        name="Closed Meetup - Guest Type",
+        mazmo_meetup_url="https://mazmo.net/test/closed-guest-type-1",
+    )
+    finalized.is_finalized = True
+    finalized.finalized_at = datetime.now(UTC)
+    session.add(finalized)
+    guest = make_guest(session, mazmo_user_id=517, mazmo_handle="finalized_blocked_guest")
+    make_rsvp(session, meetup=finalized, guest=guest)
+    session.flush()
+
+    resp = client.patch(
+        f"/organizations/{org.id}/meetups/{finalized.id}/guests/{guest.id}/type",
+        headers=admin_headers,
+        json={"guest_type": "VENDOR"},
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
 # -- Check-in payment gate exemption ---------------------------------------
 
 

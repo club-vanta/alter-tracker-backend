@@ -513,6 +513,7 @@ UPDATE_GUEST_TYPE_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_403_not_approved(),
     **error_404_meetup(),
     **error_404_rsvp(action="change guest type"),
+    **error_409_meetup_finalized(),
     **error_422_validation_guest_type(),
 }
 

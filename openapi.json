@@ -5392,7 +5392,7 @@
           "meetups"
         ],
         "summary": "Change a guest's category for this meetup (org admin only)",
-        "description": "Change a guest's category (NORMAL/INVITED/VENDOR/STAFF) at this meetup.\n\nINVITED, VENDOR, and STAFF guests are exempt from the payment check-in\ngate regardless of has_paid - see checkin_guest(). This does not touch\nhas_paid, paid_at, or paid_by_id.\n\nReturns 404 if the guest is not RSVPed to this meetup.",
+        "description": "Change a guest's category (NORMAL/INVITED/VENDOR/STAFF) at this meetup.\n\nINVITED, VENDOR, and STAFF guests are exempt from the payment check-in\ngate regardless of has_paid - see checkin_guest(). This does not touch\nhas_paid, paid_at, or paid_by_id.\n\nReturns 404 if the guest is not RSVPed to this meetup.\nReturns 409 if the meetup is finalized.",
         "operationId": "update_guest_type_organizations__org_id__meetups__meetup_id__guests__guest_id__type_patch",
         "security": [
           {
@@ -5549,6 +5549,21 @@
                     "summary": "Guest didn't RSVP to this meetup",
                     "value": {
                       "detail": "Cannot change guest type: guest id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Meetup already finalized",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_finalized": {
+                    "summary": "Cannot modify a finalized meetup",
+                    "value": {
+                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins or syncs."
                     }
                   }
                 }
