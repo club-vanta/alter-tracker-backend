@@ -53,6 +53,7 @@ class EventType(StrEnum):
     GUEST_CREATED = "GUEST_CREATED"
     GUEST_MAZMO_LINKED = "GUEST_MAZMO_LINKED"
     GUEST_MAZMO_UNLINKED = "GUEST_MAZMO_UNLINKED"
+    GUEST_DISPLAYNAME_CHANGED = "GUEST_DISPLAYNAME_CHANGED"
     PAYMENT_RECORDED = "PAYMENT_RECORDED"
     PAYMENT_REVOKED = "PAYMENT_REVOKED"
     PAYMENT_REQUIREMENT_ENABLED = "PAYMENT_REQUIREMENT_ENABLED"
@@ -77,6 +78,30 @@ class GuestType(StrEnum):
     INVITED = "INVITED"
     VENDOR = "VENDOR"
     STAFF = "STAFF"
+
+
+class GuestDisplaynameSource(StrEnum):
+    """
+    Origin of a recorded guest displayname value.
+
+    SYNC: the Mazmo sync detected a different displayname than what we
+    had stored, or inserted a brand new guest with this as its first
+    value. MANUAL_EDIT: a staff/admin actively set it - either by
+    editing an existing guest via PATCH /guests/{id}, or by registering
+    a new one via POST /guests/mazmo or POST /guests/manual (there is no
+    better-fitting source for "a human set this value directly").
+    MAZMO_LINK: the value was set/overwritten by linking a Mazmo profile
+    to a guest via PATCH /guests/{id}/link-mazmo. BACKFILL: historical
+    entry created by the migration that introduced this table, for
+    guests that already existed at that point; recorded_at is the
+    migration's run time, not the guest's real creation time, because
+    Guest has no created_at field to recover it from.
+    """
+
+    SYNC = "SYNC"
+    MANUAL_EDIT = "MANUAL_EDIT"
+    MAZMO_LINK = "MAZMO_LINK"
+    BACKFILL = "BACKFILL"
 
 
 # ── Role lookup table ─────────────────────────────────────────────────────────
@@ -288,6 +313,7 @@ class Guest(SQLModel, table=True):
     )
 
     org_bans: list["OrganizationBan"] = Relationship(back_populates="guest")
+    displayname_history: list["GuestDisplaynameHistory"] = Relationship(back_populates="guest")
 
 
 class Meetup(SQLModel, table=True):
@@ -348,6 +374,41 @@ class OrganizationBan(SQLModel, table=True):
     org: Organization = Relationship(back_populates="bans")
     guest: Guest = Relationship(back_populates="org_bans")
     banned_by: Optional["User"] = Relationship()
+
+
+# ── Guest Displayname History ────────────────────────────────────────────────────
+
+
+class GuestDisplaynameHistory(SQLModel, table=True):
+    """
+    Full timeline of every displayname value a guest has had.
+
+    One row per value (including the first one, at creation), not
+    before/after pairs - reconstructing "changed from X to Y" means
+    looking at the previous row by recorded_at. source is stored as str
+    (not the GuestDisplaynameSource StrEnum directly), same convention
+    as EventType/role/guest_type elsewhere in this codebase: these
+    domain enums are not mapped to a native Postgres ENUM type.
+
+    actor_id is NULL for SYNC and BACKFILL rows (no human triggered
+    them), and set for MANUAL_EDIT/MAZMO_LINK rows.
+
+    Closest shape precedent in this codebase: OrganizationBan (int PK,
+    guest_id FK, an actor FK, a timestamp) - same structure, unrelated
+    to EventLog.
+    """
+
+    __tablename__ = "guest_displayname_history"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True)
+    guest_id: uuid.UUID = Field(foreign_key="guests.id", index=True)
+    displayname: str
+    source: str = Field(max_length=16)
+    actor_id: int | None = Field(default=None, foreign_key="users.id")
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    guest: Guest = Relationship(back_populates="displayname_history")
+    actor: Optional["User"] = Relationship()
 
 
 # ── Event Log ─────────────────────────────────────────────────────────────────

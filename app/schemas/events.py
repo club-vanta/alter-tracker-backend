@@ -35,6 +35,7 @@ class EventTypeFilter(StrEnum):
     BAN = "BAN"
     UNBAN = "UNBAN"
     GUEST_TYPE_CHANGED = "GUEST_TYPE_CHANGED"
+    GUEST_DISPLAYNAME_CHANGED = "GUEST_DISPLAYNAME_CHANGED"
 
 
 # ── Nested objects for event responses ────────────────────────────────────────
