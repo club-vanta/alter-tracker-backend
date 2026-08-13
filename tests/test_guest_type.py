@@ -311,3 +311,175 @@ def test_update_guest_type_back_to_normal(
     assert resp.json()["rsvp"]["guest_type"] == "NORMAL"
     session.refresh(rsvp)
     assert rsvp.guest_type == "NORMAL"
+
+
+# -- Check-in payment gate exemption ---------------------------------------
+
+
+@pytest.fixture()
+def paid_meetup(session: Session, org: Organization):
+    """A meetup that requires payment before check-in."""
+    return make_meetup(
+        session,
+        org=org,
+        name="Alter Paid Event - Guest Type",
+        mazmo_meetup_url="https://mazmo.net/test/alter-paid-guest-type",
+        requires_payment=True,
+    )
+
+
+def test_checkin_blocks_normal_unpaid_guest_when_requires_payment(
+    client: TestClient, staff_headers: dict, session: Session, paid_meetup, org_staff_member
+):
+    """
+    Verify that an unpaid NORMAL guest is still blocked at check-in.
+
+    WHY: Regression guard - the guest_type exemption must not weaken the
+    existing payment gate for the default category.
+    """
+    guest = make_guest(session, mazmo_user_id=520, mazmo_handle="normal_unpaid")
+    make_rsvp(session, meetup=paid_meetup, guest=guest)
+
+    resp = client.post(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/checkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_checkin_allows_invited_unpaid_guest_when_requires_payment(
+    client: TestClient, staff_headers: dict, session: Session, paid_meetup, org_staff_member
+):
+    """Verify that an unpaid INVITED guest passes the payment gate."""
+    guest = make_guest(session, mazmo_user_id=521, mazmo_handle="invited_unpaid")
+    make_rsvp(session, meetup=paid_meetup, guest=guest, guest_type="INVITED")
+
+    resp = client.post(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/checkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+
+
+def test_checkin_allows_vendor_unpaid_guest_when_requires_payment(
+    client: TestClient, staff_headers: dict, session: Session, paid_meetup, org_staff_member
+):
+    """Verify that an unpaid VENDOR guest passes the payment gate."""
+    guest = make_guest(session, mazmo_user_id=522, mazmo_handle="vendor_unpaid")
+    make_rsvp(session, meetup=paid_meetup, guest=guest, guest_type="VENDOR")
+
+    resp = client.post(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/checkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+
+
+def test_checkin_allows_staff_unpaid_guest_when_requires_payment(
+    client: TestClient, staff_headers: dict, session: Session, paid_meetup, org_staff_member
+):
+    """Verify that an unpaid STAFF guest passes the payment gate."""
+    guest = make_guest(session, mazmo_user_id=523, mazmo_handle="staff_unpaid")
+    make_rsvp(session, meetup=paid_meetup, guest=guest, guest_type="STAFF")
+
+    resp = client.post(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/checkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+
+
+def test_checkin_allows_normal_paid_guest_when_requires_payment(
+    client: TestClient, staff_headers: dict, session: Session, paid_meetup, org_staff_member
+):
+    """
+    Verify that a NORMAL guest who has paid still checks in successfully.
+
+    WHY: Regression guard for the existing happy path.
+    """
+    guest = make_guest(session, mazmo_user_id=524, mazmo_handle="normal_paid")
+    make_rsvp(session, meetup=paid_meetup, guest=guest, has_paid=True, paid_at=datetime.now(UTC))
+
+    resp = client.post(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/checkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+
+
+def test_checkin_allows_normal_guest_when_requires_payment_false(
+    client: TestClient, staff_headers: dict, session: Session, meetup, org_staff_member
+):
+    """
+    Verify that a NORMAL guest checks in freely when the meetup itself
+    does not require payment.
+
+    WHY: Regression guard - the meetup-level flag must still be the
+    primary gate; guest_type only matters when requires_payment is True.
+    """
+    guest = make_guest(session, mazmo_user_id=525, mazmo_handle="normal_free_event")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    resp = client.post(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+
+
+def test_checkin_allows_banned_guest_regardless_of_guest_type(
+    client: TestClient,
+    staff_headers: dict,
+    admin_headers: dict,
+    session: Session,
+    org: Organization,
+    paid_meetup,
+    org_staff_member,
+):
+    """
+    Verify that check-in does NOT block a banned guest, and that the
+    guest_type payment exemption does not change that.
+
+    This is intentional, confirmed behavior, not a gap: checkin_guest()
+    in app/routers/meetups.py never queries OrganizationBan or checks
+    is_banned. Ban status is informational only - GuestWithBanPublic.
+    is_banned is surfaced in the guest list (GET .../meetups/{id}/guests)
+    purely so door staff can see the warning and still decide to let the
+    guest in anyway. The API has never enforced a hard block here, and it
+    should not start now as an accidental side effect of this feature.
+
+    This test verifies the two things that ARE this feature's
+    responsibility: (1) a banned guest classified as STAFF (and therefore
+    payment-exempt) still checks in successfully (200) - the guest_type
+    exemption composes correctly with a ban, neither blocks the other -
+    and (2) is_banned is still correctly reported as True via the guest
+    list endpoint afterward, so staff retain the warning they need to
+    intervene by hand if they choose to.
+    """
+    guest = make_guest(session, mazmo_user_id=526, mazmo_handle="banned_staff_guest")
+    make_rsvp(session, meetup=paid_meetup, guest=guest, guest_type="STAFF")
+    client.patch(
+        f"/organizations/{org.id}/guests/{guest.id}/ban",
+        json={"reason": "Testing ban plus payment-exemption composition"},
+        headers=admin_headers,
+    )
+
+    resp = client.post(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests/{guest.id}/checkin",
+        headers=staff_headers,
+    )
+    assert resp.status_code == status.HTTP_200_OK
+
+    list_resp = client.get(
+        f"/organizations/{paid_meetup.org_id}/meetups/{paid_meetup.id}/guests",
+        headers=staff_headers,
+    )
+    assert list_resp.status_code == status.HTTP_200_OK
+    guest_entry = next(g for g in list_resp.json()["guests"] if g["guest"]["id"] == str(guest.id))
+    assert guest_entry["guest"]["is_banned"] is True

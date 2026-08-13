@@ -34,7 +34,7 @@ from sqlmodel import Session, select
 from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.deps import get_org_admin, get_org_member
-from app.models.models import EventLog, EventType, Guest, Meetup, MeetupRsvp, OrganizationBan, User
+from app.models.models import EventLog, EventType, Guest, GuestType, Meetup, MeetupRsvp, OrganizationBan, User
 from app.openapi_examples.meetups_examples import (
     ADD_WALKIN_RESPONSES,
     CHECKIN_RESPONSES,
@@ -551,14 +551,15 @@ async def checkin_guest(
             ),
         )
 
-    if meetup.requires_payment and not rsvp.has_paid:
+    if meetup.requires_payment and rsvp.guest_type == GuestType.NORMAL.value and not rsvp.has_paid:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 f"Cannot check in: guest '{rsvp.guest.displayname}' (id={guest_id}) "
                 f"has not paid the entrance fee for '{meetup.name}'. "
                 f"Mark the payment first via PATCH /organizations/{org_id}/meetups/{meetup_id}"
-                f"/guests/{guest_id}/payment."
+                f"/guests/{guest_id}/payment, or reclassify them via PATCH /organizations/{org_id}"
+                f"/meetups/{meetup_id}/guests/{guest_id}/type if they should be exempt."
             ),
         )
 
@@ -805,7 +806,9 @@ async def mark_guest_paid(
     Mark a guest's entrance fee as paid for this specific meetup.
 
     Payment is handled externally by the organizer (cash, transfer, etc.);
-    this just records that it happened so check-in can be enforced.
+    this just records that it happened so check-in can be enforced for
+    NORMAL guests. INVITED/VENDOR/STAFF guests (see PATCH .../guests/{id}
+    /type) skip the payment check-in gate entirely regardless of has_paid.
 
     Returns 409 if the meetup doesn't require payment, if the guest already
     paid, or if the meetup is finalized. Returns 404 if not RSVPed.

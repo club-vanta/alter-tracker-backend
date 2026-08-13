@@ -5445,7 +5445,7 @@
           "meetups"
         ],
         "summary": "Mark a guest's entrance as paid for this meetup (org admin only)",
-        "description": "Mark a guest's entrance fee as paid for this specific meetup.\n\nPayment is handled externally by the organizer (cash, transfer, etc.);\nthis just records that it happened so check-in can be enforced.\n\nReturns 409 if the meetup doesn't require payment, if the guest already\npaid, or if the meetup is finalized. Returns 404 if not RSVPed.",
+        "description": "Mark a guest's entrance fee as paid for this specific meetup.\n\nPayment is handled externally by the organizer (cash, transfer, etc.);\nthis just records that it happened so check-in can be enforced for\nNORMAL guests. INVITED/VENDOR/STAFF guests (see PATCH .../guests/{id}\n/type) skip the payment check-in gate entirely regardless of has_paid.\n\nReturns 409 if the meetup doesn't require payment, if the guest already\npaid, or if the meetup is finalized. Returns 404 if not RSVPed.",
         "operationId": "mark_guest_paid_organizations__org_id__meetups__meetup_id__guests__guest_id__payment_patch",
         "security": [
           {
