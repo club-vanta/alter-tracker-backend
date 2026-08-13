@@ -209,6 +209,34 @@ a su query, siguiendo el mismo patron que ya usan `EventLogPublic.actor`/
 plano sin `.options(...)` - hay que agregarlo ahi explicitamente, si no
 cada guest de la lista dispara una query aparte para su perfil.
 
+## Exposicion en `GuestWithBanPublic` (`app/schemas/guests.py`, usado por `app/routers/meetups.py`)
+
+`GuestWithBanPublic` es un schema distinto de `GuestPublic` (extiende
+sus campos y agrega `is_banned: bool`), usado por la vista de "guests
+de este meetup" (`list_meetup_guests`, `GET .../meetups/{id}/guests`) y
+por `add_walkin_guest`. A diferencia de `GuestPublic`, **no** se
+construye via `.model_validate()` sobre el guest ORM - se arma a mano
+pasando cada campo por keyword (`GuestWithBanPublic(id=..., mazmo_user_id=...,
+..., is_banned=...)`). Si no se toca, `mazmo_profile` quedaria siempre
+implicitamente `None` ahi, porque nadie lo pasa - no por un problema de
+performance (no hay lazy-load porque nunca se lee el atributo), sino
+porque el dato nunca llega a esa respuesta. Dado que esta es
+probablemente la vista que el staff usa en la puerta durante un evento
+(la razon original de este feature), hay que agregarlo tambien aca:
+
+- `GuestWithBanPublic.mazmo_profile: GuestMazmoProfilePublic | None = None`.
+- En `list_meetup_guests`: pasar
+  `mazmo_profile=GuestMazmoProfilePublic.model_validate(rsvp.guest.mazmo_profile) if rsvp.guest.mazmo_profile else None`
+  al construir cada `GuestWithBanPublic`. Como ahora si se lee
+  `rsvp.guest.mazmo_profile` (a diferencia de antes), la query de este
+  endpoint pasa a tener el mismo riesgo de N+1 que `GuestPublic` -
+  extender el `.options(selectinload(MeetupRsvp.guest))` que ya existe
+  ahi a `.options(selectinload(MeetupRsvp.guest).selectinload(Guest.mazmo_profile))`.
+- En `add_walkin_guest`: mismo patron para el `GuestWithBanPublic` que
+  arma ahi. Al ser un unico guest (no una lista), no hay riesgo de N+1
+  real, pero el atributo igual debe pasarse explicitamente por el mismo
+  motivo (no se arma via `.model_validate()`).
+
 ## Fuera de alcance
 
 - Sin historico/versionado de estos 6 campos - snapshot plano, decision
@@ -292,6 +320,21 @@ Mismos 3 niveles que los specs anteriores.
   contar las queries SQL ejecutadas (via el echo de sqlalchemy o un
   contador de statements) y verificar que `GET /guests/` no dispara una
   query adicional por guest.
+
+**Exposicion en `GuestWithBanPublic` (`meetups.py`):**
+
+- `test_meetup_guest_list_includes_mazmo_profile_when_linked_and_synced` -
+  `GET .../meetups/{id}/guests` expone `mazmo_profile` con los mismos
+  datos que `GuestPublic` para un guest linkeado y sincronizado.
+- `test_meetup_guest_list_mazmo_profile_null_when_not_linked`.
+- `test_walkin_guest_response_includes_mazmo_profile_when_linked_and_synced` -
+  mismo chequeo para la respuesta de `add_walkin_guest`.
+- `test_meetup_guest_list_does_not_trigger_n_plus_1_for_mazmo_profile` -
+  regresion de performance analoga a la de `GET /guests/`, pero para
+  `list_meetup_guests`: con varios guests linkeados en un mismo meetup,
+  contar queries y verificar que el `selectinload` anidado
+  (`MeetupRsvp.guest` -> `Guest.mazmo_profile`) evita una query extra
+  por guest.
 
 ### E2E (escenario multi-endpoint)
 
