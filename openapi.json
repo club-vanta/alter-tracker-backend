@@ -4724,6 +4724,150 @@
         }
       }
     },
+    "/organizations/{org_id}/meetups/{meetup_id}/stats": {
+      "get": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Get grouped attendance/payment/guest-type statistics for this meetup",
+        "description": "Return grouped attendance, cancellation, guest-type, and payment stats\nfor this meetup.\n\nAll counts except cancellations.* exclude cancelled RSVPs.\npayment.paid_count and payment.unpaid_count are scoped to\nguest_type=NORMAL only, so guest_types.normal_count always equals\npayment.paid_count + payment.unpaid_count, and attendance.total_rsvps\nalways equals the sum of all four guest_types.* counts and also the\nsum of all three payment.* counts.",
+        "operationId": "get_meetup_stats_organizations__org_id__meetups__meetup_id__stats_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meetup statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetupStatsPublic"
+                },
+                "examples": {
+                  "stats": {
+                    "summary": "Grouped attendance/payment/guest-type stats",
+                    "value": {
+                      "attendance": {
+                        "total_rsvps": 20,
+                        "arrived_count": 15,
+                        "not_arrived_count": 5,
+                        "walkin_count": 2
+                      },
+                      "cancellations": {
+                        "cancelled_count": 3,
+                        "cancelled_but_paid_count": 1
+                      },
+                      "guest_types": {
+                        "normal_count": 15,
+                        "invited_count": 2,
+                        "vendor_count": 2,
+                        "staff_count": 1
+                      },
+                      "payment": {
+                        "paid_count": 10,
+                        "unpaid_count": 5,
+                        "exempt_from_payment_count": 5
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/organizations/{org_id}/meetups/{meetup_id}/guests/{guest_id}/add-walkin": {
       "post": {
         "tags": [
@@ -7760,6 +7904,35 @@
         "title": "ApproveUserRequest",
         "description": "Request body for approving or revoking a user's access.\n\nAdmins use this to flip the is_approved flag on staff accounts.\nNew registrations start unapproved and require admin action."
       },
+      "AttendanceStats": {
+        "properties": {
+          "total_rsvps": {
+            "type": "integer",
+            "title": "Total Rsvps"
+          },
+          "arrived_count": {
+            "type": "integer",
+            "title": "Arrived Count"
+          },
+          "not_arrived_count": {
+            "type": "integer",
+            "title": "Not Arrived Count"
+          },
+          "walkin_count": {
+            "type": "integer",
+            "title": "Walkin Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_rsvps",
+          "arrived_count",
+          "not_arrived_count",
+          "walkin_count"
+        ],
+        "title": "AttendanceStats",
+        "description": "Attendance counts for a meetup, excluding cancelled RSVPs."
+      },
       "BanGuestRequest": {
         "properties": {
           "reason": {
@@ -7935,6 +8108,25 @@
           "password"
         ],
         "title": "Body_login_auth_token_post"
+      },
+      "CancellationStats": {
+        "properties": {
+          "cancelled_count": {
+            "type": "integer",
+            "title": "Cancelled Count"
+          },
+          "cancelled_but_paid_count": {
+            "type": "integer",
+            "title": "Cancelled But Paid Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cancelled_count",
+          "cancelled_but_paid_count"
+        ],
+        "title": "CancellationStats",
+        "description": "Counts describing the cancelled RSVP set for a meetup."
       },
       "CheckInResponse": {
         "properties": {
@@ -8307,6 +8499,35 @@
         "title": "GuestType",
         "description": "Category of a guest's attendance at a specific meetup.\n\nNORMAL guests are subject to the meetup's requires_payment flag like\nany regular attendee. INVITED, VENDOR, and STAFF guests are exempt\nfrom the payment check-in gate regardless of has_paid: invited guests\nwere personally invited by the meetup organizer and don't pay entry,\nvendors bring their own stand to sell goods and aren't attending as\nparticipants, and staff are working the event itself. This is set\nper-RSVP (not on the Guest) because these categories are decided\nevent by event, not a persistent trait of the person."
       },
+      "GuestTypeStats": {
+        "properties": {
+          "normal_count": {
+            "type": "integer",
+            "title": "Normal Count"
+          },
+          "invited_count": {
+            "type": "integer",
+            "title": "Invited Count"
+          },
+          "vendor_count": {
+            "type": "integer",
+            "title": "Vendor Count"
+          },
+          "staff_count": {
+            "type": "integer",
+            "title": "Staff Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "normal_count",
+          "invited_count",
+          "vendor_count",
+          "staff_count"
+        ],
+        "title": "GuestTypeStats",
+        "description": "Per-category guest counts for a meetup, excluding cancelled RSVPs."
+      },
       "GuestTypeUpdateRequest": {
         "properties": {
           "guest_type": {
@@ -8580,6 +8801,31 @@
         "title": "MeetupPublic",
         "description": "Public representation of a meetup.\n\nReturned when fetching meetup details. The mazmo_meetup_url is the\nsource URL used for syncing RSVPs from the Mazmo platform."
       },
+      "MeetupStatsPublic": {
+        "properties": {
+          "attendance": {
+            "$ref": "#/components/schemas/AttendanceStats"
+          },
+          "cancellations": {
+            "$ref": "#/components/schemas/CancellationStats"
+          },
+          "guest_types": {
+            "$ref": "#/components/schemas/GuestTypeStats"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/PaymentStats"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attendance",
+          "cancellations",
+          "guest_types",
+          "payment"
+        ],
+        "title": "MeetupStatsPublic",
+        "description": "Grouped attendance/cancellation/guest-type/payment statistics for a meetup."
+      },
       "OrgCreate": {
         "properties": {
           "name": {
@@ -8788,6 +9034,30 @@
         ],
         "title": "PaymentResponse",
         "description": "Response after successfully marking a guest's entrance as paid."
+      },
+      "PaymentStats": {
+        "properties": {
+          "paid_count": {
+            "type": "integer",
+            "title": "Paid Count"
+          },
+          "unpaid_count": {
+            "type": "integer",
+            "title": "Unpaid Count"
+          },
+          "exempt_from_payment_count": {
+            "type": "integer",
+            "title": "Exempt From Payment Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paid_count",
+          "unpaid_count",
+          "exempt_from_payment_count"
+        ],
+        "title": "PaymentStats",
+        "description": "Payment counts for a meetup, excluding cancelled RSVPs.\n\npaid_count and unpaid_count are scoped to guest_type=NORMAL only - a\nnon-NORMAL guest who happens to have has_paid=True (e.g. someone who\npaid before being reclassified as staff) is counted only in\nexempt_from_payment_count, never in paid_count or unpaid_count, so\nguest_types.normal_count always equals paid_count + unpaid_count."
       },
       "PossibleRoles": {
         "type": "string",

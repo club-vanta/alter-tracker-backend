@@ -27,6 +27,7 @@ from app.openapi_examples._constants import (
     MEETUP_EXAMPLE_PAID,
     MEETUP_GUEST_VENDOR_EXAMPLE,
     MEETUP_GUEST_WALKIN,
+    MEETUP_STATS_EXAMPLE,
     PAYMENT_RESPONSE_EXAMPLE,
     RSVP_ARRIVED,
     RSVP_NOT_ARRIVED,
@@ -513,4 +514,25 @@ UPDATE_GUEST_TYPE_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_404_meetup(),
     **error_404_rsvp(action="change guest type"),
     **error_422_validation_guest_type(),
+}
+
+# ── GET /meetups/{id}/stats ─────────────────────────────────────────────────
+
+MEETUP_STATS_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Meetup statistics",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "stats": {
+                        "summary": "Grouped attendance/payment/guest-type stats",
+                        "value": MEETUP_STATS_EXAMPLE,
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_not_approved(),
+    **error_404_meetup(),
 }

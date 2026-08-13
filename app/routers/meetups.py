@@ -47,6 +47,7 @@ from app.openapi_examples.meetups_examples import (
     LIST_MEETUP_GUESTS_RESPONSES,
     LIST_MEETUPS_RESPONSES,
     MARK_PAYMENT_RESPONSES,
+    MEETUP_STATS_RESPONSES,
     SYNC_MEETUP_RESPONSES,
     UNDO_CHECKIN_REQUEST_EXAMPLES,
     UNDO_CHECKIN_RESPONSES,
@@ -57,9 +58,12 @@ from app.openapi_examples.meetups_examples import (
     UPDATE_GUEST_TYPE_RESPONSES,
 )
 from app.schemas import (
+    AttendanceStats,
+    CancellationStats,
     CheckedInByPublic,
     CheckInResponse,
     GuestPublic,
+    GuestTypeStats,
     GuestTypeUpdateRequest,
     GuestWithBanPublic,
     MeetupCreate,
@@ -67,7 +71,9 @@ from app.schemas import (
     MeetupGuestPublic,
     MeetupListResponse,
     MeetupPublic,
+    MeetupStatsPublic,
     PaymentResponse,
+    PaymentStats,
     RsvpPublic,
     SyncResponse,
 )
@@ -375,6 +381,114 @@ async def list_meetup_guests(
     ]
 
     return MeetupGuestListResponse(total=len(guests), guests=guests)
+
+
+# -- Meetup stats ---------------------------------------------------------
+
+
+@router.get(
+    "/organizations/{org_id}/meetups/{meetup_id}/stats",
+    response_model=MeetupStatsPublic,
+    summary="Get grouped attendance/payment/guest-type statistics for this meetup",
+    responses=MEETUP_STATS_RESPONSES,
+)
+async def get_meetup_stats(
+    org_id: uuid.UUID,
+    meetup_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    _member: User = Depends(get_org_member),
+) -> MeetupStatsPublic:
+    """
+    Return grouped attendance, cancellation, guest-type, and payment stats
+    for this meetup.
+
+    All counts except cancellations.* exclude cancelled RSVPs.
+    payment.paid_count and payment.unpaid_count are scoped to
+    guest_type=NORMAL only, so guest_types.normal_count always equals
+    payment.paid_count + payment.unpaid_count, and attendance.total_rsvps
+    always equals the sum of all four guest_types.* counts and also the
+    sum of all three payment.* counts.
+    """
+    _get_meetup_or_404_in_org(session, meetup_id, org_id)
+
+    rows = session.exec(
+        select(  # type: ignore[call-overload]  # sqlmodel's select() overloads stop at 4 typed columns
+            MeetupRsvp.cancelled_rsvp,
+            MeetupRsvp.has_arrived,
+            MeetupRsvp.is_walkin,
+            MeetupRsvp.guest_type,
+            MeetupRsvp.has_paid,
+        ).where(MeetupRsvp.meetup_id == meetup_id)
+    ).all()
+
+    total_rsvps = 0
+    arrived_count = 0
+    not_arrived_count = 0
+    walkin_count = 0
+    cancelled_count = 0
+    cancelled_but_paid_count = 0
+    normal_count = 0
+    invited_count = 0
+    vendor_count = 0
+    staff_count = 0
+    paid_count = 0
+    unpaid_count = 0
+    exempt_from_payment_count = 0
+
+    for cancelled_rsvp, has_arrived, is_walkin, guest_type, has_paid in rows:
+        if cancelled_rsvp:
+            cancelled_count += 1
+            if has_paid:
+                cancelled_but_paid_count += 1
+            continue
+
+        total_rsvps += 1
+        if has_arrived:
+            arrived_count += 1
+        else:
+            not_arrived_count += 1
+        if is_walkin:
+            walkin_count += 1
+
+        if guest_type == GuestType.NORMAL.value:
+            normal_count += 1
+            if has_paid:
+                paid_count += 1
+            else:
+                unpaid_count += 1
+        elif guest_type == GuestType.INVITED.value:
+            invited_count += 1
+            exempt_from_payment_count += 1
+        elif guest_type == GuestType.VENDOR.value:
+            vendor_count += 1
+            exempt_from_payment_count += 1
+        elif guest_type == GuestType.STAFF.value:
+            staff_count += 1
+            exempt_from_payment_count += 1
+
+    return MeetupStatsPublic(
+        attendance=AttendanceStats(
+            total_rsvps=total_rsvps,
+            arrived_count=arrived_count,
+            not_arrived_count=not_arrived_count,
+            walkin_count=walkin_count,
+        ),
+        cancellations=CancellationStats(
+            cancelled_count=cancelled_count,
+            cancelled_but_paid_count=cancelled_but_paid_count,
+        ),
+        guest_types=GuestTypeStats(
+            normal_count=normal_count,
+            invited_count=invited_count,
+            vendor_count=vendor_count,
+            staff_count=staff_count,
+        ),
+        payment=PaymentStats(
+            paid_count=paid_count,
+            unpaid_count=unpaid_count,
+            exempt_from_payment_count=exempt_from_payment_count,
+        ),
+    )
 
 
 # -- Add walk-in guest --------------------------------------------------------

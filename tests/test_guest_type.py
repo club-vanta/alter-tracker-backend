@@ -483,3 +483,272 @@ def test_checkin_allows_banned_guest_regardless_of_guest_type(
     assert list_resp.status_code == status.HTTP_200_OK
     guest_entry = next(g for g in list_resp.json()["guests"] if g["guest"]["id"] == str(guest.id))
     assert guest_entry["guest"]["is_banned"] is True
+
+
+# -- GET .../meetups/{meetup_id}/stats -------------------------------------
+
+
+def test_meetup_stats_returns_200_with_grouped_shape(client: TestClient, staff_headers: dict, meetup, org_staff_member):
+    """Verify the response has all 4 sub-objects with their fields."""
+    resp = client.get(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/stats", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()
+    assert set(data.keys()) == {"attendance", "cancellations", "guest_types", "payment"}
+    assert set(data["attendance"].keys()) == {"total_rsvps", "arrived_count", "not_arrived_count", "walkin_count"}
+    assert set(data["cancellations"].keys()) == {"cancelled_count", "cancelled_but_paid_count"}
+    assert set(data["guest_types"].keys()) == {"normal_count", "invited_count", "vendor_count", "staff_count"}
+    assert set(data["payment"].keys()) == {"paid_count", "unpaid_count", "exempt_from_payment_count"}
+
+
+def test_meetup_stats_returns_401_without_auth(client: TestClient, meetup):
+    """Verify that an unauthenticated request is rejected."""
+    resp = client.get(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/stats")
+    assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_meetup_stats_returns_403_for_member_of_different_org(client: TestClient, session: Session):
+    """Verify multi-tenant isolation for the stats endpoint."""
+    org_a = make_org(session, name="Stats Org A", slug="stats-org-a")
+    org_b = make_org(session, name="Stats Org B", slug="stats-org-b")
+    member_a = make_user(session, username="member_a_stats")
+    make_org_member(session, org=org_a, user=member_a, role=OrgRole.STAFF)
+    headers_a = get_auth_headers(client, "member_a_stats", "a-very-secure-passphrase")
+
+    meetup_b = make_meetup(
+        session, org=org_b, name="Org B Stats Meetup", mazmo_meetup_url="https://mazmo.net/test/org-b-stats-1"
+    )
+
+    resp = client.get(f"/organizations/{org_b.id}/meetups/{meetup_b.id}/stats", headers=headers_a)
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_meetup_stats_returns_404_for_nonexistent_meetup(
+    client: TestClient, staff_headers: dict, org: Organization, org_staff_member
+):
+    """Verify that a non-existent meetup id returns 404."""
+    resp = client.get(f"/organizations/{org.id}/meetups/{uuid.uuid4()}/stats", headers=staff_headers)
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_meetup_stats_returns_zero_counts_for_meetup_with_no_rsvps(
+    client: TestClient, staff_headers: dict, meetup, org_staff_member
+):
+    """Verify a freshly created meetup with no RSVPs returns all zeros."""
+    resp = client.get(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/stats", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()
+    assert data["attendance"] == {
+        "total_rsvps": 0,
+        "arrived_count": 0,
+        "not_arrived_count": 0,
+        "walkin_count": 0,
+    }
+    assert data["cancellations"] == {"cancelled_count": 0, "cancelled_but_paid_count": 0}
+    assert data["guest_types"] == {
+        "normal_count": 0,
+        "invited_count": 0,
+        "vendor_count": 0,
+        "staff_count": 0,
+    }
+    assert data["payment"] == {"paid_count": 0, "unpaid_count": 0, "exempt_from_payment_count": 0}
+
+
+def test_meetup_stats_counts_arrived_and_not_arrived_correctly(
+    client: TestClient, staff_headers: dict, session: Session, meetup, org_staff_member
+):
+    """Verify arrived_count and not_arrived_count split correctly."""
+    arrived = make_guest(session, mazmo_user_id=530, mazmo_handle="arrived_guest")
+    not_arrived = make_guest(session, mazmo_user_id=531, mazmo_handle="not_arrived_guest")
+    make_rsvp(session, meetup=meetup, guest=arrived, has_arrived=True, arrival_order=1)
+    make_rsvp(session, meetup=meetup, guest=not_arrived)
+
+    resp = client.get(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/stats", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()["attendance"]
+    assert data["total_rsvps"] == 2
+    assert data["arrived_count"] == 1
+    assert data["not_arrived_count"] == 1
+
+
+def test_meetup_stats_counts_walkins_correctly(
+    client: TestClient, staff_headers: dict, session: Session, meetup, org_staff_member
+):
+    """Verify walkin_count only counts is_walkin=True RSVPs."""
+    walkin = make_guest(session, mazmo_user_id=532, mazmo_handle="walkin_stats_guest")
+    rsvped = make_guest(session, mazmo_user_id=533, mazmo_handle="rsvped_stats_guest")
+    rsvp = make_rsvp(session, meetup=meetup, guest=walkin)
+    rsvp.is_walkin = True
+    session.add(rsvp)
+    session.flush()
+    make_rsvp(session, meetup=meetup, guest=rsvped)
+
+    resp = client.get(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/stats", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["attendance"]["walkin_count"] == 1
+
+
+def test_meetup_stats_excludes_cancelled_from_attendance_totals(
+    client: TestClient, staff_headers: dict, session: Session, meetup, org_staff_member
+):
+    """Verify a cancelled RSVP does not count toward attendance.total_rsvps."""
+    active = make_guest(session, mazmo_user_id=534, mazmo_handle="active_stats_guest")
+    cancelled = make_guest(session, mazmo_user_id=535, mazmo_handle="cancelled_stats_guest")
+    make_rsvp(session, meetup=meetup, guest=active)
+    cancelled_rsvp = make_rsvp(session, meetup=meetup, guest=cancelled)
+    cancelled_rsvp.cancelled_rsvp = True
+    session.add(cancelled_rsvp)
+    session.flush()
+
+    resp = client.get(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/stats", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()
+    assert data["attendance"]["total_rsvps"] == 1
+    assert data["cancellations"]["cancelled_count"] == 1
+
+
+def test_meetup_stats_counts_cancelled_but_paid_correctly(
+    client: TestClient, staff_headers: dict, session: Session, meetup, org_staff_member
+):
+    """Verify cancelled_but_paid_count only counts cancelled+has_paid RSVPs."""
+    cancelled_paid = make_guest(session, mazmo_user_id=536, mazmo_handle="cancelled_paid_guest")
+    cancelled_unpaid = make_guest(session, mazmo_user_id=537, mazmo_handle="cancelled_unpaid_guest")
+    paid_rsvp = make_rsvp(session, meetup=meetup, guest=cancelled_paid, has_paid=True, paid_at=datetime.now(UTC))
+    paid_rsvp.cancelled_rsvp = True
+    session.add(paid_rsvp)
+    unpaid_rsvp = make_rsvp(session, meetup=meetup, guest=cancelled_unpaid)
+    unpaid_rsvp.cancelled_rsvp = True
+    session.add(unpaid_rsvp)
+    session.flush()
+
+    resp = client.get(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/stats", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()["cancellations"]
+    assert data["cancelled_count"] == 2
+    assert data["cancelled_but_paid_count"] == 1
+
+
+def test_meetup_stats_counts_all_four_guest_types_correctly(
+    client: TestClient, staff_headers: dict, session: Session, meetup, org_staff_member
+):
+    """Verify one guest of each type produces the expected 4 counters."""
+    normal = make_guest(session, mazmo_user_id=538, mazmo_handle="stats_normal")
+    invited = make_guest(session, mazmo_user_id=539, mazmo_handle="stats_invited")
+    vendor = make_guest(session, mazmo_user_id=540, mazmo_handle="stats_vendor")
+    staff = make_guest(session, mazmo_user_id=541, mazmo_handle="stats_staff")
+    make_rsvp(session, meetup=meetup, guest=normal)
+    make_rsvp(session, meetup=meetup, guest=invited, guest_type="INVITED")
+    make_rsvp(session, meetup=meetup, guest=vendor, guest_type="VENDOR")
+    make_rsvp(session, meetup=meetup, guest=staff, guest_type="STAFF")
+
+    resp = client.get(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/stats", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()["guest_types"]
+    assert data == {"normal_count": 1, "invited_count": 1, "vendor_count": 1, "staff_count": 1}
+
+
+def test_meetup_stats_counts_multiple_guests_per_type_correctly(
+    client: TestClient, staff_headers: dict, session: Session, meetup, org_staff_member
+):
+    """
+    Verify 3 VENDOR guests produce vendor_count == 3, not just a
+    presence-detecting count.
+    """
+    for i in range(3):
+        guest = make_guest(session, mazmo_user_id=550 + i, mazmo_handle=f"vendor_multi_{i}")
+        make_rsvp(session, meetup=meetup, guest=guest, guest_type="VENDOR")
+
+    resp = client.get(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/stats", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["guest_types"]["vendor_count"] == 3
+
+
+def test_meetup_stats_paid_and_unpaid_scoped_to_normal_guest_type(
+    client: TestClient, staff_headers: dict, session: Session, meetup, org_staff_member
+):
+    """
+    Verify a VENDOR guest with has_paid=True counts only toward
+    exempt_from_payment_count, never paid_count or unpaid_count.
+
+    WHY: This is the double-counting bug explicitly ruled out in the
+    design - guest_types.normal_count must always equal
+    payment.paid_count + payment.unpaid_count.
+    """
+    paid_vendor = make_guest(session, mazmo_user_id=560, mazmo_handle="paid_vendor_guest")
+    make_rsvp(session, meetup=meetup, guest=paid_vendor, guest_type="VENDOR", has_paid=True, paid_at=datetime.now(UTC))
+
+    resp = client.get(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/stats", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()
+    assert data["payment"]["paid_count"] == 0
+    assert data["payment"]["unpaid_count"] == 0
+    assert data["payment"]["exempt_from_payment_count"] == 1
+    assert data["guest_types"]["normal_count"] == 0
+
+
+def test_meetup_stats_invariants_hold_across_mixed_fixture(
+    client: TestClient, staff_headers: dict, session: Session, meetup, org_staff_member
+):
+    """
+    Verify the 3 documented invariants numerically against a fixture that
+    mixes all 4 guest types, paid/unpaid, cancelled, and walk-ins:
+      guest_types.normal_count == payment.paid_count + payment.unpaid_count
+      attendance.total_rsvps == sum(guest_types.*)
+      attendance.total_rsvps == sum(payment.*)
+    """
+    normal_paid = make_guest(session, mazmo_user_id=570, mazmo_handle="mix_normal_paid")
+    normal_unpaid = make_guest(session, mazmo_user_id=571, mazmo_handle="mix_normal_unpaid")
+    invited = make_guest(session, mazmo_user_id=572, mazmo_handle="mix_invited")
+    vendor = make_guest(session, mazmo_user_id=573, mazmo_handle="mix_vendor")
+    staff = make_guest(session, mazmo_user_id=574, mazmo_handle="mix_staff")
+    cancelled_guest = make_guest(session, mazmo_user_id=575, mazmo_handle="mix_cancelled")
+    walkin_guest = make_guest(session, mazmo_user_id=576, mazmo_handle="mix_walkin")
+
+    make_rsvp(session, meetup=meetup, guest=normal_paid, has_paid=True, paid_at=datetime.now(UTC))
+    make_rsvp(session, meetup=meetup, guest=normal_unpaid)
+    make_rsvp(session, meetup=meetup, guest=invited, guest_type="INVITED")
+    make_rsvp(session, meetup=meetup, guest=vendor, guest_type="VENDOR")
+    make_rsvp(session, meetup=meetup, guest=staff, guest_type="STAFF")
+    cancelled_rsvp = make_rsvp(session, meetup=meetup, guest=cancelled_guest)
+    cancelled_rsvp.cancelled_rsvp = True
+    session.add(cancelled_rsvp)
+    walkin_rsvp = make_rsvp(session, meetup=meetup, guest=walkin_guest)
+    walkin_rsvp.is_walkin = True
+    session.add(walkin_rsvp)
+    session.flush()
+
+    resp = client.get(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/stats", headers=staff_headers)
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()
+
+    normal_count = data["guest_types"]["normal_count"]
+    invited_count = data["guest_types"]["invited_count"]
+    vendor_count = data["guest_types"]["vendor_count"]
+    staff_count = data["guest_types"]["staff_count"]
+    paid_count = data["payment"]["paid_count"]
+    unpaid_count = data["payment"]["unpaid_count"]
+    exempt_count = data["payment"]["exempt_from_payment_count"]
+    total_rsvps = data["attendance"]["total_rsvps"]
+
+    assert normal_count == paid_count + unpaid_count
+    assert total_rsvps == normal_count + invited_count + vendor_count + staff_count
+    assert total_rsvps == paid_count + unpaid_count + exempt_count
+    # Concrete values for this fixture, not just the invariants:
+    # normal_count is 3, not 2: walkin_guest's RSVP was created without an
+    # explicit guest_type, so make_rsvp()'s default ("NORMAL") applies -
+    # walk-in status and guest_type are independent axes.
+    assert normal_count == 3
+    assert paid_count == 1
+    assert unpaid_count == 2
+    assert invited_count == 1
+    assert vendor_count == 1
+    assert staff_count == 1
+    assert total_rsvps == 6  # 7 RSVPs made, 1 cancelled -> 6 active

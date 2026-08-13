@@ -325,6 +325,30 @@ MEETUP_GUEST_VENDOR_EXAMPLE = {
     },
 }
 
+MEETUP_STATS_EXAMPLE = {
+    "attendance": {
+        "total_rsvps": 20,
+        "arrived_count": 15,
+        "not_arrived_count": 5,
+        "walkin_count": 2,
+    },
+    "cancellations": {
+        "cancelled_count": 3,
+        "cancelled_but_paid_count": 1,
+    },
+    "guest_types": {
+        "normal_count": 15,
+        "invited_count": 2,
+        "vendor_count": 2,
+        "staff_count": 1,
+    },
+    "payment": {
+        "paid_count": 10,
+        "unpaid_count": 5,
+        "exempt_from_payment_count": 5,
+    },
+}
+
 # -- Sync Response ------------------------------------------------------------
 
 SYNC_RESPONSE_EXAMPLE = {
