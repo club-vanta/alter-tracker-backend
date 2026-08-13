@@ -8,9 +8,10 @@ GuestSyncer._upsert_guests) instead, matching where the rest of the
 sync test suite already lives.
 """
 
+from sqlalchemy import text
 from sqlmodel import Session, select
 
-from app.models.models import EventLog, EventType, GuestDisplaynameSource
+from app.models.models import EventLog, EventType, GuestDisplaynameHistory, GuestDisplaynameSource
 from app.schemas import EventTypeFilter
 from tests.conftest import make_guest
 
@@ -65,3 +66,46 @@ def test_event_log_filters_by_guest_displayname_changed(session: Session):
     ).all()
     assert len(matching) == 1
     assert matching[0].event_type == EventType.GUEST_DISPLAYNAME_CHANGED.value
+
+
+# ── Backfill migration SQL ───────────────────────────────────────────────────
+
+
+def test_backfill_migration_creates_one_row_per_existing_guest(session: Session):
+    """
+    Verify the migration's backfill INSERT creates exactly one BACKFILL
+    row per pre-existing guest, using their current displayname.
+
+    WHY: This runs the exact SQL from alembic/versions/0018_guest_
+    displayname_history.py's upgrade() directly against the test
+    session, rather than through Alembic - the test database schema is
+    built via SQLModel.metadata.create_all() (see setup_test_database in
+    tests/conftest.py), not by running migrations, so there is no
+    "pre-migration" state to actually migrate in this test suite. This
+    mirrors how the set_arrival_order trigger is tested: its SQL is
+    recreated directly in setup_test_database instead of running the
+    real migration that originally introduced it.
+
+    The WHERE id IN (...) restriction below (absent from the real
+    migration, which has no WHERE clause and applies to every guest) is
+    added only so this test's assertions are scoped to the guests it
+    itself created, in case other guests exist in this transaction.
+    """
+    guest_a = make_guest(session, mazmo_user_id=701, mazmo_handle="backfill_a", displayname="Backfill A")
+    guest_b = make_guest(session, mazmo_user_id=702, mazmo_handle="backfill_b", displayname="Backfill B")
+
+    backfill_stmt = text("""
+        INSERT INTO guest_displayname_history (guest_id, displayname, source, actor_id, recorded_at)
+        SELECT id, displayname, 'BACKFILL', NULL, now()
+        FROM guests
+        WHERE id IN (:a, :b)
+    """).bindparams(a=guest_a.id, b=guest_b.id)
+    session.exec(backfill_stmt)  # type: ignore[arg-type]
+    session.flush()
+
+    for guest in (guest_a, guest_b):
+        rows = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest.id)).all()
+        assert len(rows) == 1
+        assert rows[0].source == GuestDisplaynameSource.BACKFILL
+        assert rows[0].displayname == guest.displayname
+        assert rows[0].actor_id is None
