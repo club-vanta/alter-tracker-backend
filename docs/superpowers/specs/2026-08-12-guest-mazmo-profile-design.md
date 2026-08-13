@@ -160,6 +160,17 @@ que ya escribe `mazmo_user_id`/`mazmo_handle`/`displayname`, se hace el
 mismo upsert de `GuestMazmoProfile` - sin ninguna llamada extra a
 Mazmo, con datos que ya estan en memoria.
 
+## `POST /guests/mazmo`
+
+Descuido corregido: este endpoint (`create_guest_from_mazmo`,
+`app/routers/guests.py`) tambien llama a `fetch_user_by_username()`
+para crear un guest nuevo directamente desde un perfil de Mazmo (no
+solo `link-mazmo`, que vincula un guest ya existente). Como usa el
+mismo lookup ya unificado, tambien debe crear la fila de
+`GuestMazmoProfile` correspondiente en el mismo commit que ya crea
+`Guest` y `EventLog(GUEST_CREATED, ...)` - mismo patron que
+`link-mazmo`, sin llamada extra a Mazmo.
+
 ## `PATCH /guests/{id}/unlink-mazmo`
 
 Ademas de `guest.mazmo_user_id = None` (comportamiento actual, sin
@@ -253,6 +264,14 @@ Mismos 3 niveles que los specs anteriores.
   el link puebla `GuestMazmoProfile` usando la respuesta del lookup
   individual, sin una segunda llamada a Mazmo (assert sobre el mock:
   llamado una sola vez).
+
+**`POST /guests/mazmo`:**
+
+- `test_create_guest_from_mazmo_creates_guest_mazmo_profile` - crear un
+  guest nuevo desde un perfil de Mazmo tambien puebla
+  `GuestMazmoProfile` en el mismo commit que `Guest` y
+  `EventLog(GUEST_CREATED, ...)`, usando la misma respuesta del lookup
+  ya en memoria (sin llamada extra a Mazmo).
 
 **`unlink-mazmo`:**
 
