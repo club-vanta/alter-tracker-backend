@@ -9,15 +9,18 @@ Sync-specific guest_type regression tests live in test_sync.py.
 Event-log filter regression test lives in test_events.py (TestEventFiltering).
 """
 
+import uuid
+from datetime import UTC, datetime
+
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from app.models.models import GuestType, Organization, OrgRole, User
+from app.models.models import EventLog, EventType, GuestType, MeetupRsvp, Organization, OrgRole, User
 from app.schemas import GuestTypeUpdateRequest
-from tests.conftest import make_guest, make_org_member, make_rsvp
+from tests.conftest import get_auth_headers, make_guest, make_meetup, make_org, make_org_member, make_rsvp, make_user
 
 
 @pytest.fixture()
@@ -104,3 +107,207 @@ def test_new_rsvp_defaults_to_guest_type_normal_via_walkin(
 
     assert resp.status_code == status.HTTP_201_CREATED
     assert resp.json()["rsvp"]["guest_type"] == "NORMAL"
+
+
+# -- PATCH .../guests/{guest_id}/type --------------------------------------
+
+
+def test_update_guest_type_returns_200_and_updates_rsvp(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    meetup,
+):
+    """
+    Verify that an admin can reclassify a guest and the RSVP reflects it.
+    """
+    guest = make_guest(session, mazmo_user_id=510, mazmo_handle="vendor_guest")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/type",
+        headers=admin_headers,
+        json={"guest_type": "VENDOR"},
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["rsvp"]["guest_type"] == "VENDOR"
+
+    rsvp = session.exec(
+        select(MeetupRsvp).where(MeetupRsvp.meetup_id == meetup.id).where(MeetupRsvp.guest_id == guest.id)
+    ).one()
+    assert rsvp.guest_type == "VENDOR"
+
+
+def test_update_guest_type_returns_403_for_staff_non_admin(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
+    """
+    Verify that a STAFF-role org member cannot change guest_type.
+
+    WHY: Same permission level as mark_guest_paid - reclassification is
+    admin-only.
+    """
+    guest = make_guest(session, mazmo_user_id=511, mazmo_handle="staff_blocked_guest")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/type",
+        headers=staff_headers,
+        json={"guest_type": "VENDOR"},
+    )
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_update_guest_type_returns_401_without_auth(client: TestClient, session: Session, meetup):
+    """Verify that an unauthenticated request is rejected."""
+    guest = make_guest(session, mazmo_user_id=512, mazmo_handle="no_auth_guest")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/type",
+        json={"guest_type": "VENDOR"},
+    )
+
+    assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_update_guest_type_returns_404_when_guest_not_rsvped_to_meetup(client: TestClient, admin_headers: dict, meetup):
+    """Verify that changing guest_type for a non-RSVPed guest returns 404."""
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{uuid.uuid4()}/type",
+        headers=admin_headers,
+        json={"guest_type": "VENDOR"},
+    )
+
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_update_guest_type_returns_404_for_nonexistent_meetup(
+    client: TestClient, admin_headers: dict, org: Organization
+):
+    """Verify that changing guest_type for a non-existent meetup returns 404."""
+    resp = client.patch(
+        f"/organizations/{org.id}/meetups/{uuid.uuid4()}/guests/{uuid.uuid4()}/type",
+        headers=admin_headers,
+        json={"guest_type": "VENDOR"},
+    )
+
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_update_guest_type_returns_403_for_admin_of_different_org(client: TestClient, session: Session):
+    """
+    Verify multi-tenant isolation: an Org A admin cannot change guest_type
+    on an Org B meetup.
+
+    WHY: get_org_admin(org_id) checks membership in the org_id from the
+    URL path - an admin of a different org has no membership row there at
+    all, so this must 403 before ever looking at the RSVP.
+    """
+    org_a = make_org(session, name="Org A Guest Type", slug="org-a-guest-type")
+    org_b = make_org(session, name="Org B Guest Type", slug="org-b-guest-type")
+    admin_a = make_user(session, username="admin_a_guest_type")
+    make_org_member(session, org=org_a, user=admin_a, role=OrgRole.ADMIN)
+    headers_a = get_auth_headers(client, "admin_a_guest_type", "a-very-secure-passphrase")
+
+    guest = make_guest(session, mazmo_user_id=513, mazmo_handle="cross_org_guest")
+    meetup_b = make_meetup(
+        session, org=org_b, name="Org B Meetup", mazmo_meetup_url="https://mazmo.net/test/org-b-meetup-gt-1"
+    )
+    make_rsvp(session, meetup=meetup_b, guest=guest)
+
+    resp = client.patch(
+        f"/organizations/{org_b.id}/meetups/{meetup_b.id}/guests/{guest.id}/type",
+        headers=headers_a,
+        json={"guest_type": "VENDOR"},
+    )
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_update_guest_type_creates_audit_log_with_old_and_new_reason(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    meetup,
+    admin_user: User,
+):
+    """
+    Verify that changing guest_type writes a GUEST_TYPE_CHANGED EventLog
+    with a reason naming both the old and new value.
+    """
+    guest = make_guest(session, mazmo_user_id=514, mazmo_handle="audit_guest")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/type",
+        headers=admin_headers,
+        json={"guest_type": "STAFF"},
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+
+    event = session.exec(
+        select(EventLog).where(EventLog.guest_id == guest.id).where(EventLog.event_type == EventType.GUEST_TYPE_CHANGED)
+    ).one()
+    assert event.actor_id == admin_user.id
+    assert event.meetup_id == meetup.id
+    assert event.reason == "Changed guest_type from NORMAL to STAFF"
+
+
+def test_update_guest_type_does_not_modify_has_paid(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    meetup,
+):
+    """
+    Verify that reclassifying a guest who already paid leaves has_paid,
+    paid_at, and paid_by_id untouched.
+    """
+    guest = make_guest(session, mazmo_user_id=515, mazmo_handle="already_paid_guest")
+    paid_at = datetime(2026, 3, 17, 21, 0, tzinfo=UTC)
+    rsvp = make_rsvp(session, meetup=meetup, guest=guest, has_paid=True, paid_at=paid_at)
+
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/type",
+        headers=admin_headers,
+        json={"guest_type": "VENDOR"},
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    session.refresh(rsvp)
+    assert rsvp.has_paid is True
+    # paid_at comes back tz-naive from the DB (the model field has no
+    # sa_type=DateTime(timezone=True)), so compare naive values only.
+    assert rsvp.paid_at is not None
+    assert rsvp.paid_at.replace(tzinfo=None) == paid_at.replace(tzinfo=None)
+    assert rsvp.guest_type == "VENDOR"
+
+
+def test_update_guest_type_back_to_normal(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    meetup,
+):
+    """Verify a VENDOR -> NORMAL round-trip works."""
+    guest = make_guest(session, mazmo_user_id=516, mazmo_handle="roundtrip_guest")
+    rsvp = make_rsvp(session, meetup=meetup, guest=guest, guest_type="VENDOR")
+
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/type",
+        headers=admin_headers,
+        json={"guest_type": "NORMAL"},
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["rsvp"]["guest_type"] == "NORMAL"
+    session.refresh(rsvp)
+    assert rsvp.guest_type == "NORMAL"

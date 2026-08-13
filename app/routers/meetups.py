@@ -9,6 +9,8 @@ GET   /organizations/{org_id}/meetups/{meetup_id}/guests         -> list RSVP gu
 POST  /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/add-walkin  -> add walk-in (org member)
 POST  /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/checkin     -> check in (org member)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/undo-checkin -> undo check-in (org member)
+PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/type        -> change guest type (org admin)
+GET   /organizations/{org_id}/meetups/{meetup_id}/stats                  -> meetup stats (org member)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/payment      -> mark paid (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/payment/undo -> undo payment mark (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/enable-payment  -> mark event as paid (org admin)
@@ -51,11 +53,14 @@ from app.openapi_examples.meetups_examples import (
     UNDO_PAYMENT_REQUEST_EXAMPLES,
     UNDO_PAYMENT_RESPONSES,
     UNFINALIZE_MEETUP_RESPONSES,
+    UPDATE_GUEST_TYPE_REQUEST_EXAMPLES,
+    UPDATE_GUEST_TYPE_RESPONSES,
 )
 from app.schemas import (
     CheckedInByPublic,
     CheckInResponse,
     GuestPublic,
+    GuestTypeUpdateRequest,
     GuestWithBanPublic,
     MeetupCreate,
     MeetupGuestListResponse,
@@ -685,6 +690,99 @@ async def undo_checkin_guest(
         reason=request.reason,
     )
     return guest
+
+
+# -- Change guest type ---------------------------------------------------
+
+
+@router.patch(
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{guest_id}/type",
+    response_model=MeetupGuestPublic,
+    summary="Change a guest's category for this meetup (org admin only)",
+    responses=UPDATE_GUEST_TYPE_RESPONSES,
+)
+async def update_guest_type(
+    org_id: uuid.UUID,
+    meetup_id: uuid.UUID,
+    guest_id: uuid.UUID,
+    payload: Annotated[GuestTypeUpdateRequest, Body(openapi_examples=UPDATE_GUEST_TYPE_REQUEST_EXAMPLES)],
+    session: Session = Depends(get_session),
+    admin: User = Depends(get_org_admin),
+) -> MeetupGuestPublic:
+    """
+    Change a guest's category (NORMAL/INVITED/VENDOR/STAFF) at this meetup.
+
+    INVITED, VENDOR, and STAFF guests are exempt from the payment check-in
+    gate regardless of has_paid - see checkin_guest(). This does not touch
+    has_paid, paid_at, or paid_by_id.
+
+    Returns 404 if the guest is not RSVPed to this meetup.
+    """
+    _get_meetup_or_404_in_org(session, meetup_id, org_id)
+
+    rsvp = session.exec(
+        select(MeetupRsvp)
+        .where(MeetupRsvp.meetup_id == meetup_id)
+        .where(MeetupRsvp.guest_id == guest_id)
+        .with_for_update()
+        .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
+    ).first()
+
+    if not rsvp:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Cannot change guest type: guest id={guest_id} is not RSVPed to this meetup. "
+                f"Verify the guest ID via GET /organizations/{org_id}/meetups/{meetup_id}/guests."
+            ),
+        )
+
+    old_guest_type = rsvp.guest_type
+    new_guest_type = payload.guest_type.value
+    rsvp.guest_type = new_guest_type
+
+    event = EventLog(
+        event_type=EventType.GUEST_TYPE_CHANGED,
+        actor_id=admin.id,
+        guest_id=guest_id,
+        meetup_id=meetup_id,
+        org_id=org_id,
+        reason=f"Changed guest_type from {old_guest_type} to {new_guest_type}",
+    )
+
+    session.add(rsvp)
+    session.add(event)
+    session.commit()
+    session.refresh(rsvp)
+
+    guest = _refetch_guest_or_500(session, guest_id, action="guest type change")
+
+    ban = session.exec(
+        select(OrganizationBan).where(OrganizationBan.org_id == org_id).where(OrganizationBan.guest_id == guest_id)
+    ).first()
+
+    log.info(
+        "Guest type changed",
+        admin=admin.username,
+        guest=guest.displayname,
+        guest_id=str(guest_id),
+        meetup_id=str(meetup_id),
+        org_id=str(org_id),
+        old_guest_type=old_guest_type,
+        new_guest_type=new_guest_type,
+    )
+
+    return MeetupGuestPublic(
+        guest=GuestWithBanPublic(
+            id=guest.id,
+            mazmo_user_id=guest.mazmo_user_id,
+            mazmo_handle=guest.mazmo_handle,
+            displayname=guest.displayname,
+            instagram_username=guest.instagram_username,
+            is_banned=ban is not None,
+        ),
+        rsvp=RsvpPublic.model_validate(rsvp),
+    )
 
 
 # -- Mark payment ---------------------------------------------------------

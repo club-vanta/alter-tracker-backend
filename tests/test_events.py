@@ -761,6 +761,39 @@ class TestEventFiltering:
         assert data["total"] >= 1
         assert all(e["actor"]["id"] == admin_user.id for e in data["events"])
 
+    def test_filter_by_guest_type_changed(
+        self, client: TestClient, admin_headers: dict, session: Session, org: Organization
+    ):
+        """
+        Verify that ?type=GUEST_TYPE_CHANGED filters to only guest-type-change
+        events.
+
+        WHY: GUEST_TYPE_CHANGED must be added to EventTypeFilter (not just
+        EventType) or every request with this filter value 400s.
+        """
+        from app.models.models import Meetup
+
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
+        meetup: Meetup = make_meetup(session, org=org)
+        make_rsvp(session, meetup=meetup, guest=guest)
+
+        client.patch(
+            f"/organizations/{org.id}/guests/{guest.id}/ban",
+            json={"reason": "Testing"},
+            headers=admin_headers,
+        )
+        client.patch(
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/type",
+            json={"guest_type": "VENDOR"},
+            headers=admin_headers,
+        )
+
+        resp = client.get(f"/organizations/{org.id}/events/?type=GUEST_TYPE_CHANGED", headers=admin_headers)
+        assert resp.status_code == status.HTTP_200_OK
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["events"][0]["event_type"] == "GUEST_TYPE_CHANGED"
+
 
 # ======================================================================
 # RESPONSE FORMAT

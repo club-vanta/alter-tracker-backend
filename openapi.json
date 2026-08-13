@@ -4572,7 +4572,8 @@
                             "arrival_time": "2024-03-23T20:05:32Z",
                             "arrival_order": 1,
                             "is_walkin": false,
-                            "has_paid": false
+                            "has_paid": false,
+                            "guest_type": "NORMAL"
                           }
                         },
                         {
@@ -4588,7 +4589,8 @@
                             "cancelled_rsvp": false,
                             "has_arrived": false,
                             "is_walkin": false,
-                            "has_paid": false
+                            "has_paid": false,
+                            "guest_type": "NORMAL"
                           }
                         }
                       ]
@@ -4616,7 +4618,8 @@
                             "arrival_time": "2024-03-23T20:05:32Z",
                             "arrival_order": 1,
                             "is_walkin": false,
-                            "has_paid": false
+                            "has_paid": false,
+                            "guest_type": "NORMAL"
                           }
                         },
                         {
@@ -4632,7 +4635,8 @@
                             "cancelled_rsvp": false,
                             "has_arrived": false,
                             "is_walkin": false,
-                            "has_paid": false
+                            "has_paid": false,
+                            "guest_type": "NORMAL"
                           }
                         }
                       ]
@@ -4790,7 +4794,8 @@
                         "cancelled_rsvp": false,
                         "has_arrived": false,
                         "is_walkin": true,
-                        "has_paid": false
+                        "has_paid": false,
+                        "guest_type": "NORMAL"
                       }
                     }
                   }
@@ -5226,6 +5231,203 @@
                           "ctx": {
                             "min_length": 5
                           }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{guest_id}/type": {
+      "patch": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Change a guest's category for this meetup (org admin only)",
+        "description": "Change a guest's category (NORMAL/INVITED/VENDOR/STAFF) at this meetup.\n\nINVITED, VENDOR, and STAFF guests are exempt from the payment check-in\ngate regardless of has_paid - see checkin_guest(). This does not touch\nhas_paid, paid_at, or paid_by_id.\n\nReturns 404 if the guest is not RSVPed to this meetup.",
+        "operationId": "update_guest_type_organizations__org_id__meetups__meetup_id__guests__guest_id__type_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          },
+          {
+            "name": "guest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Guest Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuestTypeUpdateRequest"
+              },
+              "examples": {
+                "classify_vendor": {
+                  "summary": "Classify a guest as a vendor",
+                  "description": "Vendors bring their own stand and are exempt from the payment gate",
+                  "value": {
+                    "guest_type": "VENDOR"
+                  }
+                },
+                "classify_invited": {
+                  "summary": "Classify a guest as personally invited",
+                  "description": "Invited guests were personally invited by the organizer and don't pay entry",
+                  "value": {
+                    "guest_type": "INVITED"
+                  }
+                },
+                "revert_to_normal": {
+                  "summary": "Revert a guest back to normal",
+                  "description": "Normal guests are subject to the meetup's requires_payment flag like anyone else",
+                  "value": {
+                    "guest_type": "NORMAL"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Guest type updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetupGuestPublic"
+                },
+                "examples": {
+                  "updated": {
+                    "summary": "Guest reclassified as vendor",
+                    "description": "This guest is now exempt from the payment check-in gate",
+                    "value": {
+                      "guest": {
+                        "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+                        "mazmo_user_id": 12345,
+                        "mazmo_handle": "fiestero_feliz",
+                        "displayname": "Juan El Fiestero",
+                        "is_banned": false
+                      },
+                      "rsvp": {
+                        "rsvp_time": "2024-03-20T18:30:00Z",
+                        "cancelled_rsvp": false,
+                        "has_arrived": false,
+                        "is_walkin": false,
+                        "has_paid": false,
+                        "guest_type": "VENDOR"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Guest not RSVPed to meetup",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "not_rsvped": {
+                    "summary": "Guest didn't RSVP to this meetup",
+                    "value": {
+                      "detail": "Cannot change guest type: guest id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 is not RSVPed. Either: (1) they haven't RSVPed on Mazmo yet, (2) RSVP list needs syncing - try POST /meetups/{meetup_id}/sync, or (3) wrong ID - check GET /meetups/{meetup_id}/guests."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalid_guest_type": {
+                    "summary": "guest_type is not a recognized category",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "enum",
+                          "loc": [
+                            "body",
+                            "guest_type"
+                          ],
+                          "msg": "Input should be 'NORMAL', 'INVITED', 'VENDOR' or 'STAFF'",
+                          "input": "BOGUS"
                         }
                       ]
                     }
@@ -8093,6 +8295,30 @@
         ],
         "title": "GuestPublic",
         "description": "A guest's identity (cached locally, may or may not have a Mazmo account).\n\nIdentity-only - no RSVP or ban state. Bans are per-org and are\nincluded only in org-scoped endpoints via GuestWithBanPublic."
+      },
+      "GuestType": {
+        "type": "string",
+        "enum": [
+          "NORMAL",
+          "INVITED",
+          "VENDOR",
+          "STAFF"
+        ],
+        "title": "GuestType",
+        "description": "Category of a guest's attendance at a specific meetup.\n\nNORMAL guests are subject to the meetup's requires_payment flag like\nany regular attendee. INVITED, VENDOR, and STAFF guests are exempt\nfrom the payment check-in gate regardless of has_paid: invited guests\nwere personally invited by the meetup organizer and don't pay entry,\nvendors bring their own stand to sell goods and aren't attending as\nparticipants, and staff are working the event itself. This is set\nper-RSVP (not on the Guest) because these categories are decided\nevent by event, not a persistent trait of the person."
+      },
+      "GuestTypeUpdateRequest": {
+        "properties": {
+          "guest_type": {
+            "$ref": "#/components/schemas/GuestType"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guest_type"
+        ],
+        "title": "GuestTypeUpdateRequest",
+        "description": "Request body for changing a guest's category at a specific meetup."
       },
       "GuestWithBanPublic": {
         "properties": {
