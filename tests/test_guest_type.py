@@ -752,3 +752,211 @@ def test_meetup_stats_invariants_hold_across_mixed_fixture(
     assert vendor_count == 1
     assert staff_count == 1
     assert total_rsvps == 6  # 7 RSVPs made, 1 cancelled -> 6 active
+
+
+# -- End-to-end scenarios ---------------------------------------------------
+
+
+def test_eros_scenario_invited_vendor_staff_and_normal_guests_end_to_end(
+    client: TestClient,
+    admin_headers: dict,
+    staff_headers: dict,
+    session: Session,
+    org: Organization,
+    org_staff_member,
+):
+    """
+    Replicate the real scenario that motivated this feature end to end:
+    sync guests, enable payment, classify 3 exempt guests, check everyone
+    in, mark the remaining NORMAL guest as paid, cancel one paid guest,
+    register a walk-in, then verify stats and the audit trail.
+    """
+    meetup = make_meetup(session, org=org, name="Alter Eros", mazmo_meetup_url="https://mazmo.net/test/alter-eros-e2e")
+
+    normal_guest = make_guest(session, mazmo_user_id=600, mazmo_handle="eros_normal")
+    invited_guest = make_guest(session, mazmo_user_id=601, mazmo_handle="eros_invited")
+    vendor_guest = make_guest(session, mazmo_user_id=602, mazmo_handle="eros_vendor")
+    staff_guest = make_guest(session, mazmo_user_id=603, mazmo_handle="eros_staff")
+    cancels_after_paying_guest = make_guest(session, mazmo_user_id=604, mazmo_handle="eros_cancels")
+    walkin_guest = make_guest(session, mazmo_user_id=605, mazmo_handle="eros_walkin")
+
+    make_rsvp(session, meetup=meetup, guest=normal_guest)
+    make_rsvp(session, meetup=meetup, guest=invited_guest)
+    make_rsvp(session, meetup=meetup, guest=vendor_guest)
+    make_rsvp(session, meetup=meetup, guest=staff_guest)
+    make_rsvp(session, meetup=meetup, guest=cancels_after_paying_guest)
+
+    # 2. Admin enables requires_payment
+    resp = client.patch(f"/organizations/{org.id}/meetups/{meetup.id}/enable-payment", headers=admin_headers)
+    assert resp.status_code == status.HTTP_200_OK
+
+    # 3. Admin classifies invited/vendor/staff guests; normal_guest and
+    #    cancels_after_paying_guest stay NORMAL.
+    for guest, guest_type in (
+        (invited_guest, "INVITED"),
+        (vendor_guest, "VENDOR"),
+        (staff_guest, "STAFF"),
+    ):
+        resp = client.patch(
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/type",
+            headers=admin_headers,
+            json={"guest_type": guest_type},
+        )
+        assert resp.status_code == status.HTTP_200_OK
+
+    # 4. Staff checks in the 3 exempt guests without payment -> 200 each.
+    for guest in (invited_guest, vendor_guest, staff_guest):
+        resp = client.post(
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
+            headers=staff_headers,
+        )
+        assert resp.status_code == status.HTTP_200_OK
+
+    # 5. Staff attempts check-in of a NORMAL guest without paying -> 409.
+    resp = client.post(
+        f"/organizations/{org.id}/meetups/{meetup.id}/guests/{normal_guest.id}/checkin",
+        headers=staff_headers,
+    )
+    assert resp.status_code == status.HTTP_409_CONFLICT
+
+    # 6. Admin marks that guest as paid; retry check-in -> 200.
+    resp = client.patch(
+        f"/organizations/{org.id}/meetups/{meetup.id}/guests/{normal_guest.id}/payment",
+        headers=admin_headers,
+    )
+    assert resp.status_code == status.HTTP_200_OK
+    resp = client.post(
+        f"/organizations/{org.id}/meetups/{meetup.id}/guests/{normal_guest.id}/checkin",
+        headers=staff_headers,
+    )
+    assert resp.status_code == status.HTTP_200_OK
+
+    # 7. A guest who already paid cancels their RSVP.
+    resp = client.patch(
+        f"/organizations/{org.id}/meetups/{meetup.id}/guests/{cancels_after_paying_guest.id}/payment",
+        headers=admin_headers,
+    )
+    assert resp.status_code == status.HTTP_200_OK
+    cancelled_rsvp = session.exec(
+        select(MeetupRsvp)
+        .where(MeetupRsvp.meetup_id == meetup.id)
+        .where(MeetupRsvp.guest_id == cancels_after_paying_guest.id)
+    ).one()
+    cancelled_rsvp.cancelled_rsvp = True
+    session.add(cancelled_rsvp)
+    session.flush()
+
+    # 8. Staff registers a walk-in.
+    resp = client.post(
+        f"/organizations/{org.id}/meetups/{meetup.id}/guests/{walkin_guest.id}/add-walkin",
+        headers=staff_headers,
+    )
+    assert resp.status_code == status.HTTP_201_CREATED
+
+    # 9. GET .../stats - verify every field against the scenario above.
+    resp = client.get(f"/organizations/{org.id}/meetups/{meetup.id}/stats", headers=staff_headers)
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()
+
+    # 5 active RSVPs: normal, invited, vendor, staff, walkin (4 of the 5
+    # originally-RSVPed guests stay active + 1 walk-in); the 5th original
+    # RSVP (cancels_after_paying_guest) is cancelled and excluded here.
+    assert data["attendance"]["total_rsvps"] == 5
+    assert data["attendance"]["arrived_count"] == 4  # invited, vendor, staff, normal
+    assert data["attendance"]["not_arrived_count"] == 1  # walkin guest not checked in yet
+    assert data["attendance"]["walkin_count"] == 1
+
+    assert data["cancellations"]["cancelled_count"] == 1
+    assert data["cancellations"]["cancelled_but_paid_count"] == 1
+
+    assert data["guest_types"] == {
+        "normal_count": 2,  # normal_guest + walkin_guest (defaults to NORMAL)
+        "invited_count": 1,
+        "vendor_count": 1,
+        "staff_count": 1,
+    }
+
+    assert data["payment"]["paid_count"] == 1  # normal_guest
+    assert data["payment"]["unpaid_count"] == 1  # walkin_guest
+    assert data["payment"]["exempt_from_payment_count"] == 3  # invited, vendor, staff
+
+    # 10. GET .../events?type=GUEST_TYPE_CHANGED - verify 3 entries with
+    #     the correct reason each.
+    resp = client.get(
+        f"/organizations/{org.id}/events/?type=GUEST_TYPE_CHANGED",
+        headers=admin_headers,
+    )
+    assert resp.status_code == status.HTTP_200_OK
+    events = resp.json()["events"]
+    assert len(events) == 3
+    reasons = {e["reason"] for e in events}
+    assert reasons == {
+        "Changed guest_type from NORMAL to INVITED",
+        "Changed guest_type from NORMAL to VENDOR",
+        "Changed guest_type from NORMAL to STAFF",
+    }
+
+
+def test_reclassify_after_checkin_does_not_affect_already_checked_in_guest(
+    client: TestClient,
+    admin_headers: dict,
+    staff_headers: dict,
+    session: Session,
+    org: Organization,
+    org_staff_member,
+):
+    """
+    Verify that reclassifying a guest who already checked in as NORMAL
+    (and paid) does not retroactively change their check-in state.
+    """
+    meetup = make_meetup(
+        session,
+        org=org,
+        name="Alter Retroactive Reclassify",
+        mazmo_meetup_url="https://mazmo.net/test/alter-retro-reclassify",
+        requires_payment=True,
+    )
+    guest = make_guest(session, mazmo_user_id=610, mazmo_handle="retro_reclassify_guest")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    resp = client.patch(
+        f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/payment",
+        headers=admin_headers,
+    )
+    assert resp.status_code == status.HTTP_200_OK
+
+    resp = client.post(
+        f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
+        headers=staff_headers,
+    )
+    assert resp.status_code == status.HTTP_200_OK
+    checkin_data = resp.json()
+    arrival_order = checkin_data["arrival_order"]
+    arrival_time = checkin_data["arrival_time"]
+
+    # Admin reclassifies the guest as VENDOR after the fact.
+    resp = client.patch(
+        f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/type",
+        headers=admin_headers,
+        json={"guest_type": "VENDOR"},
+    )
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["rsvp"]["guest_type"] == "VENDOR"
+
+    rsvp = session.exec(
+        select(MeetupRsvp).where(MeetupRsvp.meetup_id == meetup.id).where(MeetupRsvp.guest_id == guest.id)
+    ).one()
+    assert rsvp.has_arrived is True
+    assert rsvp.arrival_order == arrival_order
+    assert (
+        rsvp.arrival_time.isoformat().replace("+00:00", "Z") == arrival_time or str(rsvp.arrival_time) in arrival_time
+    )
+
+    # A second check-in attempt is still correctly rejected as "already
+    # checked in" (409), not silently re-processed because of the
+    # reclassification.
+    resp = client.post(
+        f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/checkin",
+        headers=staff_headers,
+    )
+    assert resp.status_code == status.HTTP_409_CONFLICT
