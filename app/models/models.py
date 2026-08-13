@@ -57,6 +57,26 @@ class EventType(StrEnum):
     PAYMENT_REVOKED = "PAYMENT_REVOKED"
     PAYMENT_REQUIREMENT_ENABLED = "PAYMENT_REQUIREMENT_ENABLED"
     PAYMENT_REQUIREMENT_DISABLED = "PAYMENT_REQUIREMENT_DISABLED"
+    GUEST_TYPE_CHANGED = "GUEST_TYPE_CHANGED"
+
+
+class GuestType(StrEnum):
+    """Category of a guest's attendance at a specific meetup.
+
+    NORMAL guests are subject to the meetup's requires_payment flag like
+    any regular attendee. INVITED, VENDOR, and STAFF guests are exempt
+    from the payment check-in gate regardless of has_paid: invited guests
+    were personally invited by the meetup organizer and don't pay entry,
+    vendors bring their own stand to sell goods and aren't attending as
+    participants, and staff are working the event itself. This is set
+    per-RSVP (not on the Guest) because these categories are decided
+    event by event, not a persistent trait of the person.
+    """
+
+    NORMAL = "NORMAL"
+    INVITED = "INVITED"
+    VENDOR = "VENDOR"
+    STAFF = "STAFF"
 
 
 # ── Role lookup table ─────────────────────────────────────────────────────────
@@ -185,9 +205,12 @@ class MeetupRsvp(SQLModel, table=True):
     Association object representing a Guest's attendance at a specific Meetup.
 
     CRITICAL: The background sync upsert NEVER overwrites has_arrived,
-    arrival_time, arrival_order, checked_in_by_id, has_paid, paid_at, or
-    paid_by_id. These are set ONLY by the door tracker check-in and
-    payment flows.
+    arrival_time, arrival_order, checked_in_by_id, has_paid, paid_at,
+    paid_by_id, or guest_type. These are set ONLY by the door tracker
+    check-in, payment, and guest-type-classification flows.
+
+    guest_type defaults to NORMAL and is curated by hand by an org admin,
+    same as has_paid - the sync never sets or changes it.
 
     arrival_order represents the sequence of arrival for this specific meetup.
     """
@@ -213,6 +236,10 @@ class MeetupRsvp(SQLModel, table=True):
     has_paid: bool = Field(default=False, index=True)
     paid_at: datetime | None = None
     paid_by_id: int | None = Field(default=None, foreign_key="users.id")
+
+    # Guest category for this specific meetup - only relevant for the
+    # payment gate. Set manually by an org admin, never by Mazmo sync.
+    guest_type: str = Field(default=GuestType.NORMAL.value, max_length=16, index=True)
 
     guest: "Guest" = Relationship(back_populates="rsvps")
     meetup: "Meetup" = Relationship(back_populates="rsvps")

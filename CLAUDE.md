@@ -495,7 +495,7 @@ format         # ruff format
 ## Reglas importantes
 
 1. **Soft delete siempre**: nunca `DELETE` de `users`, usar `is_disabled`.
-2. **Sync idempotente**: el upsert NUNCA sobrescribe `has_arrived`, `arrival_time`, `arrival_order`, `checked_in_by_id`.
+2. **Sync idempotente**: el upsert NUNCA sobrescribe `has_arrived`, `arrival_time`, `arrival_order`, `checked_in_by_id`, ni `guest_type`.
 3. **Audit trail atómico**: EventLog en el mismo commit que el cambio de estado.
 4. **Row locking en check-in**: `.with_for_update()` para prevenir check-ins duplicados concurrentes.
 5. **Domain types**: `MazmoUserId` para IDs de Mazmo, `int` para IDs internos.

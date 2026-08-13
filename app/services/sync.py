@@ -12,8 +12,8 @@ Guest table:
 MeetupRsvp table:
   INSERT ... ON CONFLICT (meetup_id, guest_id) DO UPDATE - updates rsvp_time and
   reactivates cancelled RSVPs. NEVER touches check-in fields (has_arrived,
-  arrival_time, arrival_order) or payment fields (has_paid, paid_at,
-  paid_by_id).
+  arrival_time, arrival_order), payment fields (has_paid, paid_at,
+  paid_by_id), or guest_type.
 """
 
 import uuid

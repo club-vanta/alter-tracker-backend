@@ -314,6 +314,7 @@ def make_rsvp(
     has_paid: bool = False,
     paid_at: datetime | None = None,
     paid_by_id: int | None = None,
+    guest_type: str = "NORMAL",
 ) -> MeetupRsvp:
     """Helper to create a MeetupRsvp directly in the test session."""
     rsvp = MeetupRsvp(
@@ -326,6 +327,7 @@ def make_rsvp(
         has_paid=has_paid,
         paid_at=paid_at,
         paid_by_id=paid_by_id,
+        guest_type=guest_type,
     )
     session.add(rsvp)
     session.flush()
