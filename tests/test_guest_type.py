@@ -948,9 +948,7 @@ def test_reclassify_after_checkin_does_not_affect_already_checked_in_guest(
     ).one()
     assert rsvp.has_arrived is True
     assert rsvp.arrival_order == arrival_order
-    assert (
-        rsvp.arrival_time.isoformat().replace("+00:00", "Z") == arrival_time or str(rsvp.arrival_time) in arrival_time
-    )
+    assert datetime.fromisoformat(arrival_time.replace("Z", "+00:00")) == rsvp.arrival_time
 
     # A second check-in attempt is still correctly rejected as "already
     # checked in" (409), not silently re-processed because of the
