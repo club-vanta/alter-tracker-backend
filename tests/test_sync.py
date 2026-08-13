@@ -142,6 +142,53 @@ def test_sync_does_not_overwrite_payment_data_of_paid_guests_returns_200_ok(
     assert rsvp.paid_at is not None
 
 
+def test_new_rsvp_defaults_to_guest_type_normal_via_sync(
+    client: TestClient, admin_headers: dict, session: Session, meetup: Meetup, mock_mazmo: AsyncMock
+):
+    """
+    Verify that a brand-new RSVP created by sync defaults to guest_type=NORMAL.
+
+    WHY: The sync path builds MeetupRsvp() without ever setting guest_type,
+    so it must rely on the model's default rather than needing explicit
+    sync logic to write "NORMAL".
+    """
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    rsvp = session.exec(
+        select(MeetupRsvp)
+        .where(MeetupRsvp.meetup_id == meetup.id)
+        .where(
+            MeetupRsvp.guest_id.in_(  # type: ignore[attr-defined]
+                select(Guest.id).where(Guest.mazmo_user_id == 111)
+            )
+        )
+    ).one()
+    assert rsvp.guest_type == "NORMAL"
+
+
+def test_sync_never_overwrites_existing_guest_type(
+    client: TestClient, admin_headers: dict, session: Session, meetup: Meetup, mock_mazmo: AsyncMock
+):
+    """
+    Verify that re-syncing a meetup preserves a guest's existing guest_type.
+
+    WHY: Same invariant as has_paid/has_arrived - if an admin classified a
+    guest as VENDOR, then staff syncs again later, the classification must
+    survive. The upsert's ON CONFLICT DO UPDATE set_={} dict only touches
+    rsvp_time and cancelled_rsvp, so this should already hold with zero
+    production code changes; this test proves it.
+    """
+    alice = make_guest(session, mazmo_user_id=111, mazmo_handle="alice")
+    rsvp = make_rsvp(session, meetup=meetup, guest=alice, guest_type="VENDOR")
+
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    session.refresh(rsvp)
+    assert rsvp.guest_type == "VENDOR"
+
+
 def test_sync_with_empty_rsvp_list_returns_200_ok_with_zero_counts(
     client: TestClient, admin_headers: dict, meetup: Meetup, mock_mazmo: AsyncMock
 ):

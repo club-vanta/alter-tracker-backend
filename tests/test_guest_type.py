@@ -80,3 +80,27 @@ def test_guest_list_response_includes_guest_type(
     assert resp.status_code == status.HTTP_200_OK
     guest_entry = resp.json()["guests"][0]
     assert guest_entry["rsvp"]["guest_type"] == "NORMAL"
+
+
+def test_new_rsvp_defaults_to_guest_type_normal_via_walkin(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
+    """
+    Verify that a walk-in RSVP defaults to guest_type=NORMAL.
+
+    WHY: add_walkin_guest() builds MeetupRsvp() without setting guest_type,
+    same as the sync path - must rely on the model default.
+    """
+    guest = make_guest(session, mazmo_user_id=502, mazmo_handle="walkin_guest")
+
+    resp = client.post(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/add-walkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_201_CREATED
+    assert resp.json()["rsvp"]["guest_type"] == "NORMAL"
