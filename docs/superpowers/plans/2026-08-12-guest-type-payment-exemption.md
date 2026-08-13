@@ -1709,7 +1709,7 @@ def test_checkin_allows_normal_guest_when_requires_payment_false(
     assert resp.status_code == status.HTTP_200_OK
 
 
-def test_checkin_still_blocked_for_banned_guest_even_if_exempt_from_payment(
+def test_checkin_allows_banned_guest_regardless_of_guest_type(
     client: TestClient,
     staff_headers: dict,
     session: Session,
@@ -1719,36 +1719,24 @@ def test_checkin_still_blocked_for_banned_guest_even_if_exempt_from_payment(
     org_staff_member,
 ):
     """
-    Verify that the guest_type payment exemption does not affect ban status
-    reporting for a banned STAFF guest.
+    Verify that check-in does NOT block a banned guest, and that the
+    guest_type payment exemption does not change that.
 
-    IMPORTANT DISCREPANCY FROM THE SPEC: the design spec
-    (docs/superpowers/specs/2026-08-12-guest-type-payment-exemption-design.md)
-    describes this test as verifying that check-in remains hard-blocked
-    (409) for a banned guest even when guest_type exempts them from
-    payment, treating "block banned guests at check-in" as an existing,
-    untouched gate. Investigation during planning found NO such gate
-    exists anywhere in this codebase: checkin_guest() in
-    app/routers/meetups.py never queries OrganizationBan or checks
+    This is intentional, confirmed behavior, not a gap: checkin_guest()
+    in app/routers/meetups.py never queries OrganizationBan or checks
     is_banned. Ban status is informational only - GuestWithBanPublic.
     is_banned is surfaced in the guest list (GET .../meetups/{id}/guests)
-    purely so door staff can see the warning and refuse entry manually;
-    the API itself has never enforced it. Adding a new ban-blocking gate
-    to check-in is out of scope for this feature (the spec's own "Fuera
-    de alcance" section does not list it, and the spec's payment-gate
-    diff explicitly does not touch anything ban-related). Implementing
-    one here would be inventing a different feature.
+    purely so door staff can see the warning and still decide to let the
+    guest in anyway. The API has never enforced a hard block here, and it
+    should not start now as an accidental side effect of this feature.
 
-    This test instead verifies the two things that ARE true and ARE this
-    feature's responsibility: (1) a banned guest classified as STAFF (and
-    therefore payment-exempt) still checks in successfully - the
-    guest_type exemption does not crash or misbehave in the presence of a
-    ban - and (2) is_banned is still correctly reported as True via the
-    guest list endpoint afterward, so staff retain the information they'd
-    need to intervene by hand.
-
-    If a hard ban-blocking gate at check-in is later desired, it should be
-    scoped as its own feature with its own spec, not folded into this one.
+    This test verifies the two things that ARE this feature's
+    responsibility: (1) a banned guest classified as STAFF (and therefore
+    payment-exempt) still checks in successfully (200) - the guest_type
+    exemption composes correctly with a ban, neither blocks the other -
+    and (2) is_banned is still correctly reported as True via the guest
+    list endpoint afterward, so staff retain the warning they need to
+    intervene by hand if they choose to.
     """
     guest = make_guest(session, mazmo_user_id=526, mazmo_handle="banned_staff_guest")
     make_rsvp(session, meetup=paid_meetup, guest=guest, guest_type="STAFF")
@@ -2625,4 +2613,4 @@ git commit -m "test: add end-to-end guest_type payment exemption scenarios"
 
 **3. Type consistency:** `GuestType` (Task 1) is used identically everywhere: `app/schemas/guests.py` (`GuestTypeUpdateRequest.guest_type: GuestType`), `app/routers/meetups.py` (`GuestType.NORMAL.value` in the check-in gate and the stats loop, `payload.guest_type.value` in the PATCH endpoint). `MeetupStatsPublic`/`AttendanceStats`/`CancellationStats`/`GuestTypeStats`/`PaymentStats` field names defined in Task 3 Step 2 are used with the exact same keyword names when constructed in Task 7 Step 3's `get_meetup_stats()`. `make_rsvp(..., guest_type: str = "NORMAL")` (Task 1 Step 6) is called consistently with plain string values (`"VENDOR"`, `"INVITED"`, `"STAFF"`) across Tasks 4, 6, 7, and 8 - never with a `GuestType` enum member, matching the helper's declared `str` type. `MeetupGuestPublic` (used as the PATCH endpoint's response_model in Task 5) is the same type already used by `add_walkin_guest()`, constructed with the same `GuestWithBanPublic`/`RsvpPublic` shape in both places.
 
-**Known, explicitly documented deviation from the spec:** Task 6's `test_checkin_still_blocked_for_banned_guest_even_if_exempt_from_payment` keeps the spec's exact test name (for 1:1 traceability against the spec) but verifies different, factually-accurate behavior: this codebase has no ban-blocking gate in `checkin_guest()` today (confirmed by reading the full function and grepping the whole `app/` tree for `banned`/`OrganizationBan` usage), so a banned exempt guest is *not* blocked at check-in, contrary to the spec's assumption that such a gate already exists and merely needs to "compose correctly" with the new payment exemption. The plan documents this discrepancy prominently in the test's own docstring and explains why inventing a new ban-blocking gate is out of scope for this feature rather than silently doing so.
+**Resolved during design (no longer a discrepancy):** the spec originally assumed check-in had an existing ban-blocking gate that the payment exemption needed to "compose correctly" with. Investigation found no such gate exists in `checkin_guest()` today (confirmed by reading the full function and grepping the whole `app/` tree for `banned`/`OrganizationBan` usage) - this was confirmed with the user to be intentional: ban status is informational only, surfaced to staff via `is_banned` so they can decide by hand, never hard-enforced at check-in. The spec was corrected accordingly, and Task 6's test is named `test_checkin_allows_banned_guest_regardless_of_guest_type` to match - it verifies the guest_type exemption composes correctly with a ban (neither blocks the other), not that ban blocks check-in.

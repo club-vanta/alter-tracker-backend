@@ -300,13 +300,17 @@ niveles se interpretan asi:
   regresion, sigue funcionando igual.
 - `test_checkin_allows_normal_guest_when_requires_payment_false` -
   regresion, el flag de meetup sigue mandando cuando no hay exencion.
-- `test_checkin_still_blocked_for_banned_guest_even_if_exempt_from_payment` -
-  la exencion de pago (`guest_type != NORMAL`) NO debe pisar el chequeo
-  de ban: un guest baneado con `guest_type=STAFF` sigue bloqueado en el
-  check-in. Este gate es independiente del de pago y no se toca en este
-  feature, pero hay que probar explicitamente que ambos gates componen
-  bien (dado que ban-evasion ya fue una preocupacion de seguridad
-  explicita en el feature de guest identity).
+- `test_checkin_allows_banned_guest_regardless_of_guest_type` -
+  verificado con el usuario: el check-in **no** tiene (ni debe tener) un
+  gate que bloquee guests baneados. Es intencional - el staff puede
+  igual dejar entrar a un guest baneado, y el frontend usa el
+  `is_banned` que ya expone la API de guests para mostrarle una
+  advertencia antes de decidir. Este test confirma que un guest
+  baneado con cualquier `guest_type` (incluido `NORMAL`, si ademas
+  cumple el resto de las condiciones de pago) puede hacer check-in sin
+  bloqueo - regresion explicita para que nadie agregue ese gate por
+  error asumiendo que deberia existir (fue una suposicion incorrecta
+  durante el diseno de este mismo spec, corregida aca).
 
 **`GET .../meetups/{meetup_id}/stats`:**
 
