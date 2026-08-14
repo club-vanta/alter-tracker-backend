@@ -387,14 +387,24 @@ def test_sync_updates_displayname_when_mazmo_reports_different_value(
     WHY: Before this change, sync used ON CONFLICT DO NOTHING and never
     reflected a Mazmo displayname change after the guest's first sync -
     see the Guest model's own docstring, which called this out.
+
+    Also pins that the upsert's set_={...} touches displayname only:
+    mazmo_handle, instagram_username, and the guest's internal id must
+    all survive unchanged. Guards against a future widening of set_
+    silently starting to overwrite user-entered data.
     """
-    make_guest(session, mazmo_user_id=111, mazmo_handle="alice", displayname="Old Alice Name")
+    seeded = make_guest(
+        session, mazmo_user_id=111, mazmo_handle="alice", displayname="Old Alice Name", instagram_username="alice.ig"
+    )
 
     resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
 
     assert resp.status_code == status.HTTP_200_OK
     guest = session.exec(select(Guest).where(Guest.mazmo_user_id == 111)).one()
     assert guest.displayname == "Alice"
+    assert guest.id == seeded.id
+    assert guest.mazmo_handle == "alice"
+    assert guest.instagram_username == "alice.ig"
 
 
 def test_sync_does_not_update_displayname_when_unchanged(

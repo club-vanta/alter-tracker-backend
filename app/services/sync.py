@@ -257,7 +257,7 @@ class GuestSyncer:
                         actor_id=None,
                         guest_id=guest_id,
                         timestamp=now,
-                        reason=f"Displayname changed to '{displayname}' via Mazmo sync",
+                        reason=f"Displayname changed to '{displayname[:400]}' via Mazmo sync",
                     )
                 )
 
