@@ -10,13 +10,21 @@ sync test suite already lives.
 
 import uuid
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlmodel import Session, select
 
-from app.models.models import EventLog, EventType, GuestDisplaynameHistory, GuestDisplaynameSource
+from app.models.models import (
+    EventLog,
+    EventType,
+    Guest,
+    GuestDisplaynameHistory,
+    GuestDisplaynameSource,
+    Meetup,
+)
 from app.schemas import EventTypeFilter
 from tests.conftest import make_guest
 
@@ -397,3 +405,129 @@ def test_get_displayname_history_accessible_by_any_approved_staff(
 
     resp = client.get(f"/guests/{guest.id}/displayname-history", headers=staff_headers)
     assert resp.status_code == status.HTTP_200_OK
+
+
+# -- End-to-end multi-endpoint scenarios -------------------------------------------
+
+
+def test_displayname_change_history_end_to_end(
+    client: TestClient, admin_headers: dict, session: Session, meetup: Meetup, mock_mazmo: AsyncMock
+):
+    """
+    Full flow: sync creates a guest, an admin edits it manually, sync
+    runs again with a different Mazmo name - verify the 3-entry history
+    and that only the 2 real changes appear as GUEST_DISPLAYNAME_CHANGED
+    events (not the initial sync-created row).
+    """
+    # 1. Sync creates guest 111 with displayname "Juan"
+    mock_mazmo.fetch_users.return_value = {
+        111: SimpleNamespace(username="alice", displayname="Juan"),
+        222: SimpleNamespace(username="bob", displayname="Bob"),
+    }
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+    assert resp.status_code == status.HTTP_200_OK
+    guest = session.exec(select(Guest).where(Guest.mazmo_user_id == 111)).one()
+    assert guest.displayname == "Juan"
+
+    # 2. Admin edits manually to "Juan Perez"
+    edit_resp = client.patch(f"/guests/{guest.id}", json={"displayname": "Juan Perez"}, headers=admin_headers)
+    assert edit_resp.status_code == status.HTTP_200_OK
+
+    # 3. Sync again, Mazmo now reports "Juan P."
+    mock_mazmo.fetch_users.return_value = {
+        111: SimpleNamespace(username="alice", displayname="Juan P."),
+        222: SimpleNamespace(username="bob", displayname="Bob"),
+    }
+    resync_resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+    assert resync_resp.status_code == status.HTTP_200_OK
+
+    # 4. Verify history: 3 entries, newest first, correct sources
+    history_resp = client.get(f"/guests/{guest.id}/displayname-history", headers=admin_headers)
+    rows = history_resp.json()["history"]
+    assert [r["displayname"] for r in rows] == ["Juan P.", "Juan Perez", "Juan"]
+    assert [r["source"] for r in rows] == ["SYNC", "MANUAL_EDIT", "SYNC"]
+    assert rows[0]["actor"] is None
+    assert rows[1]["actor"] is not None
+    assert rows[2]["actor"] is None
+
+    # 5. Verify exactly 2 GUEST_DISPLAYNAME_CHANGED events (not 3 - the
+    #    initial sync-created value is not a "change")
+    changed_events = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.id)
+        .where(EventLog.event_type == EventType.GUEST_DISPLAYNAME_CHANGED)
+    ).all()
+    assert len(changed_events) == 2
+
+
+def test_link_mazmo_with_name_change_end_to_end(
+    client: TestClient, staff_headers: dict, session: Session, mock_mazmo_for_guests
+):
+    """
+    Full flow: guest created manually as "Ana", then linked to a Mazmo
+    profile with displayname "Ana Garcia" - verify 2 history rows and
+    both GUEST_MAZMO_LINKED + GUEST_DISPLAYNAME_CHANGED in the same commit.
+    """
+    mock_mazmo_for_guests.fetch_user_by_username.return_value = SimpleNamespace(
+        mazmo_user_id=50001, username="ana_garcia", displayname="Ana Garcia"
+    )
+
+    create_resp = client.post("/guests/manual", json={"displayname": "Ana"}, headers=staff_headers)
+    guest_id = uuid.UUID(create_resp.json()["id"])
+
+    link_resp = client.patch(f"/guests/{guest_id}/link-mazmo", json={"username": "ana_garcia"}, headers=staff_headers)
+    assert link_resp.status_code == status.HTTP_200_OK
+
+    history = session.exec(
+        select(GuestDisplaynameHistory)
+        .where(GuestDisplaynameHistory.guest_id == guest_id)
+        .order_by(GuestDisplaynameHistory.recorded_at)
+    ).all()
+    assert [h.source for h in history] == [GuestDisplaynameSource.MANUAL_EDIT, GuestDisplaynameSource.MAZMO_LINK]
+    assert [h.displayname for h in history] == ["Ana", "Ana Garcia"]
+
+    linked_event = session.exec(
+        select(EventLog).where(EventLog.guest_id == guest_id).where(EventLog.event_type == EventType.GUEST_MAZMO_LINKED)
+    ).one()
+    changed_event = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest_id)
+        .where(EventLog.event_type == EventType.GUEST_DISPLAYNAME_CHANGED)
+    ).one()
+    assert linked_event.timestamp == changed_event.timestamp
+
+
+def test_backfilled_guest_then_manual_edit_end_to_end(client: TestClient, staff_headers: dict, session: Session):
+    """
+    Simulates a guest that existed before this migration (its only
+    history row is BACKFILL, no EventLog), then receives a manual edit -
+    verify [BACKFILL, MANUAL_EDIT] order and exactly 1
+    GUEST_DISPLAYNAME_CHANGED event (the manual one, none for BACKFILL).
+    """
+    guest = make_guest(session, mazmo_user_id=15, mazmo_handle="preexisting", displayname="Pre-Existing Name")
+    session.add(
+        GuestDisplaynameHistory(
+            guest_id=guest.id,
+            displayname="Pre-Existing Name",
+            source=GuestDisplaynameSource.BACKFILL,
+            actor_id=None,
+        )
+    )
+    session.flush()
+
+    resp = client.patch(f"/guests/{guest.id}", json={"displayname": "Updated Name"}, headers=staff_headers)
+    assert resp.status_code == status.HTTP_200_OK
+
+    history = session.exec(
+        select(GuestDisplaynameHistory)
+        .where(GuestDisplaynameHistory.guest_id == guest.id)
+        .order_by(GuestDisplaynameHistory.recorded_at)
+    ).all()
+    assert [h.source for h in history] == [GuestDisplaynameSource.BACKFILL, GuestDisplaynameSource.MANUAL_EDIT]
+
+    changed_events = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.id)
+        .where(EventLog.event_type == EventType.GUEST_DISPLAYNAME_CHANGED)
+    ).all()
+    assert len(changed_events) == 1
