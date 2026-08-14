@@ -8,6 +8,8 @@ GuestSyncer._upsert_guests) instead, matching where the rest of the
 sync test suite already lives.
 """
 
+from types import SimpleNamespace
+
 from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -182,3 +184,80 @@ def test_update_guest_displayname_actor_id_matches_requesting_staff(
 
     history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest.id)).one()
     assert history.actor_id == staff_user.id
+
+
+# -- PATCH /guests/{id}/link-mazmo ------------------------------------------------
+
+
+def test_link_mazmo_with_different_displayname_creates_history_row_source_mazmo_link(
+    client: TestClient, staff_headers: dict, session: Session, mock_mazmo_for_guests
+):
+    """Verify linking to Mazmo with a different displayname writes a MAZMO_LINK history row."""
+    guest = make_guest(session, mazmo_user_id=None, mazmo_handle=None, displayname="Nombre Manual")
+    expected_displayname = mock_mazmo_for_guests.fetch_user_by_username.return_value.displayname
+
+    resp = client.patch(f"/guests/{guest.id}/link-mazmo", json={"username": "cindydark"}, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest.id)).all()
+    assert len(history) == 1
+    assert history[0].source == GuestDisplaynameSource.MAZMO_LINK
+    assert history[0].displayname == expected_displayname
+
+
+def test_link_mazmo_with_same_displayname_creates_no_history_row(
+    client: TestClient, staff_headers: dict, session: Session, mock_mazmo_for_guests
+):
+    """Verify linking to Mazmo with a matching displayname writes no history row."""
+    mock_mazmo_for_guests.fetch_user_by_username.return_value = SimpleNamespace(
+        mazmo_user_id=39119, username="cindydark", displayname="Matching Name"
+    )
+    guest = make_guest(session, mazmo_user_id=None, mazmo_handle=None, displayname="Matching Name")
+
+    resp = client.patch(f"/guests/{guest.id}/link-mazmo", json={"username": "cindydark"}, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest.id)).all()
+    assert history == []
+
+
+def test_link_mazmo_creates_both_eventlog_entries(
+    client: TestClient, staff_headers: dict, session: Session, mock_mazmo_for_guests
+):
+    """Verify linking with a name change writes both GUEST_MAZMO_LINKED and GUEST_DISPLAYNAME_CHANGED, same commit."""
+    guest = make_guest(session, mazmo_user_id=None, mazmo_handle=None, displayname="Nombre Manual")
+
+    client.patch(f"/guests/{guest.id}/link-mazmo", json={"username": "cindydark"}, headers=staff_headers)
+
+    linked = session.exec(
+        select(EventLog).where(EventLog.guest_id == guest.id).where(EventLog.event_type == EventType.GUEST_MAZMO_LINKED)
+    ).one()
+    changed = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.id)
+        .where(EventLog.event_type == EventType.GUEST_DISPLAYNAME_CHANGED)
+    ).one()
+    assert linked.timestamp == changed.timestamp
+
+
+def test_link_mazmo_with_unchanged_displayname_creates_only_mazmo_linked_eventlog(
+    client: TestClient, staff_headers: dict, session: Session, mock_mazmo_for_guests
+):
+    """Verify linking without a name change writes only GUEST_MAZMO_LINKED, not GUEST_DISPLAYNAME_CHANGED."""
+    mock_mazmo_for_guests.fetch_user_by_username.return_value = SimpleNamespace(
+        mazmo_user_id=39119, username="cindydark", displayname="Matching Name"
+    )
+    guest = make_guest(session, mazmo_user_id=None, mazmo_handle=None, displayname="Matching Name")
+
+    client.patch(f"/guests/{guest.id}/link-mazmo", json={"username": "cindydark"}, headers=staff_headers)
+
+    linked = session.exec(
+        select(EventLog).where(EventLog.guest_id == guest.id).where(EventLog.event_type == EventType.GUEST_MAZMO_LINKED)
+    ).all()
+    changed = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.id)
+        .where(EventLog.event_type == EventType.GUEST_DISPLAYNAME_CHANGED)
+    ).all()
+    assert len(linked) == 1
+    assert changed == []

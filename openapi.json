@@ -3588,7 +3588,7 @@
           "guests"
         ],
         "summary": "Link an existing guest to a Mazmo account",
-        "description": "Attach a Mazmo account to a guest created without one.\n\nOverwrites mazmo_user_id, mazmo_handle, and displayname with the\nMazmo profile data. instagram_username is left untouched.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is already linked, or if the Mazmo account\nis already linked to a different guest (no automatic merge).",
+        "description": "Attach a Mazmo account to a guest created without one.\n\nOverwrites mazmo_user_id, mazmo_handle, and displayname with the\nMazmo profile data. instagram_username is left untouched.\n\nIf the incoming Mazmo displayname differs from the guest's previous\nvalue, writes a GuestDisplaynameHistory row (source=MAZMO_LINK) and\nan EventLog(GUEST_DISPLAYNAME_CHANGED) entry, alongside the existing\nEventLog(GUEST_MAZMO_LINKED) - same commit, same timestamp.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is already linked, or if the Mazmo account\nis already linked to a different guest (no automatic merge).",
         "operationId": "link_guest_to_mazmo_guests__guest_id__link_mazmo_patch",
         "security": [
           {

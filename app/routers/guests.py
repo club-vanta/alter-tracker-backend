@@ -309,6 +309,11 @@ async def link_guest_to_mazmo(
     Overwrites mazmo_user_id, mazmo_handle, and displayname with the
     Mazmo profile data. instagram_username is left untouched.
 
+    If the incoming Mazmo displayname differs from the guest's previous
+    value, writes a GuestDisplaynameHistory row (source=MAZMO_LINK) and
+    an EventLog(GUEST_DISPLAYNAME_CHANGED) entry, alongside the existing
+    EventLog(GUEST_MAZMO_LINKED) - same commit, same timestamp.
+
     Returns 404 if the guest doesn't exist.
     Returns 409 if the guest is already linked, or if the Mazmo account
     is already linked to a different guest (no automatic merge).
@@ -355,18 +360,43 @@ async def link_guest_to_mazmo(
             ),
         )
 
+    old_displayname = guest.displayname
     guest.mazmo_user_id = mazmo_user.mazmo_user_id
     guest.mazmo_handle = mazmo_user.username
     guest.displayname = mazmo_user.displayname
 
+    now = datetime.now(UTC)
     event = EventLog(
         event_type=EventType.GUEST_MAZMO_LINKED,
         actor_id=staff.id,
         guest_id=guest.id,
+        timestamp=now,
     )
 
     session.add(guest)
     session.add(event)
+
+    if guest.displayname != old_displayname:
+        session.add(
+            GuestDisplaynameHistory(
+                guest_id=guest.id,
+                displayname=guest.displayname,
+                source=GuestDisplaynameSource.MAZMO_LINK,
+                actor_id=staff.id,
+                recorded_at=now,
+            )
+        )
+        session.add(
+            EventLog(
+                event_type=EventType.GUEST_DISPLAYNAME_CHANGED,
+                org_id=None,
+                actor_id=staff.id,
+                guest_id=guest.id,
+                timestamp=now,
+                reason=f"Displayname changed from '{old_displayname[:200]}' to '{guest.displayname[:200]}'",
+            )
+        )
+
     try:
         session.commit()
     except IntegrityError:
