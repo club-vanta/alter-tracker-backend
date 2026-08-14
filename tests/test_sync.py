@@ -16,7 +16,17 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from app.models.models import Guest, Meetup, MeetupRsvp, Organization, OrgRole
+from app.models.models import (
+    EventLog,
+    EventType,
+    Guest,
+    GuestDisplaynameHistory,
+    GuestDisplaynameSource,
+    Meetup,
+    MeetupRsvp,
+    Organization,
+    OrgRole,
+)
 from tests.conftest import make_guest, make_org_member, make_rsvp
 
 # -- Sync behaviour ------------------------------------------------------------
@@ -362,3 +372,148 @@ def test_checkin_stores_staff_id_who_performed_checkin(
     ).first()
     assert rsvp is not None
     assert rsvp.checked_in_by_id == staff_user.id
+
+
+# -- Displayname history via sync -----------------------------------------------
+
+
+def test_sync_updates_displayname_when_mazmo_reports_different_value(
+    client: TestClient, admin_headers: dict, session: Session, meetup: Meetup, mock_mazmo: AsyncMock
+):
+    """
+    Verify that sync updates Guest.displayname when Mazmo reports a
+    different value than what we have stored.
+
+    WHY: Before this change, sync used ON CONFLICT DO NOTHING and never
+    reflected a Mazmo displayname change after the guest's first sync -
+    see the Guest model's own docstring, which called this out.
+    """
+    make_guest(session, mazmo_user_id=111, mazmo_handle="alice", displayname="Old Alice Name")
+
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    guest = session.exec(select(Guest).where(Guest.mazmo_user_id == 111)).one()
+    assert guest.displayname == "Alice"
+
+
+def test_sync_does_not_update_displayname_when_unchanged(
+    client: TestClient, admin_headers: dict, session: Session, meetup: Meetup, mock_mazmo: AsyncMock
+):
+    """
+    Verify sync creates no history row or event when the displayname is
+    already up to date.
+
+    WHY: Regression guard - this is the noisy case the atomic
+    IS DISTINCT FROM WHERE clause exists to avoid.
+    """
+    guest = make_guest(session, mazmo_user_id=111, mazmo_handle="alice", displayname="Alice")
+
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest.id)).all()
+    assert history == []
+    events = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.id)
+        .where(EventLog.event_type == EventType.GUEST_DISPLAYNAME_CHANGED)
+    ).all()
+    assert events == []
+
+
+def test_sync_creates_history_row_with_source_sync_on_change_to_existing_guest(
+    client: TestClient, admin_headers: dict, session: Session, meetup: Meetup, mock_mazmo: AsyncMock
+):
+    """Verify the GuestDisplaynameHistory row written for a changed existing guest."""
+    guest = make_guest(session, mazmo_user_id=111, mazmo_handle="alice", displayname="Old Alice Name")
+
+    client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+
+    history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest.id)).all()
+    assert len(history) == 1
+    assert history[0].source == GuestDisplaynameSource.SYNC
+    assert history[0].displayname == "Alice"
+    assert history[0].actor_id is None
+
+
+def test_sync_creates_eventlog_for_change_to_existing_guest_with_org_id_null(
+    client: TestClient, admin_headers: dict, session: Session, meetup: Meetup, mock_mazmo: AsyncMock
+):
+    """Verify the GUEST_DISPLAYNAME_CHANGED event for a changed existing guest has org_id=None."""
+    guest = make_guest(session, mazmo_user_id=111, mazmo_handle="alice", displayname="Old Alice Name")
+
+    client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+
+    event = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.id)
+        .where(EventLog.event_type == EventType.GUEST_DISPLAYNAME_CHANGED)
+    ).one()
+    assert event.org_id is None
+
+
+def test_sync_new_guest_creates_history_row_but_no_eventlog(
+    client: TestClient, admin_headers: dict, session: Session, meetup: Meetup, mock_mazmo: AsyncMock
+):
+    """
+    Verify a brand-new guest created by sync gets a history row but no
+    GUEST_DISPLAYNAME_CHANGED event.
+
+    WHY: A first value is not a "change" - logging it as one would flood
+    the org timeline with noise on every large sync.
+    """
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+    assert resp.status_code == status.HTTP_200_OK
+
+    guest = session.exec(select(Guest).where(Guest.mazmo_user_id == 222)).one()
+    history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest.id)).all()
+    assert len(history) == 1
+    assert history[0].source == GuestDisplaynameSource.SYNC
+
+    events = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.id)
+        .where(EventLog.event_type == EventType.GUEST_DISPLAYNAME_CHANGED)
+    ).all()
+    assert events == []
+
+
+def test_sync_batch_with_mixed_new_and_changed_guests(
+    client: TestClient, admin_headers: dict, session: Session, meetup: Meetup, mock_mazmo: AsyncMock
+):
+    """
+    Verify a single sync with one changed existing guest and one brand
+    new guest gives each the correct treatment.
+
+    WHY: mock_mazmo's FAKE data always returns both user 111 (alice) and
+    222 (bob) in one batch - pre-seeding only 111 makes 111 the "changed"
+    case and 222 the "new" case within the same sync call, exercising
+    both branches of the RETURNING loop in one statement.
+    """
+    alice = make_guest(session, mazmo_user_id=111, mazmo_handle="alice", displayname="Old Alice Name")
+
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+    assert resp.status_code == status.HTTP_200_OK
+
+    bob = session.exec(select(Guest).where(Guest.mazmo_user_id == 222)).one()
+
+    alice_history = session.exec(
+        select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == alice.id)
+    ).all()
+    bob_history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == bob.id)).all()
+    assert len(alice_history) == 1
+    assert len(bob_history) == 1
+
+    alice_events = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == alice.id)
+        .where(EventLog.event_type == EventType.GUEST_DISPLAYNAME_CHANGED)
+    ).all()
+    bob_events = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == bob.id)
+        .where(EventLog.event_type == EventType.GUEST_DISPLAYNAME_CHANGED)
+    ).all()
+    assert len(alice_events) == 1
+    assert bob_events == []

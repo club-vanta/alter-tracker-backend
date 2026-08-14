@@ -7,10 +7,11 @@ covering edge cases in the data pipeline that are hard to trigger via the router
 from datetime import UTC, datetime
 
 import pytest
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.core.config import get_settings
 from app.domain_types import MazmoUserId
+from app.models.models import EventLog, EventType, Guest, GuestDisplaynameHistory, GuestDisplaynameSource
 from app.schemas import MazmoRsvpEntry, MazmoUserEntry
 from app.services.sync import GuestSyncer
 from tests.conftest import make_guest, make_meetup, make_org, make_rsvp
@@ -207,3 +208,112 @@ async def test_sync_returns_skipped_count_when_all_user_details_missing(session:
 
     assert result.inserted == 0
     assert result.skipped == 2
+
+
+# ── _upsert_guests (atomic upsert + history/event writes) ───────────────────
+
+
+def test_new_guest_via_sync_creates_initial_history_row(session: Session):
+    """
+    Verify that a brand-new guest inserted via _upsert_guests gets one
+    GuestDisplaynameHistory row with source=SYNC.
+
+    WHY: The sync's atomic upsert must record the guest's starting
+    displayname in the history table, same as any later change would be.
+    """
+    org = make_org(session, name="Org 8", slug="org-8")
+    meetup = make_meetup(session, org=org)
+    settings = get_settings()
+    syncer = GuestSyncer(session, settings, meetup)
+
+    syncer._upsert_guests([Guest(mazmo_user_id=MazmoUserId(801), mazmo_handle="newguest", displayname="New Guest")])
+
+    guest = session.exec(select(Guest).where(Guest.mazmo_user_id == 801)).one()
+    history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest.id)).all()
+    assert len(history) == 1
+    assert history[0].source == GuestDisplaynameSource.SYNC
+    assert history[0].displayname == "New Guest"
+    assert history[0].actor_id is None
+
+
+def test_sync_never_downgrades_manual_or_link_history(session: Session):
+    """
+    Verify sync always reflects Mazmo's value, even over a more recent
+    manual edit.
+
+    WHY: Sync has no awareness of GuestDisplaynameHistory rows created
+    by PATCH /guests/{id} or link-mazmo. If Mazmo reports a different
+    name than what we have, sync writes a new SYNC row regardless of who
+    or what set the current value - it does not try to "protect" a
+    manual edit. Placed here (service-level) rather than via HTTP so the
+    pre-existing MANUAL_EDIT row and the exact upsert call can both be
+    controlled precisely.
+    """
+    org = make_org(session, name="Org 10", slug="org-10")
+    meetup = make_meetup(session, org=org)
+    guest = make_guest(session, mazmo_user_id=902, mazmo_handle="edited", displayname="Manually Set Name")
+    session.add(
+        GuestDisplaynameHistory(
+            guest_id=guest.id,
+            displayname="Manually Set Name",
+            source=GuestDisplaynameSource.MANUAL_EDIT,
+            actor_id=None,
+        )
+    )
+    session.flush()
+
+    settings = get_settings()
+    syncer = GuestSyncer(session, settings, meetup)
+    syncer._upsert_guests(
+        [Guest(mazmo_user_id=MazmoUserId(902), mazmo_handle="edited", displayname="Mazmo Reported Name")]
+    )
+
+    session.refresh(guest)
+    assert guest.displayname == "Mazmo Reported Name"
+
+    history = session.exec(
+        select(GuestDisplaynameHistory)
+        .where(GuestDisplaynameHistory.guest_id == guest.id)
+        .order_by(GuestDisplaynameHistory.recorded_at)
+    ).all()
+    assert len(history) == 2
+    assert history[0].source == GuestDisplaynameSource.MANUAL_EDIT
+    assert history[1].source == GuestDisplaynameSource.SYNC
+    assert history[1].displayname == "Mazmo Reported Name"
+
+
+def test_sync_concurrent_upserts_do_not_create_duplicate_history_rows(session: Session):
+    """
+    Verify that two upserts proposing the same new displayname for the
+    same guest only produce one history row, not two.
+
+    WHY: Guest is a global (not per-org) table, so two syncs of
+    different meetups that share a guest could run close together. True
+    concurrent requests cannot be reproduced with a single test
+    session/transaction (same limitation already noted for check-in
+    concurrency in tests/test_meetups.py - see the comment block above
+    test_checkin_second_attempt_after_first_succeeds_returns_409 there),
+    so this verifies the observable guarantee instead: the atomic
+    "WHERE displayname IS DISTINCT FROM" upsert means a second upsert
+    that finds the row already matching produces no RETURNING row, and
+    therefore no duplicate history/event write.
+    """
+    org = make_org(session, name="Org 9", slug="org-9")
+    meetup = make_meetup(session, org=org)
+    guest = make_guest(session, mazmo_user_id=901, mazmo_handle="racer", displayname="Old Name")
+    settings = get_settings()
+    syncer = GuestSyncer(session, settings, meetup)
+
+    syncer._upsert_guests([Guest(mazmo_user_id=MazmoUserId(901), mazmo_handle="racer", displayname="New Name")])
+    syncer._upsert_guests([Guest(mazmo_user_id=MazmoUserId(901), mazmo_handle="racer", displayname="New Name")])
+
+    history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest.id)).all()
+    assert len(history) == 1
+    assert history[0].displayname == "New Name"
+
+    events = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.id)
+        .where(EventLog.event_type == EventType.GUEST_DISPLAYNAME_CHANGED)
+    ).all()
+    assert len(events) == 1
