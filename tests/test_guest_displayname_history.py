@@ -306,3 +306,94 @@ def test_create_manual_guest_creates_no_displayname_changed_eventlog(
         .where(EventLog.event_type == EventType.GUEST_DISPLAYNAME_CHANGED)
     ).all()
     assert events == []
+
+
+# -- GET /guests/{guest_id}/displayname-history -----------------------------------
+
+
+def test_get_displayname_history_returns_200_ordered_by_recorded_at_desc(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """Verify the history list is ordered newest-first."""
+    guest = make_guest(session, mazmo_user_id=10, mazmo_handle="ordered", displayname="First")
+    session.add(GuestDisplaynameHistory(guest_id=guest.id, displayname="First", source=GuestDisplaynameSource.SYNC))
+    session.flush()
+    client.patch(f"/guests/{guest.id}", json={"displayname": "Second"}, headers=staff_headers)
+    client.patch(f"/guests/{guest.id}", json={"displayname": "Third"}, headers=staff_headers)
+
+    resp = client.get(f"/guests/{guest.id}/displayname-history", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    names = [row["displayname"] for row in resp.json()["history"]]
+    assert names == ["Third", "Second", "First"]
+
+
+def test_get_displayname_history_returns_401_without_auth(client: TestClient, session: Session):
+    """Verify the endpoint requires authentication."""
+    guest = make_guest(session, mazmo_user_id=11, mazmo_handle="noauth")
+    resp = client.get(f"/guests/{guest.id}/displayname-history")
+    assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_get_displayname_history_includes_source_and_actor(
+    client: TestClient, staff_headers: dict, session: Session, staff_user
+):
+    """Verify each entry includes source and actor (present for MANUAL_EDIT, null for SYNC)."""
+    guest = make_guest(session, mazmo_user_id=12, mazmo_handle="withactor", displayname="Before")
+    session.add(GuestDisplaynameHistory(guest_id=guest.id, displayname="Before", source=GuestDisplaynameSource.SYNC))
+    session.flush()
+    client.patch(f"/guests/{guest.id}", json={"displayname": "After"}, headers=staff_headers)
+
+    resp = client.get(f"/guests/{guest.id}/displayname-history", headers=staff_headers)
+    rows = resp.json()["history"]
+
+    assert rows[0]["source"] == "MANUAL_EDIT"
+    assert rows[0]["actor"]["username"] == staff_user.username
+    assert rows[1]["source"] == "SYNC"
+    assert rows[1]["actor"] is None
+
+
+def test_get_displayname_history_returns_404_for_nonexistent_guest(client: TestClient, staff_headers: dict):
+    """Verify a nonexistent guest id returns 404."""
+    resp = client.get(
+        "/guests/00000000-0000-0000-0000-000000000000/displayname-history",
+        headers=staff_headers,
+    )
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_get_displayname_history_returns_single_row_for_guest_with_no_changes_since_creation(
+    client: TestClient, staff_headers: dict
+):
+    """
+    Verify a freshly-created guest with no subsequent edits has exactly
+    one history row, not an empty list.
+
+    WHY: POST /guests/manual writes an initial MANUAL_EDIT row at
+    creation time (see the guest-creation task) - the response must
+    reflect that starting value, never an empty history.
+    """
+    create_resp = client.post("/guests/manual", json={"displayname": "Solo Creation"}, headers=staff_headers)
+    guest_id = create_resp.json()["id"]
+
+    resp = client.get(f"/guests/{guest_id}/displayname-history", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["history"][0]["displayname"] == "Solo Creation"
+    assert data["history"][0]["source"] == "MANUAL_EDIT"
+
+
+def test_get_displayname_history_accessible_by_any_approved_staff(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """Verify the endpoint does not require org membership - it is a global guest endpoint."""
+    guest = make_guest(session, mazmo_user_id=13, mazmo_handle="global", displayname="Global Guest")
+    session.add(
+        GuestDisplaynameHistory(guest_id=guest.id, displayname="Global Guest", source=GuestDisplaynameSource.SYNC)
+    )
+    session.flush()
+
+    resp = client.get(f"/guests/{guest.id}/displayname-history", headers=staff_headers)
+    assert resp.status_code == status.HTTP_200_OK

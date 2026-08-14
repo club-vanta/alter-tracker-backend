@@ -3864,6 +3864,141 @@
         }
       }
     },
+    "/guests/{guest_id}/displayname-history": {
+      "get": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "Get a guest's full displayname history",
+        "description": "Get the full displayname history for a guest, newest first.\n\nNot paginated: a displayname changes rarely over a guest's lifetime,\nso the complete list is always returned. A guest with no changes\nsince creation still has exactly one row (its initial value) - never\nan empty list, since every guest creation path writes one.\n\nGlobal guest endpoint, same as GET /guests/{guest_id} - not scoped\nto an organization.",
+        "operationId": "get_guest_displayname_history_guests__guest_id__displayname_history_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "guest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Guest Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Guest's full displayname history, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestDisplaynameHistoryListResponse"
+                },
+                "examples": {
+                  "history": {
+                    "summary": "A guest whose name changed twice",
+                    "value": {
+                      "total": 3,
+                      "history": [
+                        {
+                          "displayname": "Juan P.",
+                          "source": "SYNC",
+                          "recorded_at": "2024-03-23T19:00:00Z"
+                        },
+                        {
+                          "displayname": "Juan Perez",
+                          "source": "MANUAL_EDIT",
+                          "recorded_at": "2024-03-20T18:30:00Z",
+                          "actor": {
+                            "id": 2,
+                            "username": "carlos_staff"
+                          }
+                        },
+                        {
+                          "displayname": "Juan",
+                          "source": "SYNC",
+                          "recorded_at": "2024-03-15T20:00:00Z"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Guest not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "guest_not_found": {
+                    "summary": "Guest not in system",
+                    "value": {
+                      "detail": "Guest with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist in our database. Guests are added when they RSVP to a meetup and we sync from Mazmo, or when registered manually via POST /guests/mazmo or POST /guests/manual. Try POST /meetups/{meetup_id}/sync, or verify the id."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/organizations/{org_id}/meetups/": {
       "post": {
         "tags": [
@@ -8424,6 +8559,63 @@
         ],
         "title": "EventLogPublic",
         "description": "Single event log entry for API responses.\n\nContains the full context of what happened: who did what to whom,\nwhen, and why. Relationships are expanded for convenience.\n\nFields:\n  - id: Unique event identifier\n  - event_type: What happened (see EventType in app/models/models.py for the full list)\n  - timestamp: When it happened (UTC)\n  - actor: Staff member who performed the action\n  - guest: Guest who was affected (if applicable)\n  - meetup_id: Related meetup UUID (for check-in events)\n  - reason: Why the action was taken (required for bans, optional for undos)"
+      },
+      "GuestDisplaynameHistoryListResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/GuestDisplaynameHistoryPublic"
+            },
+            "type": "array",
+            "title": "History"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "history"
+        ],
+        "title": "GuestDisplaynameHistoryListResponse",
+        "description": "Full displayname history for a guest, newest first.\n\nNot paginated: a displayname changes rarely over a guest's lifetime,\nso the complete list is always returned."
+      },
+      "GuestDisplaynameHistoryPublic": {
+        "properties": {
+          "displayname": {
+            "type": "string",
+            "title": "Displayname"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recorded At"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventActorPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "displayname",
+          "source",
+          "recorded_at"
+        ],
+        "title": "GuestDisplaynameHistoryPublic",
+        "description": "One entry in a guest's displayname history.\n\nA full timeline (one row per value the displayname ever had,\nincluding the first), not before/after pairs. actor is None for\nSYNC and BACKFILL entries - no human triggered them."
       },
       "GuestListResponse": {
         "properties": {

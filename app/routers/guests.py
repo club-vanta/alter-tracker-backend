@@ -22,6 +22,7 @@ import structlog
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from app.core.config import Settings, get_settings
@@ -41,6 +42,7 @@ from app.openapi_examples.guests_examples import (
     CREATE_MANUAL_GUEST_RESPONSES,
     CREATE_MAZMO_GUEST_REQUEST_EXAMPLES,
     CREATE_MAZMO_GUEST_RESPONSES,
+    GET_DISPLAYNAME_HISTORY_RESPONSES,
     GET_GUEST_BY_MAZMO_HANDLE_RESPONSES,
     GET_GUEST_RESPONSES,
     LINK_MAZMO_REQUEST_EXAMPLES,
@@ -53,11 +55,14 @@ from app.openapi_examples.guests_examples import (
 from app.schemas import (
     CreateGuestRequest,
     CreateManualGuestRequest,
+    GuestDisplaynameHistoryListResponse,
+    GuestDisplaynameHistoryPublic,
     GuestListResponse,
     GuestPublic,
     LinkMazmoRequest,
     UpdateGuestRequest,
 )
+from app.schemas.events import EventActorPublic
 from app.services.mazmo import MazmoAPIError, MazmoClient, MazmoNetworkError
 
 log = structlog.get_logger(__name__)
@@ -604,3 +609,51 @@ async def update_guest(
     session.refresh(guest)
 
     return guest
+
+
+# -- Get a guest's displayname history ---------------------------------------------
+
+
+@router.get(
+    "/{guest_id}/displayname-history",
+    response_model=GuestDisplaynameHistoryListResponse,
+    summary="Get a guest's full displayname history",
+    responses=GET_DISPLAYNAME_HISTORY_RESPONSES,
+)
+async def get_guest_displayname_history(
+    guest_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    _staff: User = Depends(get_approved_user),
+) -> GuestDisplaynameHistoryListResponse:
+    """
+    Get the full displayname history for a guest, newest first.
+
+    Not paginated: a displayname changes rarely over a guest's lifetime,
+    so the complete list is always returned. A guest with no changes
+    since creation still has exactly one row (its initial value) - never
+    an empty list, since every guest creation path writes one.
+
+    Global guest endpoint, same as GET /guests/{guest_id} - not scoped
+    to an organization.
+    """
+    _get_guest_or_404(session, guest_id)
+
+    rows = session.exec(
+        select(GuestDisplaynameHistory)
+        .where(GuestDisplaynameHistory.guest_id == guest_id)
+        .options(selectinload(GuestDisplaynameHistory.actor))  # type: ignore[arg-type]
+        .order_by(GuestDisplaynameHistory.recorded_at.desc())  # type: ignore[union-attr]
+    ).all()
+
+    return GuestDisplaynameHistoryListResponse(
+        total=len(rows),
+        history=[
+            GuestDisplaynameHistoryPublic(
+                displayname=row.displayname,
+                source=row.source,
+                recorded_at=row.recorded_at,
+                actor=EventActorPublic.model_validate(row.actor) if row.actor else None,
+            )
+            for row in rows
+        ],
+    )

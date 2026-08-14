@@ -23,6 +23,9 @@ from app.openapi_examples._constants import (
     GUEST_MANUAL,
     GUEST_NORMAL,
     GUEST_NORMAL_2,
+    TIMESTAMP_2024_03_15,
+    TIMESTAMP_2024_03_20,
+    TIMESTAMP_2024_03_23,
 )
 from app.openapi_examples._error_responses import (
     error_401_invalid_credentials,
@@ -254,6 +257,49 @@ UPDATE_GUEST_RESPONSES: dict[int | str, dict[str, Any]] = {
                     "updated": {
                         "summary": "Guest identity after the edit",
                         "value": GUEST_NORMAL,
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_not_approved(),
+    **error_404_guest(),
+}
+
+# -- GET /guests/{guest_id}/displayname-history -----------------------------------
+
+GET_DISPLAYNAME_HISTORY_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Guest's full displayname history, newest first",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "history": {
+                        "summary": "A guest whose name changed twice",
+                        "value": {
+                            "total": 3,
+                            "history": [
+                                {
+                                    "displayname": "Juan P.",
+                                    "source": "SYNC",
+                                    "recorded_at": TIMESTAMP_2024_03_23,
+                                    "actor": None,
+                                },
+                                {
+                                    "displayname": "Juan Perez",
+                                    "source": "MANUAL_EDIT",
+                                    "recorded_at": TIMESTAMP_2024_03_20,
+                                    "actor": {"id": 2, "username": "carlos_staff"},
+                                },
+                                {
+                                    "displayname": "Juan",
+                                    "source": "SYNC",
+                                    "recorded_at": TIMESTAMP_2024_03_15,
+                                    "actor": None,
+                                },
+                            ],
+                        },
                     },
                 }
             }
