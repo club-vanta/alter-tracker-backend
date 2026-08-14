@@ -549,7 +549,7 @@ async def update_guest(
                     actor_id=staff.id,
                     guest_id=guest.id,
                     timestamp=now,
-                    reason=f"Displayname changed from '{old_displayname}' to '{guest.displayname}'",
+                    reason=f"Displayname changed from '{old_displayname[:200]}' to '{guest.displayname[:200]}'",
                 )
             )
     if "instagram_username" in payload.model_fields_set:
