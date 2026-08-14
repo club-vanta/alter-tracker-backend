@@ -8,6 +8,7 @@ GuestSyncer._upsert_guests) instead, matching where the rest of the
 sync test suite already lives.
 """
 
+import uuid
 from types import SimpleNamespace
 
 from fastapi import status
@@ -261,3 +262,47 @@ def test_link_mazmo_with_unchanged_displayname_creates_only_mazmo_linked_eventlo
     ).all()
     assert len(linked) == 1
     assert changed == []
+
+
+# -- Guest creation writes an initial history row ---------------------------------
+
+
+def test_create_guest_by_mazmo_creates_initial_history_row(
+    client: TestClient, staff_headers: dict, session: Session, mock_mazmo_for_guests
+):
+    """Verify POST /guests/mazmo writes an initial GuestDisplaynameHistory row."""
+    resp = client.post("/guests/mazmo", json={"username": "cindydark"}, headers=staff_headers)
+    assert resp.status_code == status.HTTP_201_CREATED
+    guest_id = uuid.UUID(resp.json()["id"])
+
+    history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest_id)).all()
+    assert len(history) == 1
+    assert history[0].source == GuestDisplaynameSource.MANUAL_EDIT
+    assert history[0].actor_id is not None
+
+
+def test_create_manual_guest_creates_initial_history_row(client: TestClient, staff_headers: dict, session: Session):
+    """Verify POST /guests/manual writes an initial GuestDisplaynameHistory row."""
+    resp = client.post("/guests/manual", json={"displayname": "Recien Llegado"}, headers=staff_headers)
+    assert resp.status_code == status.HTTP_201_CREATED
+    guest_id = uuid.UUID(resp.json()["id"])
+
+    history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest_id)).all()
+    assert len(history) == 1
+    assert history[0].source == GuestDisplaynameSource.MANUAL_EDIT
+    assert history[0].displayname == "Recien Llegado"
+
+
+def test_create_manual_guest_creates_no_displayname_changed_eventlog(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """Verify creating a guest never writes a GUEST_DISPLAYNAME_CHANGED event - only GUEST_CREATED."""
+    resp = client.post("/guests/manual", json={"displayname": "Recien Llegado"}, headers=staff_headers)
+    guest_id = uuid.UUID(resp.json()["id"])
+
+    events = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest_id)
+        .where(EventLog.event_type == EventType.GUEST_DISPLAYNAME_CHANGED)
+    ).all()
+    assert events == []

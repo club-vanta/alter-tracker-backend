@@ -146,9 +146,16 @@ async def create_guest_from_mazmo(
         actor_id=staff.id,
         guest_id=guest.id,
     )
+    history = GuestDisplaynameHistory(
+        guest_id=guest.id,
+        displayname=guest.displayname,
+        source=GuestDisplaynameSource.MANUAL_EDIT,
+        actor_id=staff.id,
+    )
 
     session.add(guest)
     session.add(event)
+    session.add(history)
     session.commit()
     session.refresh(guest)
 
@@ -194,9 +201,16 @@ async def create_manual_guest(
         actor_id=staff.id,
         guest_id=guest.id,
     )
+    history = GuestDisplaynameHistory(
+        guest_id=guest.id,
+        displayname=guest.displayname,
+        source=GuestDisplaynameSource.MANUAL_EDIT,
+        actor_id=staff.id,
+    )
 
     session.add(guest)
     session.add(event)
+    session.add(history)
     session.commit()
     session.refresh(guest)
 
