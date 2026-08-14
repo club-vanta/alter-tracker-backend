@@ -154,7 +154,7 @@ async def create_guest_from_mazmo(
     history = GuestDisplaynameHistory(
         guest_id=guest.id,
         displayname=guest.displayname,
-        source=GuestDisplaynameSource.MANUAL_EDIT,
+        source=GuestDisplaynameSource.MAZMO_LINK,
         actor_id=staff.id,
     )
 

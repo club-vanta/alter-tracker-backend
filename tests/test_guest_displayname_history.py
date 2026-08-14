@@ -285,7 +285,7 @@ def test_create_guest_by_mazmo_creates_initial_history_row(
 
     history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest_id)).all()
     assert len(history) == 1
-    assert history[0].source == GuestDisplaynameSource.MANUAL_EDIT
+    assert history[0].source == GuestDisplaynameSource.MAZMO_LINK
     assert history[0].actor_id is not None
 
 
