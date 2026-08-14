@@ -14,6 +14,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.models import GuestType
+from app.schemas.events import EventActorPublic
 
 
 def _strip_leading_at(value: str | None) -> str | None:
@@ -216,3 +217,35 @@ class BannedGuestListResponse(BaseModel):
 
     total: int
     guests: list[BannedGuestPublic]
+
+
+# -- Displayname history ---------------------------------------------------------
+
+
+class GuestDisplaynameHistoryPublic(BaseModel):
+    """
+    One entry in a guest's displayname history.
+
+    A full timeline (one row per value the displayname ever had,
+    including the first), not before/after pairs. actor is None for
+    SYNC and BACKFILL entries - no human triggered them.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    displayname: str
+    source: str
+    recorded_at: datetime
+    actor: EventActorPublic | None = None
+
+
+class GuestDisplaynameHistoryListResponse(BaseModel):
+    """
+    Full displayname history for a guest, newest first.
+
+    Not paginated: a displayname changes rarely over a guest's lifetime,
+    so the complete list is always returned.
+    """
+
+    total: int
+    history: list[GuestDisplaynameHistoryPublic]
