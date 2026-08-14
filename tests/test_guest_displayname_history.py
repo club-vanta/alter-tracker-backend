@@ -8,6 +8,8 @@ GuestSyncer._upsert_guests) instead, matching where the rest of the
 sync test suite already lives.
 """
 
+from fastapi import status
+from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlmodel import Session, select
 
@@ -109,3 +111,74 @@ def test_backfill_migration_creates_one_row_per_existing_guest(session: Session)
         assert rows[0].source == GuestDisplaynameSource.BACKFILL
         assert rows[0].displayname == guest.displayname
         assert rows[0].actor_id is None
+
+
+# -- PATCH /guests/{id} ----------------------------------------------------------
+
+
+def test_update_guest_displayname_creates_history_row_source_manual_edit(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """Verify PATCH /guests/{id} with a changed displayname writes a MANUAL_EDIT history row."""
+    guest = make_guest(session, mazmo_user_id=1, mazmo_handle="typo_name", displayname="Typo Nmae")
+
+    resp = client.patch(f"/guests/{guest.id}", json={"displayname": "Typo Name"}, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest.id)).all()
+    assert len(history) == 1
+    assert history[0].source == GuestDisplaynameSource.MANUAL_EDIT
+    assert history[0].displayname == "Typo Name"
+
+
+def test_update_guest_displayname_creates_eventlog_entry(client: TestClient, staff_headers: dict, session: Session):
+    """Verify PATCH /guests/{id} with a changed displayname writes a GUEST_DISPLAYNAME_CHANGED event."""
+    guest = make_guest(session, mazmo_user_id=2, mazmo_handle="another", displayname="Old Name")
+
+    client.patch(f"/guests/{guest.id}", json={"displayname": "New Name"}, headers=staff_headers)
+
+    event = session.exec(
+        select(EventLog)
+        .where(EventLog.guest_id == guest.id)
+        .where(EventLog.event_type == EventType.GUEST_DISPLAYNAME_CHANGED)
+    ).one()
+    assert event.org_id is None
+    assert event.reason == "Displayname changed from 'Old Name' to 'New Name'"
+
+
+def test_update_guest_without_displayname_field_creates_no_history_row(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """Verify omitting displayname from the request body writes no history row."""
+    guest = make_guest(session, mazmo_user_id=3, mazmo_handle="untouched", displayname="Kept Name")
+
+    resp = client.patch(f"/guests/{guest.id}", json={"instagram_username": "new.handle"}, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest.id)).all()
+    assert history == []
+
+
+def test_update_guest_displayname_to_same_value_creates_no_history_row(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """Verify "changing" a displayname to its current value writes no history row."""
+    guest = make_guest(session, mazmo_user_id=4, mazmo_handle="samey", displayname="Same Name")
+
+    resp = client.patch(f"/guests/{guest.id}", json={"displayname": "Same Name"}, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest.id)).all()
+    assert history == []
+
+
+def test_update_guest_displayname_actor_id_matches_requesting_staff(
+    client: TestClient, staff_headers: dict, session: Session, staff_user
+):
+    """Verify the history row's actor_id is the staff member who made the request."""
+    guest = make_guest(session, mazmo_user_id=5, mazmo_handle="attributed", displayname="Before")
+
+    client.patch(f"/guests/{guest.id}", json={"displayname": "After"}, headers=staff_headers)
+
+    history = session.exec(select(GuestDisplaynameHistory).where(GuestDisplaynameHistory.guest_id == guest.id)).one()
+    assert history.actor_id == staff_user.id

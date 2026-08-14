@@ -14,6 +14,7 @@ Ban management is org-scoped and lives under /organizations/{org_id}/guests/...
 """
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 import httpx
@@ -26,7 +27,15 @@ from sqlmodel import Session, select
 from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.deps import get_approved_user
-from app.models.models import EventLog, EventType, Guest, OrganizationBan, User
+from app.models.models import (
+    EventLog,
+    EventType,
+    Guest,
+    GuestDisplaynameHistory,
+    GuestDisplaynameSource,
+    OrganizationBan,
+    User,
+)
 from app.openapi_examples.guests_examples import (
     CREATE_MANUAL_GUEST_REQUEST_EXAMPLES,
     CREATE_MANUAL_GUEST_RESPONSES,
@@ -492,7 +501,7 @@ async def update_guest(
     guest_id: uuid.UUID,
     payload: Annotated[UpdateGuestRequest, Body(openapi_examples=UPDATE_GUEST_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
-    _staff: User = Depends(get_approved_user),
+    staff: User = Depends(get_approved_user),
 ) -> Guest:
     """
     Edit a guest's displayname and/or instagram_username.
@@ -509,13 +518,40 @@ async def update_guest(
     "explicitly cleared" cases.
 
     mazmo_user_id and mazmo_handle cannot be changed here - use
-    link-mazmo/unlink-mazmo for that. This is a cosmetic edit, not an
-    audited business event, so no event_log entry is written.
+    link-mazmo/unlink-mazmo for that.
+
+    A real displayname change (new value differs from the current one)
+    writes a GuestDisplaynameHistory row (source=MANUAL_EDIT) and an
+    EventLog(GUEST_DISPLAYNAME_CHANGED) entry, in the same commit as the
+    guest update. Omitting displayname, or "changing" it to its current
+    value, writes neither - only a real change is audited.
     """
     guest = _get_guest_or_404(session, guest_id)
 
     if "displayname" in payload.model_fields_set and payload.displayname is not None:
-        guest.displayname = payload.displayname
+        if payload.displayname != guest.displayname:
+            old_displayname = guest.displayname
+            guest.displayname = payload.displayname
+            now = datetime.now(UTC)
+            session.add(
+                GuestDisplaynameHistory(
+                    guest_id=guest.id,
+                    displayname=guest.displayname,
+                    source=GuestDisplaynameSource.MANUAL_EDIT,
+                    actor_id=staff.id,
+                    recorded_at=now,
+                )
+            )
+            session.add(
+                EventLog(
+                    event_type=EventType.GUEST_DISPLAYNAME_CHANGED,
+                    org_id=None,
+                    actor_id=staff.id,
+                    guest_id=guest.id,
+                    timestamp=now,
+                    reason=f"Displayname changed from '{old_displayname}' to '{guest.displayname}'",
+                )
+            )
     if "instagram_username" in payload.model_fields_set:
         guest.instagram_username = payload.instagram_username
 
