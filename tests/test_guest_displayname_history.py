@@ -219,7 +219,15 @@ def test_link_mazmo_with_same_displayname_creates_no_history_row(
 ):
     """Verify linking to Mazmo with a matching displayname writes no history row."""
     mock_mazmo_for_guests.fetch_user_by_username.return_value = SimpleNamespace(
-        mazmo_user_id=39119, username="cindydark", displayname="Matching Name"
+        mazmo_user_id=39119,
+        username="cindydark",
+        displayname="Matching Name",
+        avatar=None,
+        age=None,
+        gender=None,
+        pronoun=None,
+        suspended=False,
+        banned=False,
     )
     guest = make_guest(session, mazmo_user_id=None, mazmo_handle=None, displayname="Matching Name")
 
@@ -254,7 +262,15 @@ def test_link_mazmo_with_unchanged_displayname_creates_only_mazmo_linked_eventlo
 ):
     """Verify linking without a name change writes only GUEST_MAZMO_LINKED, not GUEST_DISPLAYNAME_CHANGED."""
     mock_mazmo_for_guests.fetch_user_by_username.return_value = SimpleNamespace(
-        mazmo_user_id=39119, username="cindydark", displayname="Matching Name"
+        mazmo_user_id=39119,
+        username="cindydark",
+        displayname="Matching Name",
+        avatar=None,
+        age=None,
+        gender=None,
+        pronoun=None,
+        suspended=False,
+        banned=False,
     )
     guest = make_guest(session, mazmo_user_id=None, mazmo_handle=None, displayname="Matching Name")
 
@@ -469,7 +485,15 @@ def test_link_mazmo_with_name_change_end_to_end(
     both GUEST_MAZMO_LINKED + GUEST_DISPLAYNAME_CHANGED in the same commit.
     """
     mock_mazmo_for_guests.fetch_user_by_username.return_value = SimpleNamespace(
-        mazmo_user_id=50001, username="ana_garcia", displayname="Ana Garcia"
+        mazmo_user_id=50001,
+        username="ana_garcia",
+        displayname="Ana Garcia",
+        avatar=None,
+        age=None,
+        gender=None,
+        pronoun=None,
+        suspended=False,
+        banned=False,
     )
 
     create_resp = client.post("/guests/manual", json={"displayname": "Ana"}, headers=staff_headers)

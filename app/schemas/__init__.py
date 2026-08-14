@@ -51,7 +51,7 @@ from app.schemas.guests import (
     RsvpPublic,
     UpdateGuestRequest,
 )
-from app.schemas.mazmo import MazmoRsvpEntry, MazmoUserEntry
+from app.schemas.mazmo import MazmoAvatarEntry, MazmoRsvpEntry, MazmoUserEntry
 from app.schemas.meetups import (
     MAZMO_URL_PATTERN,
     AttendanceStats,
@@ -103,6 +103,7 @@ __all__ = [
     "GuestTypeUpdateRequest",
     "GuestWithBanPublic",
     "LinkMazmoRequest",
+    "MazmoAvatarEntry",
     "MazmoRsvpEntry",
     "MazmoUserEntry",
     "MeetupCreate",

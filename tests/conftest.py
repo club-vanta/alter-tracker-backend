@@ -432,8 +432,26 @@ FAKE_RSVPS = {
 }
 
 FAKE_USERS = {
-    111: SimpleNamespace(username="alice", displayname="Alice"),
-    222: SimpleNamespace(username="bob", displayname="Bob"),
+    111: SimpleNamespace(
+        username="alice",
+        displayname="Alice",
+        avatar=None,
+        age=None,
+        gender=None,
+        pronoun=None,
+        suspended=False,
+        banned=False,
+    ),
+    222: SimpleNamespace(
+        username="bob",
+        displayname="Bob",
+        avatar=None,
+        age=None,
+        gender=None,
+        pronoun=None,
+        suspended=False,
+        banned=False,
+    ),
 }
 
 # --- Sync fixtures ---
@@ -481,11 +499,17 @@ def mock_mazmo_for_guests():
     with patch("app.routers.guests.MazmoClient") as MockClientClass:
         mock_instance = AsyncMock()
 
-        # Default happy-path: cindydark found on Mazmo
+        # Default happy-path: cindydark found on Mazmo, full profile
         mock_instance.fetch_user_by_username.return_value = SimpleNamespace(
             mazmo_user_id=39119,
             username="cindydark",
             displayname="⚜️Lissandra⚜️",
+            avatar=SimpleNamespace(default="https://cdn.mazmo.net/avatars/39119/default.jpg"),
+            age=29,
+            gender="female",
+            pronoun="she/her",
+            suspended=False,
+            banned=False,
         )
 
         mock_instance.__aenter__.return_value = mock_instance
