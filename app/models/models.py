@@ -314,6 +314,7 @@ class Guest(SQLModel, table=True):
 
     org_bans: list["OrganizationBan"] = Relationship(back_populates="guest")
     displayname_history: list["GuestDisplaynameHistory"] = Relationship(back_populates="guest")
+    mazmo_profile: Optional["GuestMazmoProfile"] = Relationship(back_populates="guest")
 
 
 class Meetup(SQLModel, table=True):
@@ -409,6 +410,58 @@ class GuestDisplaynameHistory(SQLModel, table=True):
 
     guest: Guest = Relationship(back_populates="displayname_history")
     actor: Optional["User"] = Relationship()
+
+
+# ── Guest Mazmo Profile ──────────────────────────────────────────────────────
+
+
+class GuestMazmoProfile(SQLModel, table=True):
+    """
+    Snapshot of extended Mazmo profile data for a linked guest.
+
+    1:1 with Guest - guest_id IS the primary key directly, not a
+    surrogate id. This is a new pattern in this codebase: the other
+    2-entity association tables (UserOrganization, MeetupRsvp) use a
+    composite PK of 2 FKs instead, but this is a genuine 1:1
+    relationship where guest_id already identifies the row without
+    ambiguity.
+
+    No history/versioning - unlike GuestDisplaynameHistory, this is a
+    plain snapshot that gets overwritten on every sync or link-mazmo.
+
+    mazmo_suspended/mazmo_banned are prefixed even within this
+    already-Mazmo-specific table: once this is flattened into a JSON API
+    response, the field name travels without the table's context -
+    {"banned": false} on its own could be confused with this app's own
+    OrganizationBan, which has nothing to do with Mazmo's account state.
+
+    gender/pronoun are free-text (str | None), not one of this
+    codebase's own StrEnum values - Mazmo controls that vocabulary and
+    can add values without this code needing to change, the same
+    reasoning already applied to EventType/OrgRole not being native
+    Postgres ENUMs.
+
+    avatar_url stores only the "default" size/format of the avatar
+    object Mazmo returns (which has 4 sizes x 2 formats) - sufficient
+    for a single admin-page image, no responsive-image use case exists
+    yet.
+
+    synced_at records when this snapshot was last refreshed - this data
+    can drift from Mazmo's live state between syncs.
+    """
+
+    __tablename__ = "guest_mazmo_profile"  # type: ignore[assignment]
+
+    guest_id: uuid.UUID = Field(foreign_key="guests.id", primary_key=True)
+    avatar_url: str | None = Field(default=None)
+    age: int | None = Field(default=None)
+    gender: str | None = Field(default=None, max_length=32)
+    pronoun: str | None = Field(default=None, max_length=32)
+    mazmo_suspended: bool = Field(default=False)
+    mazmo_banned: bool = Field(default=False)
+    synced_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    guest: Guest = Relationship(back_populates="mazmo_profile")
 
 
 # ── Event Log ─────────────────────────────────────────────────────────────────
