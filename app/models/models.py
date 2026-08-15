@@ -53,10 +53,55 @@ class EventType(StrEnum):
     GUEST_CREATED = "GUEST_CREATED"
     GUEST_MAZMO_LINKED = "GUEST_MAZMO_LINKED"
     GUEST_MAZMO_UNLINKED = "GUEST_MAZMO_UNLINKED"
+    GUEST_DISPLAYNAME_CHANGED = "GUEST_DISPLAYNAME_CHANGED"
     PAYMENT_RECORDED = "PAYMENT_RECORDED"
     PAYMENT_REVOKED = "PAYMENT_REVOKED"
     PAYMENT_REQUIREMENT_ENABLED = "PAYMENT_REQUIREMENT_ENABLED"
     PAYMENT_REQUIREMENT_DISABLED = "PAYMENT_REQUIREMENT_DISABLED"
+    GUEST_TYPE_CHANGED = "GUEST_TYPE_CHANGED"
+
+
+class GuestType(StrEnum):
+    """Category of a guest's attendance at a specific meetup.
+
+    NORMAL guests are subject to the meetup's requires_payment flag like
+    any regular attendee. INVITED, VENDOR, and STAFF guests are exempt
+    from the payment check-in gate regardless of has_paid: invited guests
+    were personally invited by the meetup organizer and don't pay entry,
+    vendors bring their own stand to sell goods and aren't attending as
+    participants, and staff are working the event itself. This is set
+    per-RSVP (not on the Guest) because these categories are decided
+    event by event, not a persistent trait of the person.
+    """
+
+    NORMAL = "NORMAL"
+    INVITED = "INVITED"
+    VENDOR = "VENDOR"
+    STAFF = "STAFF"
+
+
+class GuestDisplaynameSource(StrEnum):
+    """
+    Origin of a recorded guest displayname value.
+
+    SYNC: the Mazmo sync detected a different displayname than what we
+    had stored, or inserted a brand new guest with this as its first
+    value. MANUAL_EDIT: a staff/admin actively set it - either by
+    editing an existing guest via PATCH /guests/{id}, or by registering
+    a new one via POST /guests/mazmo or POST /guests/manual (there is no
+    better-fitting source for "a human set this value directly").
+    MAZMO_LINK: the value was set/overwritten by linking a Mazmo profile
+    to a guest via PATCH /guests/{id}/link-mazmo. BACKFILL: historical
+    entry created by the migration that introduced this table, for
+    guests that already existed at that point; recorded_at is the
+    migration's run time, not the guest's real creation time, because
+    Guest has no created_at field to recover it from.
+    """
+
+    SYNC = "SYNC"
+    MANUAL_EDIT = "MANUAL_EDIT"
+    MAZMO_LINK = "MAZMO_LINK"
+    BACKFILL = "BACKFILL"
 
 
 # ── Role lookup table ─────────────────────────────────────────────────────────
@@ -185,9 +230,12 @@ class MeetupRsvp(SQLModel, table=True):
     Association object representing a Guest's attendance at a specific Meetup.
 
     CRITICAL: The background sync upsert NEVER overwrites has_arrived,
-    arrival_time, arrival_order, checked_in_by_id, has_paid, paid_at, or
-    paid_by_id. These are set ONLY by the door tracker check-in and
-    payment flows.
+    arrival_time, arrival_order, checked_in_by_id, has_paid, paid_at,
+    paid_by_id, or guest_type. These are set ONLY by the door tracker
+    check-in, payment, and guest-type-classification flows.
+
+    guest_type defaults to NORMAL and is curated by hand by an org admin,
+    same as has_paid - the sync never sets or changes it.
 
     arrival_order represents the sequence of arrival for this specific meetup.
     """
@@ -213,6 +261,10 @@ class MeetupRsvp(SQLModel, table=True):
     has_paid: bool = Field(default=False, index=True)
     paid_at: datetime | None = None
     paid_by_id: int | None = Field(default=None, foreign_key="users.id")
+
+    # Guest category for this specific meetup - only relevant for the
+    # payment gate. Set manually by an org admin, never by Mazmo sync.
+    guest_type: str = Field(default=GuestType.NORMAL.value, max_length=16, index=True)
 
     guest: "Guest" = Relationship(back_populates="rsvps")
     meetup: "Meetup" = Relationship(back_populates="rsvps")
@@ -261,6 +313,8 @@ class Guest(SQLModel, table=True):
     )
 
     org_bans: list["OrganizationBan"] = Relationship(back_populates="guest")
+    displayname_history: list["GuestDisplaynameHistory"] = Relationship(back_populates="guest")
+    mazmo_profile: Optional["GuestMazmoProfile"] = Relationship(back_populates="guest")
 
 
 class Meetup(SQLModel, table=True):
@@ -323,6 +377,93 @@ class OrganizationBan(SQLModel, table=True):
     banned_by: Optional["User"] = Relationship()
 
 
+# ── Guest Displayname History ────────────────────────────────────────────────────
+
+
+class GuestDisplaynameHistory(SQLModel, table=True):
+    """
+    Full timeline of every displayname value a guest has had.
+
+    One row per value (including the first one, at creation), not
+    before/after pairs - reconstructing "changed from X to Y" means
+    looking at the previous row by recorded_at. source is stored as str
+    (not the GuestDisplaynameSource StrEnum directly), same convention
+    as EventType/role/guest_type elsewhere in this codebase: these
+    domain enums are not mapped to a native Postgres ENUM type.
+
+    actor_id is NULL for SYNC and BACKFILL rows (no human triggered
+    them), and set for MANUAL_EDIT/MAZMO_LINK rows.
+
+    Closest shape precedent in this codebase: OrganizationBan (int PK,
+    guest_id FK, an actor FK, a timestamp) - same structure, unrelated
+    to EventLog.
+    """
+
+    __tablename__ = "guest_displayname_history"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True)
+    guest_id: uuid.UUID = Field(foreign_key="guests.id", index=True)
+    displayname: str
+    source: str = Field(max_length=16)
+    actor_id: int | None = Field(default=None, foreign_key="users.id")
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    guest: Guest = Relationship(back_populates="displayname_history")
+    actor: Optional["User"] = Relationship()
+
+
+# ── Guest Mazmo Profile ──────────────────────────────────────────────────────
+
+
+class GuestMazmoProfile(SQLModel, table=True):
+    """
+    Snapshot of extended Mazmo profile data for a linked guest.
+
+    1:1 with Guest - guest_id IS the primary key directly, not a
+    surrogate id. This is a new pattern in this codebase: the other
+    2-entity association tables (UserOrganization, MeetupRsvp) use a
+    composite PK of 2 FKs instead, but this is a genuine 1:1
+    relationship where guest_id already identifies the row without
+    ambiguity.
+
+    No history/versioning - unlike GuestDisplaynameHistory, this is a
+    plain snapshot that gets overwritten on every sync or link-mazmo.
+
+    mazmo_suspended/mazmo_banned are prefixed even within this
+    already-Mazmo-specific table: once this is flattened into a JSON API
+    response, the field name travels without the table's context -
+    {"banned": false} on its own could be confused with this app's own
+    OrganizationBan, which has nothing to do with Mazmo's account state.
+
+    gender/pronoun are free-text (str | None), not one of this
+    codebase's own StrEnum values - Mazmo controls that vocabulary and
+    can add values without this code needing to change, the same
+    reasoning already applied to EventType/OrgRole not being native
+    Postgres ENUMs.
+
+    avatar_url stores only the "default" size/format of the avatar
+    object Mazmo returns (which has 4 sizes x 2 formats) - sufficient
+    for a single admin-page image, no responsive-image use case exists
+    yet.
+
+    synced_at records when this snapshot was last refreshed - this data
+    can drift from Mazmo's live state between syncs.
+    """
+
+    __tablename__ = "guest_mazmo_profile"  # type: ignore[assignment]
+
+    guest_id: uuid.UUID = Field(foreign_key="guests.id", primary_key=True)
+    avatar_url: str | None = Field(default=None)
+    age: int | None = Field(default=None)
+    gender: str | None = Field(default=None, max_length=32)
+    pronoun: str | None = Field(default=None, max_length=32)
+    mazmo_suspended: bool = Field(default=False)
+    mazmo_banned: bool = Field(default=False)
+    synced_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    guest: Guest = Relationship(back_populates="mazmo_profile")
+
+
 # ── Event Log ─────────────────────────────────────────────────────────────────
 
 
@@ -331,7 +472,8 @@ class EventLog(SQLModel, table=True):
     Audit log entry for trackable events, scoped to an organization.
 
     org_id is NULL only for global events: GUEST_CREATED, GUEST_MAZMO_LINKED,
-    and GUEST_MAZMO_UNLINKED. All other event types have an org_id.
+    GUEST_MAZMO_UNLINKED, and GUEST_DISPLAYNAME_CHANGED. All other event
+    types have an org_id.
     """
 
     __tablename__ = "event_log"  # type: ignore[assignment]

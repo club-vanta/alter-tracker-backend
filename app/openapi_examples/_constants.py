@@ -228,6 +228,7 @@ RSVP_NOT_ARRIVED = {
     "is_walkin": False,
     "has_paid": False,
     "paid_at": None,
+    "guest_type": "NORMAL",
 }
 
 RSVP_ARRIVED = {
@@ -239,6 +240,7 @@ RSVP_ARRIVED = {
     "is_walkin": False,
     "has_paid": False,
     "paid_at": None,
+    "guest_type": "NORMAL",
 }
 
 # -- Event Log Entries --------------------------------------------------------
@@ -284,6 +286,7 @@ RSVP_WALKIN = {
     "is_walkin": True,
     "has_paid": False,
     "paid_at": None,
+    "guest_type": "NORMAL",
 }
 
 GUEST_WALKIN_UUID = "c9d0e1f2-a3b4-5678-cdef-789012345678"
@@ -298,6 +301,52 @@ MEETUP_GUEST_WALKIN = {
         "is_banned": False,
     },
     "rsvp": RSVP_WALKIN,
+}
+
+MEETUP_GUEST_VENDOR_EXAMPLE = {
+    "guest": {
+        "id": GUEST_UUID,
+        "mazmo_user_id": 12345,
+        "mazmo_handle": "fiestero_feliz",
+        "displayname": "Juan El Fiestero",
+        "instagram_username": None,
+        "is_banned": False,
+    },
+    "rsvp": {
+        "rsvp_time": TIMESTAMP_2024_03_20,
+        "cancelled_rsvp": False,
+        "has_arrived": False,
+        "arrival_time": None,
+        "arrival_order": None,
+        "is_walkin": False,
+        "has_paid": False,
+        "paid_at": None,
+        "guest_type": "VENDOR",
+    },
+}
+
+MEETUP_STATS_EXAMPLE = {
+    "attendance": {
+        "total_rsvps": 20,
+        "arrived_count": 15,
+        "not_arrived_count": 5,
+        "walkin_count": 2,
+    },
+    "cancellations": {
+        "cancelled_count": 3,
+        "cancelled_but_paid_count": 1,
+    },
+    "guest_types": {
+        "normal_count": 15,
+        "invited_count": 2,
+        "vendor_count": 2,
+        "staff_count": 1,
+    },
+    "payment": {
+        "paid_count": 10,
+        "unpaid_count": 5,
+        "exempt_from_payment_count": 5,
+    },
 }
 
 # -- Sync Response ------------------------------------------------------------

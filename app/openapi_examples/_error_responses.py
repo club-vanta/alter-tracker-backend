@@ -993,6 +993,34 @@ def error_422_validation_reason() -> ResponsesDict:
     }
 
 
+def error_422_validation_guest_type() -> ResponsesDict:
+    """422 - guest_type is not one of NORMAL/INVITED/VENDOR/STAFF."""
+    return {
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "invalid_guest_type": {
+                            "summary": "guest_type is not a recognized category",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "type": "enum",
+                                        "loc": ["body", "guest_type"],
+                                        "msg": "Input should be 'NORMAL', 'INVITED', 'VENDOR' or 'STAFF'",
+                                        "input": "BOGUS",
+                                    }
+                                ]
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
 def error_422_validation_username() -> ResponsesDict:
     """422 - Empty username. Only for POST /guests/ (create by username)."""
     return {

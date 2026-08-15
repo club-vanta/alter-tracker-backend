@@ -9,6 +9,8 @@ GET   /organizations/{org_id}/meetups/{meetup_id}/guests         -> list RSVP gu
 POST  /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/add-walkin  -> add walk-in (org member)
 POST  /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/checkin     -> check in (org member)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/undo-checkin -> undo check-in (org member)
+PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/type        -> change guest type (org admin)
+GET   /organizations/{org_id}/meetups/{meetup_id}/stats                  -> meetup stats (org member)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/payment      -> mark paid (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/payment/undo -> undo payment mark (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/enable-payment  -> mark event as paid (org admin)
@@ -32,7 +34,7 @@ from sqlmodel import Session, select
 from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.deps import get_org_admin, get_org_member
-from app.models.models import EventLog, EventType, Guest, Meetup, MeetupRsvp, OrganizationBan, User
+from app.models.models import EventLog, EventType, Guest, GuestType, Meetup, MeetupRsvp, OrganizationBan, User
 from app.openapi_examples.meetups_examples import (
     ADD_WALKIN_RESPONSES,
     CHECKIN_RESPONSES,
@@ -45,24 +47,34 @@ from app.openapi_examples.meetups_examples import (
     LIST_MEETUP_GUESTS_RESPONSES,
     LIST_MEETUPS_RESPONSES,
     MARK_PAYMENT_RESPONSES,
+    MEETUP_STATS_RESPONSES,
     SYNC_MEETUP_RESPONSES,
     UNDO_CHECKIN_REQUEST_EXAMPLES,
     UNDO_CHECKIN_RESPONSES,
     UNDO_PAYMENT_REQUEST_EXAMPLES,
     UNDO_PAYMENT_RESPONSES,
     UNFINALIZE_MEETUP_RESPONSES,
+    UPDATE_GUEST_TYPE_REQUEST_EXAMPLES,
+    UPDATE_GUEST_TYPE_RESPONSES,
 )
 from app.schemas import (
+    AttendanceStats,
+    CancellationStats,
     CheckedInByPublic,
     CheckInResponse,
+    GuestMazmoProfilePublic,
     GuestPublic,
+    GuestTypeStats,
+    GuestTypeUpdateRequest,
     GuestWithBanPublic,
     MeetupCreate,
     MeetupGuestListResponse,
     MeetupGuestPublic,
     MeetupListResponse,
     MeetupPublic,
+    MeetupStatsPublic,
     PaymentResponse,
+    PaymentStats,
     RsvpPublic,
     SyncResponse,
 )
@@ -339,7 +351,7 @@ async def list_meetup_guests(
     rsvps = session.exec(
         select(MeetupRsvp)
         .where(MeetupRsvp.meetup_id == meetup_id)
-        .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
+        .options(selectinload(MeetupRsvp.guest).selectinload(Guest.mazmo_profile))  # type: ignore[arg-type]
         .order_by(MeetupRsvp.rsvp_time)  # type: ignore[attr-defined]
     ).all()
 
@@ -363,6 +375,9 @@ async def list_meetup_guests(
                 displayname=rsvp.guest.displayname,
                 instagram_username=rsvp.guest.instagram_username,
                 is_banned=rsvp.guest_id in banned_ids,
+                mazmo_profile=GuestMazmoProfilePublic.model_validate(rsvp.guest.mazmo_profile)
+                if rsvp.guest.mazmo_profile
+                else None,
             ),
             rsvp=RsvpPublic.model_validate(rsvp),
         )
@@ -370,6 +385,114 @@ async def list_meetup_guests(
     ]
 
     return MeetupGuestListResponse(total=len(guests), guests=guests)
+
+
+# -- Meetup stats ---------------------------------------------------------
+
+
+@router.get(
+    "/organizations/{org_id}/meetups/{meetup_id}/stats",
+    response_model=MeetupStatsPublic,
+    summary="Get grouped attendance/payment/guest-type statistics for this meetup",
+    responses=MEETUP_STATS_RESPONSES,
+)
+async def get_meetup_stats(
+    org_id: uuid.UUID,
+    meetup_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    _member: User = Depends(get_org_member),
+) -> MeetupStatsPublic:
+    """
+    Return grouped attendance, cancellation, guest-type, and payment stats
+    for this meetup.
+
+    All counts except cancellations.* exclude cancelled RSVPs.
+    payment.paid_count and payment.unpaid_count are scoped to
+    guest_type=NORMAL only, so guest_types.normal_count always equals
+    payment.paid_count + payment.unpaid_count, and attendance.total_rsvps
+    always equals the sum of all four guest_types.* counts and also the
+    sum of all three payment.* counts.
+    """
+    _get_meetup_or_404_in_org(session, meetup_id, org_id)
+
+    rows = session.exec(
+        select(  # type: ignore[call-overload]  # sqlmodel's select() overloads stop at 4 typed columns
+            MeetupRsvp.cancelled_rsvp,
+            MeetupRsvp.has_arrived,
+            MeetupRsvp.is_walkin,
+            MeetupRsvp.guest_type,
+            MeetupRsvp.has_paid,
+        ).where(MeetupRsvp.meetup_id == meetup_id)
+    ).all()
+
+    total_rsvps = 0
+    arrived_count = 0
+    not_arrived_count = 0
+    walkin_count = 0
+    cancelled_count = 0
+    cancelled_but_paid_count = 0
+    normal_count = 0
+    invited_count = 0
+    vendor_count = 0
+    staff_count = 0
+    paid_count = 0
+    unpaid_count = 0
+    exempt_from_payment_count = 0
+
+    for cancelled_rsvp, has_arrived, is_walkin, guest_type, has_paid in rows:
+        if cancelled_rsvp:
+            cancelled_count += 1
+            if has_paid:
+                cancelled_but_paid_count += 1
+            continue
+
+        total_rsvps += 1
+        if has_arrived:
+            arrived_count += 1
+        else:
+            not_arrived_count += 1
+        if is_walkin:
+            walkin_count += 1
+
+        if guest_type == GuestType.NORMAL.value:
+            normal_count += 1
+            if has_paid:
+                paid_count += 1
+            else:
+                unpaid_count += 1
+        elif guest_type == GuestType.INVITED.value:
+            invited_count += 1
+            exempt_from_payment_count += 1
+        elif guest_type == GuestType.VENDOR.value:
+            vendor_count += 1
+            exempt_from_payment_count += 1
+        elif guest_type == GuestType.STAFF.value:
+            staff_count += 1
+            exempt_from_payment_count += 1
+
+    return MeetupStatsPublic(
+        attendance=AttendanceStats(
+            total_rsvps=total_rsvps,
+            arrived_count=arrived_count,
+            not_arrived_count=not_arrived_count,
+            walkin_count=walkin_count,
+        ),
+        cancellations=CancellationStats(
+            cancelled_count=cancelled_count,
+            cancelled_but_paid_count=cancelled_but_paid_count,
+        ),
+        guest_types=GuestTypeStats(
+            normal_count=normal_count,
+            invited_count=invited_count,
+            vendor_count=vendor_count,
+            staff_count=staff_count,
+        ),
+        payment=PaymentStats(
+            paid_count=paid_count,
+            unpaid_count=unpaid_count,
+            exempt_from_payment_count=exempt_from_payment_count,
+        ),
+    )
 
 
 # -- Add walk-in guest --------------------------------------------------------
@@ -479,6 +602,7 @@ async def add_walkin_guest(
             displayname=guest.displayname,
             instagram_username=guest.instagram_username,
             is_banned=ban is not None,
+            mazmo_profile=GuestMazmoProfilePublic.model_validate(guest.mazmo_profile) if guest.mazmo_profile else None,
         ),
         rsvp=RsvpPublic.model_validate(rsvp),
     )
@@ -546,14 +670,15 @@ async def checkin_guest(
             ),
         )
 
-    if meetup.requires_payment and not rsvp.has_paid:
+    if meetup.requires_payment and rsvp.guest_type == GuestType.NORMAL.value and not rsvp.has_paid:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 f"Cannot check in: guest '{rsvp.guest.displayname}' (id={guest_id}) "
                 f"has not paid the entrance fee for '{meetup.name}'. "
                 f"Mark the payment first via PATCH /organizations/{org_id}/meetups/{meetup_id}"
-                f"/guests/{guest_id}/payment."
+                f"/guests/{guest_id}/payment, or reclassify them via PATCH /organizations/{org_id}"
+                f"/meetups/{meetup_id}/guests/{guest_id}/type if they should be exempt."
             ),
         )
 
@@ -687,6 +812,102 @@ async def undo_checkin_guest(
     return guest
 
 
+# -- Change guest type ---------------------------------------------------
+
+
+@router.patch(
+    "/organizations/{org_id}/meetups/{meetup_id}/guests/{guest_id}/type",
+    response_model=MeetupGuestPublic,
+    summary="Change a guest's category for this meetup (org admin only)",
+    responses=UPDATE_GUEST_TYPE_RESPONSES,
+)
+async def update_guest_type(
+    org_id: uuid.UUID,
+    meetup_id: uuid.UUID,
+    guest_id: uuid.UUID,
+    payload: Annotated[GuestTypeUpdateRequest, Body(openapi_examples=UPDATE_GUEST_TYPE_REQUEST_EXAMPLES)],
+    session: Session = Depends(get_session),
+    admin: User = Depends(get_org_admin),
+) -> MeetupGuestPublic:
+    """
+    Change a guest's category (NORMAL/INVITED/VENDOR/STAFF) at this meetup.
+
+    INVITED, VENDOR, and STAFF guests are exempt from the payment check-in
+    gate regardless of has_paid - see checkin_guest(). This does not touch
+    has_paid, paid_at, or paid_by_id.
+
+    Returns 404 if the guest is not RSVPed to this meetup.
+    Returns 409 if the meetup is finalized.
+    """
+    meetup = _get_meetup_or_404_in_org(session, meetup_id, org_id)
+    _raise_if_finalized(meetup)
+
+    rsvp = session.exec(
+        select(MeetupRsvp)
+        .where(MeetupRsvp.meetup_id == meetup_id)
+        .where(MeetupRsvp.guest_id == guest_id)
+        .with_for_update()
+        .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
+    ).first()
+
+    if not rsvp:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Cannot change guest type: guest id={guest_id} is not RSVPed to this meetup. "
+                f"Verify the guest ID via GET /organizations/{org_id}/meetups/{meetup_id}/guests."
+            ),
+        )
+
+    old_guest_type = rsvp.guest_type
+    new_guest_type = payload.guest_type.value
+    rsvp.guest_type = new_guest_type
+
+    event = EventLog(
+        event_type=EventType.GUEST_TYPE_CHANGED,
+        actor_id=admin.id,
+        guest_id=guest_id,
+        meetup_id=meetup_id,
+        org_id=org_id,
+        reason=f"Changed guest_type from {old_guest_type} to {new_guest_type}",
+    )
+
+    session.add(rsvp)
+    session.add(event)
+    session.commit()
+    session.refresh(rsvp)
+
+    guest = _refetch_guest_or_500(session, guest_id, action="guest type change")
+
+    ban = session.exec(
+        select(OrganizationBan).where(OrganizationBan.org_id == org_id).where(OrganizationBan.guest_id == guest_id)
+    ).first()
+
+    log.info(
+        "Guest type changed",
+        admin=admin.username,
+        guest=guest.displayname,
+        guest_id=str(guest_id),
+        meetup_id=str(meetup_id),
+        org_id=str(org_id),
+        old_guest_type=old_guest_type,
+        new_guest_type=new_guest_type,
+    )
+
+    return MeetupGuestPublic(
+        guest=GuestWithBanPublic(
+            id=guest.id,
+            mazmo_user_id=guest.mazmo_user_id,
+            mazmo_handle=guest.mazmo_handle,
+            displayname=guest.displayname,
+            instagram_username=guest.instagram_username,
+            is_banned=ban is not None,
+            mazmo_profile=GuestMazmoProfilePublic.model_validate(guest.mazmo_profile) if guest.mazmo_profile else None,
+        ),
+        rsvp=RsvpPublic.model_validate(rsvp),
+    )
+
+
 # -- Mark payment ---------------------------------------------------------
 
 
@@ -707,7 +928,9 @@ async def mark_guest_paid(
     Mark a guest's entrance fee as paid for this specific meetup.
 
     Payment is handled externally by the organizer (cash, transfer, etc.);
-    this just records that it happened so check-in can be enforced.
+    this just records that it happened so check-in can be enforced for
+    NORMAL guests. INVITED/VENDOR/STAFF guests (see PATCH .../guests/{id}
+    /type) skip the payment check-in gate entirely regardless of has_paid.
 
     Returns 409 if the meetup doesn't require payment, if the guest already
     paid, or if the meetup is finalized. Returns 404 if not RSVPed.

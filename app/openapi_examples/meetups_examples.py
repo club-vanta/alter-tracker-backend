@@ -25,7 +25,9 @@ from app.openapi_examples._constants import (
     MEETUP_EXAMPLE_2,
     MEETUP_EXAMPLE_FINALIZED,
     MEETUP_EXAMPLE_PAID,
+    MEETUP_GUEST_VENDOR_EXAMPLE,
     MEETUP_GUEST_WALKIN,
+    MEETUP_STATS_EXAMPLE,
     PAYMENT_RESPONSE_EXAMPLE,
     RSVP_ARRIVED,
     RSVP_NOT_ARRIVED,
@@ -49,6 +51,7 @@ from app.openapi_examples._error_responses import (
     error_409_payment_already_enabled,
     error_409_payment_not_required,
     error_409_walkin_already_rsvped,
+    error_422_validation_guest_type,
     error_422_validation_reason,
     error_422_validation_url,
     error_502_mazmo_create_meetup,
@@ -469,4 +472,68 @@ UNFINALIZE_MEETUP_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_403_not_approved(),
     **error_404_meetup(),
     **error_409_meetup_not_finalized(),
+}
+
+# ── PATCH /meetups/{id}/guests/{guest_id}/type ─────────────────────────────────
+
+UPDATE_GUEST_TYPE_REQUEST_EXAMPLES: dict[str, Any] = {
+    "classify_vendor": {
+        "summary": "Classify a guest as a vendor",
+        "description": "Vendors bring their own stand and are exempt from the payment gate",
+        "value": {"guest_type": "VENDOR"},
+    },
+    "classify_invited": {
+        "summary": "Classify a guest as personally invited",
+        "description": "Invited guests were personally invited by the organizer and don't pay entry",
+        "value": {"guest_type": "INVITED"},
+    },
+    "revert_to_normal": {
+        "summary": "Revert a guest back to normal",
+        "description": "Normal guests are subject to the meetup's requires_payment flag like anyone else",
+        "value": {"guest_type": "NORMAL"},
+    },
+}
+
+UPDATE_GUEST_TYPE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Guest type updated",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "updated": {
+                        "summary": "Guest reclassified as vendor",
+                        "description": "This guest is now exempt from the payment check-in gate",
+                        "value": MEETUP_GUEST_VENDOR_EXAMPLE,
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_not_approved(),
+    **error_404_meetup(),
+    **error_404_rsvp(action="change guest type"),
+    **error_409_meetup_finalized(),
+    **error_422_validation_guest_type(),
+}
+
+# ── GET /meetups/{id}/stats ─────────────────────────────────────────────────
+
+MEETUP_STATS_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Meetup statistics",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "stats": {
+                        "summary": "Grouped attendance/payment/guest-type stats",
+                        "value": MEETUP_STATS_EXAMPLE,
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_not_approved(),
+    **error_404_meetup(),
 }
