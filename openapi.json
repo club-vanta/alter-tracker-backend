@@ -3754,7 +3754,7 @@
           "guests"
         ],
         "summary": "Unlink a guest's Mazmo account",
-        "description": "Detach a guest's Mazmo account, e.g. to undo a link made by mistake.\n\ndisplayname is NOT reverted to any prior value (no name history is\nkept) - it stays as whatever it was, and can be corrected afterward\nvia PATCH /guests/{guest_id}. The freed mazmo_user_id can be linked\nto this guest again, or to a different one.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is not currently linked.\nReturns 409 if the guest has an active ban in any organization - see\nthe ban-evasion guard below for why this is blocked.",
+        "description": "Detach a guest's Mazmo account, e.g. to undo a link made by mistake.\n\ndisplayname is NOT reverted to any prior value (no name history is\nkept) - it stays as whatever it was, and can be corrected afterward\nvia PATCH /guests/{guest_id}. The freed mazmo_user_id can be linked\nto this guest again, or to a different one.\n\nAlso deletes the guest's GuestMazmoProfile row, if one exists.\nKeeping stale age/gender/avatar data around for an account that is\nno longer linked could be shown as if it were still valid.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is not currently linked.\nReturns 409 if the guest has an active ban in any organization - see\nthe ban-evasion guard below for why this is blocked.",
         "operationId": "unlink_guest_mazmo_guests__guest_id__unlink_mazmo_patch",
         "security": [
           {

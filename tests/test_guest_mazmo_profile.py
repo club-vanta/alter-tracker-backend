@@ -109,3 +109,31 @@ def test_create_guest_from_mazmo_creates_guest_mazmo_profile(
     assert profile.mazmo_suspended is False
     assert profile.mazmo_banned is False
     mock_mazmo_for_guests.fetch_user_by_username.assert_called_once()
+
+
+# -- PATCH /guests/{id}/unlink-mazmo deletes GuestMazmoProfile -------------------
+
+
+def test_unlink_mazmo_deletes_guest_mazmo_profile(client: TestClient, staff_headers: dict, session: Session):
+    """Verify unlink-mazmo deletes the guest's GuestMazmoProfile row."""
+    guest = make_guest(session, mazmo_user_id=555, mazmo_handle="tobeunlinked")
+    session.add(GuestMazmoProfile(guest_id=guest.id, age=40))
+    session.flush()
+
+    resp = client.patch(f"/guests/{guest.id}/unlink-mazmo", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert session.get(GuestMazmoProfile, guest.id) is None
+
+
+def test_unlink_mazmo_on_guest_without_profile_row_succeeds(client: TestClient, staff_headers: dict, session: Session):
+    """
+    Verify unlinking a guest that was linked but never synced (so it has
+    no GuestMazmoProfile row yet) does not fail.
+    """
+    guest = make_guest(session, mazmo_user_id=556, mazmo_handle="neversynced")
+
+    resp = client.patch(f"/guests/{guest.id}/unlink-mazmo", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert session.get(GuestMazmoProfile, guest.id) is None

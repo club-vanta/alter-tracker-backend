@@ -509,6 +509,10 @@ async def unlink_guest_mazmo(
     via PATCH /guests/{guest_id}. The freed mazmo_user_id can be linked
     to this guest again, or to a different one.
 
+    Also deletes the guest's GuestMazmoProfile row, if one exists.
+    Keeping stale age/gender/avatar data around for an account that is
+    no longer linked could be shown as if it were still valid.
+
     Returns 404 if the guest doesn't exist.
     Returns 409 if the guest is not currently linked.
     Returns 409 if the guest has an active ban in any organization - see
@@ -566,6 +570,12 @@ async def unlink_guest_mazmo(
         actor_id=staff.id,
         guest_id=guest.id,
     )
+
+    # Delete-if-exists: a guest linked but never synced/re-linked has no
+    # profile row yet, and that is not an error here.
+    profile = session.get(GuestMazmoProfile, guest.id)
+    if profile is not None:
+        session.delete(profile)
 
     session.add(guest)
     session.add(event)
