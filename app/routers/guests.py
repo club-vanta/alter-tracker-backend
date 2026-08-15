@@ -176,8 +176,8 @@ async def create_guest_from_mazmo(
         guest_id=guest.id,
         avatar_url=mazmo_user.avatar.default if mazmo_user.avatar else None,
         age=mazmo_user.age,
-        gender=mazmo_user.gender,
-        pronoun=mazmo_user.pronoun,
+        gender=mazmo_user.gender[:32] if mazmo_user.gender else None,
+        pronoun=mazmo_user.pronoun[:32] if mazmo_user.pronoun else None,
         mazmo_suspended=mazmo_user.suspended,
         mazmo_banned=mazmo_user.banned,
     )
@@ -458,8 +458,8 @@ async def link_guest_to_mazmo(
         profile = GuestMazmoProfile(guest_id=guest.id)
     profile.avatar_url = mazmo_user.avatar.default if mazmo_user.avatar else None
     profile.age = mazmo_user.age
-    profile.gender = mazmo_user.gender
-    profile.pronoun = mazmo_user.pronoun
+    profile.gender = mazmo_user.gender[:32] if mazmo_user.gender else None
+    profile.pronoun = mazmo_user.pronoun[:32] if mazmo_user.pronoun else None
     profile.mazmo_suspended = mazmo_user.suspended
     profile.mazmo_banned = mazmo_user.banned
     profile.synced_at = now

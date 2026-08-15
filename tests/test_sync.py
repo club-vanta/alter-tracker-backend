@@ -733,3 +733,50 @@ def test_sync_handles_guest_with_missing_optional_profile_fields(
     assert profile.age is None
     assert profile.gender is None
     assert profile.pronoun is None
+
+
+def test_sync_truncates_overlong_gender_and_pronoun_instead_of_failing(
+    client: TestClient, admin_headers: dict, session: Session, meetup: Meetup, mock_mazmo: AsyncMock
+):
+    """
+    Verify sync truncates gender/pronoun to 32 chars instead of letting an
+    overlong Mazmo-supplied value hit the VARCHAR(32) column and abort
+    the whole sync with an unhandled DataError.
+
+    WHY: gender/pronoun are deliberately free text controlled by Mazmo,
+    not one of this codebase's own StrEnum values, so nothing upstream
+    bounds their length before they reach the database.
+    """
+    overlong_gender = "a" * 50
+    overlong_pronoun = "b" * 50
+    mock_mazmo.fetch_users.return_value = {
+        111: SimpleNamespace(
+            username="alice",
+            displayname="Alice",
+            avatar=None,
+            age=None,
+            gender=overlong_gender,
+            pronoun=overlong_pronoun,
+            suspended=False,
+            banned=False,
+        ),
+        222: SimpleNamespace(
+            username="bob",
+            displayname="Bob",
+            avatar=None,
+            age=None,
+            gender=None,
+            pronoun=None,
+            suspended=False,
+            banned=False,
+        ),
+    }
+
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+    assert resp.status_code == status.HTTP_200_OK
+
+    alice = session.exec(select(Guest).where(Guest.mazmo_user_id == 111)).one()
+    profile = session.get(GuestMazmoProfile, alice.id)
+    assert profile is not None
+    assert profile.gender == overlong_gender[:32]
+    assert profile.pronoun == overlong_pronoun[:32]
