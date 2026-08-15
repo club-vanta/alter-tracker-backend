@@ -437,8 +437,26 @@ def test_displayname_change_history_end_to_end(
     """
     # 1. Sync creates guest 111 with displayname "Juan"
     mock_mazmo.fetch_users.return_value = {
-        111: SimpleNamespace(username="alice", displayname="Juan"),
-        222: SimpleNamespace(username="bob", displayname="Bob"),
+        111: SimpleNamespace(
+            username="alice",
+            displayname="Juan",
+            avatar=None,
+            age=None,
+            gender=None,
+            pronoun=None,
+            suspended=False,
+            banned=False,
+        ),
+        222: SimpleNamespace(
+            username="bob",
+            displayname="Bob",
+            avatar=None,
+            age=None,
+            gender=None,
+            pronoun=None,
+            suspended=False,
+            banned=False,
+        ),
     }
     resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
     assert resp.status_code == status.HTTP_200_OK
@@ -451,8 +469,26 @@ def test_displayname_change_history_end_to_end(
 
     # 3. Sync again, Mazmo now reports "Juan P."
     mock_mazmo.fetch_users.return_value = {
-        111: SimpleNamespace(username="alice", displayname="Juan P."),
-        222: SimpleNamespace(username="bob", displayname="Bob"),
+        111: SimpleNamespace(
+            username="alice",
+            displayname="Juan P.",
+            avatar=None,
+            age=None,
+            gender=None,
+            pronoun=None,
+            suspended=False,
+            banned=False,
+        ),
+        222: SimpleNamespace(
+            username="bob",
+            displayname="Bob",
+            avatar=None,
+            age=None,
+            gender=None,
+            pronoun=None,
+            suspended=False,
+            banned=False,
+        ),
     }
     resync_resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
     assert resync_resp.status_code == status.HTTP_200_OK
