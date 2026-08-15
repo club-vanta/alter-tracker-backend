@@ -902,6 +902,7 @@ async def update_guest_type(
             displayname=guest.displayname,
             instagram_username=guest.instagram_username,
             is_banned=ban is not None,
+            mazmo_profile=GuestMazmoProfilePublic.model_validate(guest.mazmo_profile) if guest.mazmo_profile else None,
         ),
         rsvp=RsvpPublic.model_validate(rsvp),
     )

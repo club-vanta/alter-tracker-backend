@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlmodel import Session, select
 
-from app.models.models import EventLog, EventType, GuestType, MeetupRsvp, Organization, OrgRole, User
+from app.models.models import EventLog, EventType, GuestMazmoProfile, GuestType, MeetupRsvp, Organization, OrgRole, User
 from app.schemas import GuestTypeUpdateRequest
 from tests.conftest import get_auth_headers, make_guest, make_meetup, make_org, make_org_member, make_rsvp, make_user
 
@@ -994,3 +994,48 @@ def test_reclassify_after_checkin_does_not_affect_already_checked_in_guest(
         headers=staff_headers,
     )
     assert resp.status_code == status.HTTP_409_CONFLICT
+
+
+def test_update_guest_type_response_includes_mazmo_profile_when_linked_and_synced(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    meetup,
+):
+    """
+    Verify PATCH .../guests/{guest_id}/type includes mazmo_profile in its
+    response for a guest that is linked to Mazmo and has been synced.
+
+    WHY: update_guest_type builds GuestWithBanPublic by hand via keyword
+    arguments, same as list_meetup_guests and add_walkin_guest - the
+    same gap those two endpoints had (mazmo_profile silently always
+    null) applies here too unless wired through explicitly.
+    """
+    guest = make_guest(session, mazmo_user_id=520, mazmo_handle="guest_type_mazmo_profile")
+    session.add(
+        GuestMazmoProfile(
+            guest_id=guest.id,
+            avatar_url="https://cdn.mazmo.net/avatars/520/default.jpg",
+            age=28,
+            gender="nonbinary",
+            pronoun="they/them",
+            mazmo_suspended=False,
+            mazmo_banned=False,
+        )
+    )
+    make_rsvp(session, meetup=meetup, guest=guest)
+    session.flush()
+
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/type",
+        headers=admin_headers,
+        json={"guest_type": "VENDOR"},
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    profile = resp.json()["guest"]["mazmo_profile"]
+    assert profile is not None
+    assert profile["avatar_url"] == "https://cdn.mazmo.net/avatars/520/default.jpg"
+    assert profile["age"] == 28
+    assert profile["gender"] == "nonbinary"
+    assert profile["pronoun"] == "they/them"
