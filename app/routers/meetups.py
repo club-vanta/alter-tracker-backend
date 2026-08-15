@@ -62,6 +62,7 @@ from app.schemas import (
     CancellationStats,
     CheckedInByPublic,
     CheckInResponse,
+    GuestMazmoProfilePublic,
     GuestPublic,
     GuestTypeStats,
     GuestTypeUpdateRequest,
@@ -350,7 +351,7 @@ async def list_meetup_guests(
     rsvps = session.exec(
         select(MeetupRsvp)
         .where(MeetupRsvp.meetup_id == meetup_id)
-        .options(selectinload(MeetupRsvp.guest))  # type: ignore[arg-type]
+        .options(selectinload(MeetupRsvp.guest).selectinload(Guest.mazmo_profile))  # type: ignore[arg-type]
         .order_by(MeetupRsvp.rsvp_time)  # type: ignore[attr-defined]
     ).all()
 
@@ -374,6 +375,9 @@ async def list_meetup_guests(
                 displayname=rsvp.guest.displayname,
                 instagram_username=rsvp.guest.instagram_username,
                 is_banned=rsvp.guest_id in banned_ids,
+                mazmo_profile=GuestMazmoProfilePublic.model_validate(rsvp.guest.mazmo_profile)
+                if rsvp.guest.mazmo_profile
+                else None,
             ),
             rsvp=RsvpPublic.model_validate(rsvp),
         )
@@ -598,6 +602,7 @@ async def add_walkin_guest(
             displayname=guest.displayname,
             instagram_username=guest.instagram_username,
             is_banned=ban is not None,
+            mazmo_profile=GuestMazmoProfilePublic.model_validate(guest.mazmo_profile) if guest.mazmo_profile else None,
         ),
         rsvp=RsvpPublic.model_validate(rsvp),
     )

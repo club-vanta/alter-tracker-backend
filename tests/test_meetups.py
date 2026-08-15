@@ -13,9 +13,10 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 from sqlmodel import Session, select
 
-from app.models.models import EventLog, EventType, MeetupRsvp, Organization, OrgRole, User
+from app.models.models import EventLog, EventType, GuestMazmoProfile, MeetupRsvp, Organization, OrgRole, User
 from app.services.mazmo import MazmoAPIError, MazmoNetworkError
 from tests.conftest import make_guest, make_meetup, make_org_member, make_rsvp
 
@@ -2073,3 +2074,141 @@ def test_disable_payment_preserves_has_paid_data(
         select(MeetupRsvp).where(MeetupRsvp.meetup_id == paid_meetup.id).where(MeetupRsvp.guest_id == guest.id)
     ).one()
     assert rsvp.has_paid is True
+
+
+# -- Exposure of mazmo_profile on GuestWithBanPublic --------------------------
+
+
+def test_meetup_guest_list_includes_mazmo_profile_when_linked_and_synced(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
+    """
+    Verify GET .../meetups/{id}/guests includes mazmo_profile for a
+    guest that is linked to Mazmo and has been synced.
+
+    WHY: list_meetup_guests builds GuestWithBanPublic by hand via
+    keyword arguments, not .model_validate() - unlike GuestPublic's
+    other consumers, the field has to be wired through explicitly or it
+    silently stays null forever, regardless of what's in the DB.
+    """
+    guest = make_guest(session, mazmo_user_id=801, mazmo_handle="synced_meetup_guest")
+    session.add(
+        GuestMazmoProfile(
+            guest_id=guest.id,
+            avatar_url="https://cdn.mazmo.net/avatars/801/default.jpg",
+            age=27,
+            gender="female",
+            pronoun="she/her",
+            mazmo_suspended=False,
+            mazmo_banned=False,
+        )
+    )
+    make_rsvp(session, meetup=meetup, guest=guest)
+    session.flush()
+
+    resp = client.get(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    profile = resp.json()["guests"][0]["guest"]["mazmo_profile"]
+    assert profile is not None
+    assert profile["avatar_url"] == "https://cdn.mazmo.net/avatars/801/default.jpg"
+    assert profile["age"] == 27
+    assert profile["gender"] == "female"
+    assert profile["pronoun"] == "she/her"
+    assert profile["mazmo_suspended"] is False
+    assert profile["mazmo_banned"] is False
+
+
+def test_meetup_guest_list_mazmo_profile_null_when_not_linked(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
+    """Verify mazmo_profile is null in the meetup guest list for a guest with no GuestMazmoProfile row."""
+    guest = make_guest(session, mazmo_user_id=802, mazmo_handle="unsynced_meetup_guest")
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    resp = client.get(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["guests"][0]["guest"]["mazmo_profile"] is None
+
+
+def test_walkin_guest_response_includes_mazmo_profile_when_linked_and_synced(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
+    """
+    Verify the add-walkin response includes mazmo_profile for a guest
+    that is linked to Mazmo and has been synced.
+
+    WHY: add_walkin_guest builds GuestWithBanPublic the same
+    hand-assembled way as list_meetup_guests - same gap, same fix.
+    """
+    guest = make_guest(session, mazmo_user_id=803, mazmo_handle="walkin_with_profile")
+    session.add(GuestMazmoProfile(guest_id=guest.id, age=45, mazmo_suspended=True))
+    session.flush()
+
+    resp = client.post(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/add-walkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_201_CREATED
+    profile = resp.json()["guest"]["mazmo_profile"]
+    assert profile is not None
+    assert profile["age"] == 45
+    assert profile["mazmo_suspended"] is True
+
+
+def test_meetup_guest_list_does_not_trigger_n_plus_1_for_mazmo_profile(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    meetup,
+    org_staff_member,
+):
+    """
+    Verify GET .../meetups/{id}/guests loads mazmo_profile for every
+    RSVPed guest via a single extra query (the nested selectinload), not
+    one query per guest.
+    """
+    for i in range(810, 816):
+        guest = make_guest(session, mazmo_user_id=i, mazmo_handle=f"meetup_guest{i}")
+        session.add(GuestMazmoProfile(guest_id=guest.id, age=i - 800))
+        make_rsvp(session, meetup=meetup, guest=guest)
+    session.flush()
+
+    statements: list[str] = []
+
+    def _listener(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    engine = session.get_bind().engine
+    event.listen(engine, "before_cursor_execute", _listener)
+    try:
+        resp = client.get(
+            f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests",
+            headers=staff_headers,
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", _listener)
+
+    assert resp.status_code == status.HTTP_200_OK
+    profile_statements = [s for s in statements if "guest_mazmo_profile" in s.lower()]
+    assert len(profile_statements) == 1
