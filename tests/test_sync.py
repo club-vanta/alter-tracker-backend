@@ -9,6 +9,7 @@ This protects against data loss if someone syncs during an active event.
 """
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
@@ -22,6 +23,7 @@ from app.models.models import (
     Guest,
     GuestDisplaynameHistory,
     GuestDisplaynameSource,
+    GuestMazmoProfile,
     Meetup,
     MeetupRsvp,
     Organization,
@@ -527,3 +529,207 @@ def test_sync_batch_with_mixed_new_and_changed_guests(
     ).all()
     assert len(alice_events) == 1
     assert bob_events == []
+
+
+# -- GuestMazmoProfile via sync --------------------------------------------------
+
+
+def test_sync_creates_guest_mazmo_profile_for_new_guest(
+    client: TestClient, admin_headers: dict, session: Session, meetup: Meetup, mock_mazmo: AsyncMock
+):
+    """
+    Verify sync creates a GuestMazmoProfile row for a brand-new guest,
+    populated from the same Mazmo user details used to create the guest.
+    """
+    mock_mazmo.fetch_users.return_value = {
+        111: SimpleNamespace(
+            username="alice",
+            displayname="Alice",
+            avatar=SimpleNamespace(default="https://cdn.mazmo.net/avatars/111/default.jpg"),
+            age=25,
+            gender="female",
+            pronoun="she/her",
+            suspended=False,
+            banned=False,
+        ),
+        222: SimpleNamespace(
+            username="bob",
+            displayname="Bob",
+            avatar=None,
+            age=None,
+            gender=None,
+            pronoun=None,
+            suspended=False,
+            banned=False,
+        ),
+    }
+
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+    assert resp.status_code == status.HTTP_200_OK
+
+    alice = session.exec(select(Guest).where(Guest.mazmo_user_id == 111)).one()
+    profile = session.get(GuestMazmoProfile, alice.id)
+    assert profile is not None
+    assert profile.avatar_url == "https://cdn.mazmo.net/avatars/111/default.jpg"
+    assert profile.age == 25
+    assert profile.gender == "female"
+    assert profile.pronoun == "she/her"
+    assert profile.mazmo_suspended is False
+    assert profile.mazmo_banned is False
+
+
+def test_sync_updates_guest_mazmo_profile_on_subsequent_sync(
+    client: TestClient, admin_headers: dict, session: Session, meetup: Meetup, mock_mazmo: AsyncMock
+):
+    """
+    Verify a second sync overwrites the same GuestMazmoProfile row (no
+    duplicate) when Mazmo reports different age/mazmo_suspended values,
+    and synced_at advances.
+    """
+    mock_mazmo.fetch_users.return_value = {
+        111: SimpleNamespace(
+            username="alice",
+            displayname="Alice",
+            avatar=None,
+            age=25,
+            gender=None,
+            pronoun=None,
+            suspended=False,
+            banned=False,
+        ),
+        222: SimpleNamespace(
+            username="bob",
+            displayname="Bob",
+            avatar=None,
+            age=None,
+            gender=None,
+            pronoun=None,
+            suspended=False,
+            banned=False,
+        ),
+    }
+    resp1 = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+    assert resp1.status_code == status.HTTP_200_OK
+
+    alice = session.exec(select(Guest).where(Guest.mazmo_user_id == 111)).one()
+    first_profile = session.get(GuestMazmoProfile, alice.id)
+    assert first_profile is not None
+    first_synced_at = first_profile.synced_at
+
+    mock_mazmo.fetch_users.return_value = {
+        111: SimpleNamespace(
+            username="alice",
+            displayname="Alice",
+            avatar=None,
+            age=26,
+            gender=None,
+            pronoun=None,
+            suspended=True,
+            banned=False,
+        ),
+        222: SimpleNamespace(
+            username="bob",
+            displayname="Bob",
+            avatar=None,
+            age=None,
+            gender=None,
+            pronoun=None,
+            suspended=False,
+            banned=False,
+        ),
+    }
+    resp2 = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+    assert resp2.status_code == status.HTTP_200_OK
+
+    all_profiles = session.exec(select(GuestMazmoProfile).where(GuestMazmoProfile.guest_id == alice.id)).all()
+    assert len(all_profiles) == 1
+    updated_profile = all_profiles[0]
+    assert updated_profile.age == 26
+    assert updated_profile.mazmo_suspended is True
+    assert updated_profile.synced_at >= first_synced_at
+
+
+def test_sync_updates_guest_mazmo_profile_even_when_displayname_unchanged(
+    client: TestClient, admin_headers: dict, session: Session, meetup: Meetup, mock_mazmo: AsyncMock
+):
+    """
+    Regression guard: unlike GuestDisplaynameHistory, GuestMazmoProfile
+    has no "only if changed" gate - a guest whose displayname is already
+    up to date (and therefore produces no row in _upsert_guests's
+    RETURNING set) must still get mazmo_suspended/age/etc. refreshed if
+    Mazmo reports a new value for them.
+    """
+    alice = make_guest(session, mazmo_user_id=111, mazmo_handle="alice", displayname="Alice")
+    mock_mazmo.fetch_users.return_value = {
+        111: SimpleNamespace(
+            username="alice",
+            displayname="Alice",
+            avatar=None,
+            age=None,
+            gender=None,
+            pronoun=None,
+            suspended=True,
+            banned=False,
+        ),
+        222: SimpleNamespace(
+            username="bob",
+            displayname="Bob",
+            avatar=None,
+            age=None,
+            gender=None,
+            pronoun=None,
+            suspended=False,
+            banned=False,
+        ),
+    }
+
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+    assert resp.status_code == status.HTTP_200_OK
+
+    session.refresh(alice)
+    assert alice.displayname == "Alice"
+    profile = session.get(GuestMazmoProfile, alice.id)
+    assert profile is not None
+    assert profile.mazmo_suspended is True
+
+
+def test_sync_handles_guest_with_missing_optional_profile_fields(
+    client: TestClient, admin_headers: dict, session: Session, meetup: Meetup, mock_mazmo: AsyncMock
+):
+    """
+    Verify sync does not fail when Mazmo omits age/gender for one guest
+    in the batch - that guest's profile row gets NULLs, not an error.
+    """
+    mock_mazmo.fetch_users.return_value = {
+        111: SimpleNamespace(
+            username="alice",
+            displayname="Alice",
+            avatar=SimpleNamespace(default="https://cdn.mazmo.net/avatars/111/default.jpg"),
+            age=25,
+            gender="female",
+            pronoun="she/her",
+            suspended=False,
+            banned=False,
+        ),
+        222: SimpleNamespace(
+            username="bob",
+            displayname="Bob",
+            avatar=None,
+            age=None,
+            gender=None,
+            pronoun=None,
+            suspended=False,
+            banned=False,
+        ),
+    }
+
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+    assert resp.status_code == status.HTTP_200_OK
+
+    bob = session.exec(select(Guest).where(Guest.mazmo_user_id == 222)).one()
+    profile = session.get(GuestMazmoProfile, bob.id)
+    assert profile is not None
+    assert profile.avatar_url is None
+    assert profile.age is None
+    assert profile.gender is None
+    assert profile.pronoun is None

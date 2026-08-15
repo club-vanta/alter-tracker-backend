@@ -23,6 +23,16 @@ MeetupRsvp table:
   reactivates cancelled RSVPs. NEVER touches check-in fields (has_arrived,
   arrival_time, arrival_order), payment fields (has_paid, paid_at,
   paid_by_id), or guest_type.
+
+GuestMazmoProfile table:
+  INSERT ... ON CONFLICT (guest_id) DO UPDATE - unconditional, unlike the
+  Guest table's displayname upsert: every guest in the sync batch gets
+  this table refreshed (avatar_url, age, gender, pronoun,
+  mazmo_suspended, mazmo_banned, synced_at) on every sync, whether or
+  not their displayname changed - these fields can change independently
+  of displayname. Runs after _fetch_guest_id_map(), since it needs the
+  resolved internal guest_id for every guest in the batch, not just the
+  ones _upsert_guests()'s RETURNING clause reported as changed/inserted.
 """
 
 import uuid
@@ -41,6 +51,7 @@ from app.models.models import (
     Guest,
     GuestDisplaynameHistory,
     GuestDisplaynameSource,
+    GuestMazmoProfile,
     Meetup,
     MeetupRsvp,
 )
@@ -92,6 +103,7 @@ class GuestSyncer:
         # UUID, not the raw mazmo_user_id.
         self._upsert_guests(guests_to_insert)
         guest_id_map = self._fetch_guest_id_map(list(rsvps.keys()))
+        self._upsert_mazmo_profiles(guest_id_map, user_details)
         rsvps_to_upsert = self._build_rsvps(rsvps, user_details, guest_id_map)
         inserted = self._upsert_rsvps(rsvps_to_upsert)
         self._update_cancelled_rsvps(guest_id_map)
@@ -261,6 +273,66 @@ class GuestSyncer:
                     )
                 )
 
+        self._session.commit()
+
+    def _upsert_mazmo_profiles(
+        self,
+        guest_id_map: dict[MazmoUserId, uuid.UUID],
+        user_details: dict[MazmoUserId, MazmoUserEntry],
+    ) -> None:
+        """
+        Unconditionally upsert GuestMazmoProfile for every guest in the
+        sync batch - unlike _upsert_guests, there is no "only if
+        changed" gate: mazmo_suspended/age/gender/pronoun/avatar_url can
+        all change independently of displayname, so a guest whose
+        displayname didn't change (and therefore never appears in
+        _upsert_guests's RETURNING set) must still get this table
+        refreshed.
+
+        Takes guest_id_map (built by _fetch_guest_id_map, covers every
+        guest in the batch - not just the ones _upsert_guests reported
+        as changed/inserted) rather than deriving guest_id from
+        _upsert_guests's return value. This is exactly why this must
+        run after _fetch_guest_id_map(), not right after
+        _upsert_guests() - see the caller in sync().
+        """
+        now = datetime.now(UTC)
+        profiles: list[GuestMazmoProfile] = []
+        for mazmo_user_id, guest_id in guest_id_map.items():
+            user = user_details.get(mazmo_user_id)
+            if user is None:
+                continue
+            profiles.append(
+                GuestMazmoProfile(
+                    guest_id=guest_id,
+                    avatar_url=user.avatar.default if user.avatar else None,
+                    age=user.age,
+                    gender=user.gender,
+                    pronoun=user.pronoun,
+                    mazmo_suspended=user.suspended,
+                    mazmo_banned=user.banned,
+                    synced_at=now,
+                )
+            )
+
+        if not profiles:
+            return
+
+        rows = [p.model_dump(exclude={"guest"}) for p in profiles]
+        stmt = pg_insert(GuestMazmoProfile).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["guest_id"],
+            set_={
+                "avatar_url": stmt.excluded.avatar_url,
+                "age": stmt.excluded.age,
+                "gender": stmt.excluded.gender,
+                "pronoun": stmt.excluded.pronoun,
+                "mazmo_suspended": stmt.excluded.mazmo_suspended,
+                "mazmo_banned": stmt.excluded.mazmo_banned,
+                "synced_at": stmt.excluded.synced_at,
+            },
+        )
+        self._session.exec(stmt)  # type: ignore[arg-type]
         self._session.commit()
 
     def _upsert_rsvps(self, rsvps: list[MeetupRsvp]) -> int:
