@@ -15,13 +15,15 @@ tests/test_mazmo.py, alongside the rest of the Mazmo client test suite.
 
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy import event
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from app.models.models import GuestMazmoProfile
+from app.models.models import GuestMazmoProfile, Meetup, Organization
 from tests.conftest import make_guest
 
 # -- GuestMazmoProfile table -------------------------------------------------------
@@ -242,3 +244,77 @@ def test_guest_list_response_does_not_trigger_n_plus_1_for_mazmo_profile(
     assert resp.status_code == status.HTTP_200_OK
     profile_statements = [s for s in statements if "guest_mazmo_profile" in s.lower()]
     assert len(profile_statements) == 1
+
+
+# -- E2E lifecycle -----------------------------------------------------------------
+
+
+def test_link_sync_unlink_mazmo_profile_lifecycle_end_to_end(
+    client: TestClient,
+    staff_headers: dict,
+    admin_headers: dict,
+    session: Session,
+    org: Organization,
+    meetup: Meetup,
+    mock_mazmo_for_guests,
+    mock_mazmo: AsyncMock,
+):
+    """
+    Full lifecycle: manual guest -> link-mazmo populates profile -> GET
+    reflects it -> sync updates it in place -> GET reflects the update
+    -> unlink-mazmo deletes it -> GET reflects null, other guest fields
+    untouched.
+    """
+    # 1. Manual guest, no Mazmo link.
+    guest = make_guest(session, mazmo_user_id=None, mazmo_handle=None, displayname="Manual Guest")
+
+    # 2. link-mazmo against a full Mazmo profile.
+    resp = client.patch(f"/guests/{guest.id}/link-mazmo", json={"username": "cindydark"}, headers=staff_headers)
+    assert resp.status_code == status.HTTP_200_OK
+
+    # 3. GET detail -> mazmo_profile populated from the lookup.
+    resp = client.get(f"/guests/{guest.id}", headers=staff_headers)
+    profile = resp.json()["mazmo_profile"]
+    assert profile is not None
+    assert profile["age"] == 29
+    assert profile["mazmo_suspended"] is False
+
+    # 4. A sync reports this same Mazmo user (id 39119) with a new age
+    # and suspended=True.
+    mock_mazmo.fetch_rsvps.return_value = {
+        39119: SimpleNamespace(userId=39119, joinedAt=datetime(2026, 4, 1, tzinfo=UTC)),
+    }
+    mock_mazmo.fetch_users.return_value = {
+        39119: SimpleNamespace(
+            username="cindydark",
+            displayname="Lissandra",
+            avatar=SimpleNamespace(default="https://cdn.mazmo.net/avatars/39119/default.jpg"),
+            age=31,
+            gender="female",
+            pronoun="she/her",
+            suspended=True,
+            banned=False,
+        ),
+    }
+    resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
+    assert resp.status_code == status.HTTP_200_OK
+
+    all_profiles = session.exec(select(GuestMazmoProfile).where(GuestMazmoProfile.guest_id == guest.id)).all()
+    assert len(all_profiles) == 1
+
+    # 5. GET detail again -> updated values reflected, no duplicate row.
+    resp = client.get(f"/guests/{guest.id}", headers=staff_headers)
+    profile = resp.json()["mazmo_profile"]
+    assert profile["age"] == 31
+    assert profile["mazmo_suspended"] is True
+
+    # 6. unlink-mazmo.
+    resp = client.patch(f"/guests/{guest.id}/unlink-mazmo", headers=staff_headers)
+    assert resp.status_code == status.HTTP_200_OK
+
+    # 7. GET detail once more -> mazmo_profile is null, displayname (set
+    # by the sync in step 4) is unaffected.
+    resp = client.get(f"/guests/{guest.id}", headers=staff_headers)
+    data = resp.json()
+    assert data["mazmo_profile"] is None
+    assert data["displayname"] == "Lissandra"
