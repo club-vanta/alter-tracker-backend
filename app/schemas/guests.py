@@ -24,12 +24,37 @@ def _strip_leading_at(value: str | None) -> str | None:
     return value.removeprefix("@")
 
 
+class GuestMazmoProfilePublic(BaseModel):
+    """
+    Snapshot of extended Mazmo profile data for a linked, synced guest.
+
+    mazmo_suspended/mazmo_banned are Mazmo's own account-level flags -
+    unrelated to this app's own ban system (OrganizationBan / the
+    is_banned field on GuestWithBanPublic). Prefixed even here to avoid
+    that confusion once this is flattened into JSON.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    avatar_url: str | None
+    age: int | None
+    gender: str | None
+    pronoun: str | None
+    mazmo_suspended: bool
+    mazmo_banned: bool
+    synced_at: datetime
+
+
 class GuestPublic(BaseModel):
     """
     A guest's identity (cached locally, may or may not have a Mazmo account).
 
     Identity-only - no RSVP or ban state. Bans are per-org and are
     included only in org-scoped endpoints via GuestWithBanPublic.
+
+    mazmo_profile is None both for guests never linked to Mazmo, and for
+    linked guests that haven't appeared in a sync or link-mazmo call yet
+    - two different situations, same null result here.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -39,6 +64,7 @@ class GuestPublic(BaseModel):
     mazmo_handle: str | None
     displayname: str
     instagram_username: str | None
+    mazmo_profile: GuestMazmoProfilePublic | None = None
 
 
 class GuestWithBanPublic(GuestPublic):

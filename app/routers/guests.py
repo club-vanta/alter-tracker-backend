@@ -71,7 +71,9 @@ router = APIRouter(prefix="/guests", tags=["guests"])
 
 
 def _get_guest_or_404(session: Session, guest_id: uuid.UUID) -> Guest:
-    guest = session.get(Guest, guest_id)
+    guest = session.exec(
+        select(Guest).where(Guest.id == guest_id).options(selectinload(Guest.mazmo_profile))  # type: ignore[arg-type]
+    ).first()
     if not guest:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -270,7 +272,7 @@ async def list_guests(
     _staff: User = Depends(get_approved_user),
 ) -> GuestListResponse:
     """List all guests in the system (identity only, no RSVP state)."""
-    query = select(Guest)
+    query = select(Guest).options(selectinload(Guest.mazmo_profile))  # type: ignore[arg-type]
     if q:
         pattern = f"%{q}%"
         query = query.where(or_(Guest.displayname.ilike(pattern), Guest.mazmo_handle.ilike(pattern)))  # type: ignore[union-attr]
@@ -315,7 +317,9 @@ async def get_guest_by_mazmo_handle(
     _staff: User = Depends(get_approved_user),
 ) -> Guest:
     """Get a single guest by their Mazmo handle. Guests without Mazmo never match."""
-    guest = session.exec(select(Guest).where(Guest.mazmo_handle == mazmo_handle)).first()
+    guest = session.exec(
+        select(Guest).where(Guest.mazmo_handle == mazmo_handle).options(selectinload(Guest.mazmo_profile))  # type: ignore[arg-type]
+    ).first()
     if not guest:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -8639,6 +8639,79 @@
         "title": "GuestListResponse",
         "description": "Response for listing all known guests (global, no org context).\n\nReturns identity-only data. For RSVP state at a specific meetup,\nuse the /organizations/{org_id}/meetups/{id}/guests endpoint instead."
       },
+      "GuestMazmoProfilePublic": {
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "age": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
+          },
+          "pronoun": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pronoun"
+          },
+          "mazmo_suspended": {
+            "type": "boolean",
+            "title": "Mazmo Suspended"
+          },
+          "mazmo_banned": {
+            "type": "boolean",
+            "title": "Mazmo Banned"
+          },
+          "synced_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Synced At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "avatar_url",
+          "age",
+          "gender",
+          "pronoun",
+          "mazmo_suspended",
+          "mazmo_banned",
+          "synced_at"
+        ],
+        "title": "GuestMazmoProfilePublic",
+        "description": "Snapshot of extended Mazmo profile data for a linked, synced guest.\n\nmazmo_suspended/mazmo_banned are Mazmo's own account-level flags -\nunrelated to this app's own ban system (OrganizationBan / the\nis_banned field on GuestWithBanPublic). Prefixed even here to avoid\nthat confusion once this is flattened into JSON."
+      },
       "GuestPublic": {
         "properties": {
           "id": {
@@ -8682,6 +8755,16 @@
               }
             ],
             "title": "Instagram Username"
+          },
+          "mazmo_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuestMazmoProfilePublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -8693,7 +8776,7 @@
           "instagram_username"
         ],
         "title": "GuestPublic",
-        "description": "A guest's identity (cached locally, may or may not have a Mazmo account).\n\nIdentity-only - no RSVP or ban state. Bans are per-org and are\nincluded only in org-scoped endpoints via GuestWithBanPublic."
+        "description": "A guest's identity (cached locally, may or may not have a Mazmo account).\n\nIdentity-only - no RSVP or ban state. Bans are per-org and are\nincluded only in org-scoped endpoints via GuestWithBanPublic.\n\nmazmo_profile is None both for guests never linked to Mazmo, and for\nlinked guests that haven't appeared in a sync or link-mazmo call yet\n- two different situations, same null result here."
       },
       "GuestType": {
         "type": "string",
@@ -8791,6 +8874,16 @@
               }
             ],
             "title": "Instagram Username"
+          },
+          "mazmo_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuestMazmoProfilePublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "is_banned": {
             "type": "boolean",

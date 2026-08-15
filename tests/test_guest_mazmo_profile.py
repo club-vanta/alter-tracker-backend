@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 
 from fastapi import status
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 from sqlmodel import Session
 
 from app.models.models import GuestMazmoProfile
@@ -137,3 +138,107 @@ def test_unlink_mazmo_on_guest_without_profile_row_succeeds(client: TestClient, 
 
     assert resp.status_code == status.HTTP_200_OK
     assert session.get(GuestMazmoProfile, guest.id) is None
+
+
+# -- Exposure in GuestPublic ------------------------------------------------------
+
+
+def test_guest_detail_response_includes_mazmo_profile_when_linked_and_synced(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """Verify GET /guests/{id} includes mazmo_profile when it has been synced."""
+    guest = make_guest(session, mazmo_user_id=601, mazmo_handle="synced_guest")
+    session.add(
+        GuestMazmoProfile(
+            guest_id=guest.id,
+            avatar_url="https://cdn.mazmo.net/avatars/601/default.jpg",
+            age=33,
+            gender="male",
+            pronoun="he/him",
+            mazmo_suspended=False,
+            mazmo_banned=False,
+        )
+    )
+    session.flush()
+
+    resp = client.get(f"/guests/{guest.id}", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    profile = resp.json()["mazmo_profile"]
+    assert profile is not None
+    assert profile["avatar_url"] == "https://cdn.mazmo.net/avatars/601/default.jpg"
+    assert profile["age"] == 33
+    assert profile["gender"] == "male"
+    assert profile["pronoun"] == "he/him"
+    assert profile["mazmo_suspended"] is False
+    assert profile["mazmo_banned"] is False
+
+
+def test_guest_detail_response_mazmo_profile_null_when_not_linked_to_mazmo(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """Verify mazmo_profile is null for a guest with no Mazmo account at all."""
+    guest = make_guest(session, mazmo_user_id=None, mazmo_handle=None, displayname="Sin Mazmo")
+
+    resp = client.get(f"/guests/{guest.id}", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["mazmo_profile"] is None
+
+
+def test_guest_detail_response_mazmo_profile_null_when_linked_but_not_yet_synced(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """
+    Verify mazmo_profile is null for a guest that IS linked
+    (mazmo_user_id set) but has never gone through a sync or link-mazmo
+    that would have created its GuestMazmoProfile row.
+
+    WHY: Distinct edge case from "not linked at all" - both produce the
+    same null in the API, but for different reasons.
+    """
+    guest = make_guest(session, mazmo_user_id=602, mazmo_handle="linked_not_synced")
+
+    resp = client.get(f"/guests/{guest.id}", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["mazmo_profile"] is None
+
+
+def test_guest_list_response_does_not_trigger_n_plus_1_for_mazmo_profile(
+    client: TestClient, staff_headers: dict, session: Session
+):
+    """
+    Verify GET /guests/ loads mazmo_profile for every guest via a single
+    extra query (selectinload), not one query per guest.
+    """
+    for i in range(700, 706):
+        guest = make_guest(session, mazmo_user_id=i, mazmo_handle=f"guest{i}")
+        session.add(GuestMazmoProfile(guest_id=guest.id, age=i - 600))
+    session.flush()
+
+    # NOTE: deliberately not `from tests.conftest import test_engine` (as a
+    # literal reading of the plan for this test might suggest) - this
+    # project's tests/ has no __init__.py, so pytest's own conftest.py
+    # discovery loads it as top-level module `conftest`, while an explicit
+    # `tests.conftest` import (enabled by pytest.ini's `pythonpath = .`)
+    # loads a second, distinct module object with its own `test_engine`
+    # Engine instance and connection pool. Listening on that second engine
+    # never sees traffic from the `session`/`client` fixtures, which are
+    # bound to the first. session.get_bind() sidesteps the whole problem by
+    # asking the session itself which Connection/Engine it is actually using.
+    engine = session.get_bind().engine
+    statements: list[str] = []
+
+    def _listener(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", _listener)
+    try:
+        resp = client.get("/guests/", headers=staff_headers)
+    finally:
+        event.remove(engine, "before_cursor_execute", _listener)
+
+    assert resp.status_code == status.HTTP_200_OK
+    profile_statements = [s for s in statements if "guest_mazmo_profile" in s.lower()]
+    assert len(profile_statements) == 1
