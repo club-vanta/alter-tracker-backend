@@ -34,6 +34,7 @@ from app.models.models import (
     Guest,
     GuestDisplaynameHistory,
     GuestDisplaynameSource,
+    GuestMazmoProfile,
     OrganizationBan,
     User,
 )
@@ -105,6 +106,11 @@ async def create_guest_from_mazmo(
     Looks up the canonical Mazmo user ID and profile data automatically,
     so staff at the door only need to know the handle (e.g. "cindydark").
 
+    Also creates the guest's GuestMazmoProfile (avatar, age, gender,
+    pronoun, mazmo_suspended, mazmo_banned) from the same Mazmo lookup
+    response - same commit as the Guest and EventLog(GUEST_CREATED, ...)
+    rows, no extra call to Mazmo.
+
     Returns 404 if the username doesn't exist on Mazmo.
     Returns 409 if that mazmo_user_id is already registered.
     Returns 504 if Mazmo is unreachable.
@@ -158,9 +164,26 @@ async def create_guest_from_mazmo(
         actor_id=staff.id,
     )
 
+    # Populate GuestMazmoProfile from the same lookup response already in
+    # memory - no extra Mazmo call. Always a fresh insert here (never an
+    # update): guest.id was just generated above, so no GuestMazmoProfile
+    # row can already exist for it - unlike link_guest_to_mazmo, which
+    # attaches Mazmo to a guest that may have been linked (and unlinked)
+    # before.
+    profile = GuestMazmoProfile(
+        guest_id=guest.id,
+        avatar_url=mazmo_user.avatar.default if mazmo_user.avatar else None,
+        age=mazmo_user.age,
+        gender=mazmo_user.gender,
+        pronoun=mazmo_user.pronoun,
+        mazmo_suspended=mazmo_user.suspended,
+        mazmo_banned=mazmo_user.banned,
+    )
+
     session.add(guest)
     session.add(event)
     session.add(history)
+    session.add(profile)
     session.commit()
     session.refresh(guest)
 
@@ -333,6 +356,11 @@ async def link_guest_to_mazmo(
     an EventLog(GUEST_DISPLAYNAME_CHANGED) entry, alongside the existing
     EventLog(GUEST_MAZMO_LINKED) - same commit, same timestamp.
 
+    Also upserts GuestMazmoProfile (avatar, age, gender, pronoun,
+    mazmo_suspended, mazmo_banned) from the same Mazmo lookup response -
+    unconditionally, not just when the displayname changed, and without
+    any extra call to Mazmo. Same commit as everything else here.
+
     Returns 404 if the guest doesn't exist.
     Returns 409 if the guest is already linked, or if the Mazmo account
     is already linked to a different guest (no automatic merge).
@@ -415,6 +443,23 @@ async def link_guest_to_mazmo(
                 reason=f"Displayname changed from '{old_displayname[:200]}' to '{guest.displayname[:200]}'",
             )
         )
+
+    # Populate GuestMazmoProfile from the same lookup response already in
+    # memory - no extra Mazmo call. Get-or-create against guest.id: a
+    # guest that was previously linked then unlinked (which deletes its
+    # profile row - see unlink_guest_mazmo below) has no existing row
+    # here, but this stays correct even if one somehow already existed.
+    profile = session.get(GuestMazmoProfile, guest.id)
+    if profile is None:
+        profile = GuestMazmoProfile(guest_id=guest.id)
+    profile.avatar_url = mazmo_user.avatar.default if mazmo_user.avatar else None
+    profile.age = mazmo_user.age
+    profile.gender = mazmo_user.gender
+    profile.pronoun = mazmo_user.pronoun
+    profile.mazmo_suspended = mazmo_user.suspended
+    profile.mazmo_banned = mazmo_user.banned
+    profile.synced_at = now
+    session.add(profile)
 
     try:
         session.commit()

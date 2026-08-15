@@ -2781,7 +2781,7 @@
           "guests"
         ],
         "summary": "Create a guest by Mazmo username",
-        "description": "Register a guest using their Mazmo username handle.\n\nLooks up the canonical Mazmo user ID and profile data automatically,\nso staff at the door only need to know the handle (e.g. \"cindydark\").\n\nReturns 404 if the username doesn't exist on Mazmo.\nReturns 409 if that mazmo_user_id is already registered.\nReturns 504 if Mazmo is unreachable.",
+        "description": "Register a guest using their Mazmo username handle.\n\nLooks up the canonical Mazmo user ID and profile data automatically,\nso staff at the door only need to know the handle (e.g. \"cindydark\").\n\nAlso creates the guest's GuestMazmoProfile (avatar, age, gender,\npronoun, mazmo_suspended, mazmo_banned) from the same Mazmo lookup\nresponse - same commit as the Guest and EventLog(GUEST_CREATED, ...)\nrows, no extra call to Mazmo.\n\nReturns 404 if the username doesn't exist on Mazmo.\nReturns 409 if that mazmo_user_id is already registered.\nReturns 504 if Mazmo is unreachable.",
         "operationId": "create_guest_from_mazmo_guests_mazmo_post",
         "requestBody": {
           "content": {
@@ -3588,7 +3588,7 @@
           "guests"
         ],
         "summary": "Link an existing guest to a Mazmo account",
-        "description": "Attach a Mazmo account to a guest created without one.\n\nOverwrites mazmo_user_id, mazmo_handle, and displayname with the\nMazmo profile data. instagram_username is left untouched.\n\nIf the incoming Mazmo displayname differs from the guest's previous\nvalue, writes a GuestDisplaynameHistory row (source=MAZMO_LINK) and\nan EventLog(GUEST_DISPLAYNAME_CHANGED) entry, alongside the existing\nEventLog(GUEST_MAZMO_LINKED) - same commit, same timestamp.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is already linked, or if the Mazmo account\nis already linked to a different guest (no automatic merge).",
+        "description": "Attach a Mazmo account to a guest created without one.\n\nOverwrites mazmo_user_id, mazmo_handle, and displayname with the\nMazmo profile data. instagram_username is left untouched.\n\nIf the incoming Mazmo displayname differs from the guest's previous\nvalue, writes a GuestDisplaynameHistory row (source=MAZMO_LINK) and\nan EventLog(GUEST_DISPLAYNAME_CHANGED) entry, alongside the existing\nEventLog(GUEST_MAZMO_LINKED) - same commit, same timestamp.\n\nAlso upserts GuestMazmoProfile (avatar, age, gender, pronoun,\nmazmo_suspended, mazmo_banned) from the same Mazmo lookup response -\nunconditionally, not just when the displayname changed, and without\nany extra call to Mazmo. Same commit as everything else here.\n\nReturns 404 if the guest doesn't exist.\nReturns 409 if the guest is already linked, or if the Mazmo account\nis already linked to a different guest (no automatic merge).",
         "operationId": "link_guest_to_mazmo_guests__guest_id__link_mazmo_patch",
         "security": [
           {
