@@ -109,10 +109,26 @@ def _raise_if_finalized(meetup: Meetup) -> None:
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 f"Cannot perform this action: meetup '{meetup.name}' "
-                f"was finalized on {meetup.finalized_at}. "
-                f"Finalized meetups no longer accept check-ins or syncs."
+                f"{_describe_finalization(meetup)}. "
+                "Finalized meetups no longer accept check-ins, walk-ins, syncs, payments, "
+                "guest type changes, or payment requirement changes. "
+                f"An org admin can reopen it via "
+                f"PATCH /organizations/{meetup.org_id}/meetups/{meetup.id}/unfinalize."
             ),
         )
+
+
+def _describe_finalization(meetup: Meetup) -> str:
+    """
+    Describe when a meetup was finalized, for error messages.
+
+    finalized_at can be NULL on a finalized meetup when the row was set
+    up outside the finalize endpoint (seed data, manual SQL), so this
+    never renders a literal "None".
+    """
+    if meetup.finalized_at is None:
+        return "has been finalized"
+    return f"was finalized on {meetup.finalized_at}"
 
 
 def _refetch_guest_or_500(session: Session, guest_id: uuid.UUID, *, action: str) -> Guest:
@@ -1258,7 +1274,7 @@ async def finalize_meetup(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Cannot finalize: meetup '{meetup.name}' is already finalized (finalized at {meetup.finalized_at})."
+                f"Cannot finalize: meetup '{meetup.name}' is already finalized ({_describe_finalization(meetup)})."
             ),
         )
 

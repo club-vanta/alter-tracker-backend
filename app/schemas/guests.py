@@ -223,7 +223,8 @@ class BannedGuestPublic(BaseModel):
     """
     Guest info with ban details, sourced from organization_bans.
 
-    Used in the org-scoped banned guests list endpoint.
+    Used in the org-scoped banned guests list endpoint. mazmo_profile
+    follows the same rules as GuestPublic.mazmo_profile.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -233,6 +234,7 @@ class BannedGuestPublic(BaseModel):
     mazmo_handle: str | None
     displayname: str
     instagram_username: str | None
+    mazmo_profile: GuestMazmoProfilePublic | None = None
     banned_at: datetime
     banned_reason: str
     banned_by_id: int | None

@@ -4585,7 +4585,7 @@
                   "meetup_finalized": {
                     "summary": "Cannot modify a finalized meetup",
                     "value": {
-                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins or syncs."
+                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins, walk-ins, syncs, payments, guest type changes, or payment requirement changes. An org admin can reopen it via PATCH /organizations/{org_id}/meetups/{meetup_id}/unfinalize."
                     }
                   }
                 }
@@ -5147,7 +5147,7 @@
                   "meetup_finalized": {
                     "summary": "Cannot modify a finalized meetup",
                     "value": {
-                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins or syncs."
+                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins, walk-ins, syncs, payments, guest type changes, or payment requirement changes. An org admin can reopen it via PATCH /organizations/{org_id}/meetups/{meetup_id}/unfinalize."
                     }
                   }
                 }
@@ -5309,7 +5309,7 @@
                   "meetup_finalized": {
                     "summary": "Cannot modify a finalized meetup",
                     "value": {
-                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins or syncs."
+                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins, walk-ins, syncs, payments, guest type changes, or payment requirement changes. An org admin can reopen it via PATCH /organizations/{org_id}/meetups/{meetup_id}/unfinalize."
                     }
                   }
                 }
@@ -5698,7 +5698,7 @@
                   "meetup_finalized": {
                     "summary": "Cannot modify a finalized meetup",
                     "value": {
-                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins or syncs."
+                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins, walk-ins, syncs, payments, guest type changes, or payment requirement changes. An org admin can reopen it via PATCH /organizations/{org_id}/meetups/{meetup_id}/unfinalize."
                     }
                   }
                 }
@@ -6500,7 +6500,7 @@
                   "meetup_finalized": {
                     "summary": "Cannot modify a finalized meetup",
                     "value": {
-                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins or syncs."
+                      "detail": "Cannot perform this action: meetup 'Alter C\u00f3rdoba - Marzo 2024' was finalized on 2024-03-23 23:59:00+00:00. Finalized meetups no longer accept check-ins, walk-ins, syncs, payments, guest type changes, or payment requirement changes. An org admin can reopen it via PATCH /organizations/{org_id}/meetups/{meetup_id}/unfinalize."
                     }
                   }
                 }
@@ -8165,6 +8165,16 @@
             ],
             "title": "Instagram Username"
           },
+          "mazmo_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuestMazmoProfilePublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "banned_at": {
             "type": "string",
             "format": "date-time",
@@ -8198,7 +8208,7 @@
           "banned_by_id"
         ],
         "title": "BannedGuestPublic",
-        "description": "Guest info with ban details, sourced from organization_bans.\n\nUsed in the org-scoped banned guests list endpoint."
+        "description": "Guest info with ban details, sourced from organization_bans.\n\nUsed in the org-scoped banned guests list endpoint. mazmo_profile\nfollows the same rules as GuestPublic.mazmo_profile."
       },
       "Body_login_auth_token_post": {
         "properties": {

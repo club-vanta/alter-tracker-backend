@@ -49,6 +49,7 @@ from app.schemas import (
     BanGuestRequest,
     BannedGuestListResponse,
     BannedGuestPublic,
+    GuestMazmoProfilePublic,
     GuestPublic,
     OrgCreate,
     OrgListResponse,
@@ -367,24 +368,13 @@ async def list_banned_guests(
     """List all guests currently banned in this organization."""
     _get_org_or_404(session, org_id)
 
-    bans = session.exec(select(OrganizationBan).where(OrganizationBan.org_id == org_id)).all()
+    bans = session.exec(
+        select(OrganizationBan)
+        .where(OrganizationBan.org_id == org_id)
+        .options(selectinload(OrganizationBan.guest).selectinload(Guest.mazmo_profile))  # type: ignore[arg-type]
+    ).all()
 
-    guests = []
-    for ban in bans:
-        guest = session.get(Guest, ban.guest_id)
-        if guest:
-            guests.append(
-                BannedGuestPublic(
-                    id=guest.id,
-                    mazmo_user_id=guest.mazmo_user_id,
-                    mazmo_handle=guest.mazmo_handle,
-                    displayname=guest.displayname,
-                    instagram_username=guest.instagram_username,
-                    banned_at=ban.banned_at,
-                    banned_reason=ban.reason,
-                    banned_by_id=ban.banned_by_id,
-                )
-            )
+    guests = [_to_banned_guest_public(ban.guest, ban) for ban in bans]
 
     return BannedGuestListResponse(total=len(guests), guests=guests)
 
@@ -467,16 +457,7 @@ async def ban_guest(
         reason=payload.reason,
     )
 
-    return BannedGuestPublic(
-        id=guest.id,
-        mazmo_user_id=guest.mazmo_user_id,
-        mazmo_handle=guest.mazmo_handle,
-        displayname=guest.displayname,
-        instagram_username=guest.instagram_username,
-        banned_at=ban.banned_at,
-        banned_reason=ban.reason,
-        banned_by_id=ban.banned_by_id,
-    )
+    return _to_banned_guest_public(guest, ban)
 
 
 # ── Unban guest ───────────────────────────────────────────────────────────────
@@ -549,6 +530,21 @@ async def unban_guest(
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
+
+
+def _to_banned_guest_public(guest: Guest, ban: OrganizationBan) -> BannedGuestPublic:
+    """Combine a guest's identity (incl. Mazmo profile snapshot) with its ban row."""
+    return BannedGuestPublic(
+        id=guest.id,
+        mazmo_user_id=guest.mazmo_user_id,
+        mazmo_handle=guest.mazmo_handle,
+        displayname=guest.displayname,
+        instagram_username=guest.instagram_username,
+        mazmo_profile=GuestMazmoProfilePublic.model_validate(guest.mazmo_profile) if guest.mazmo_profile else None,
+        banned_at=ban.banned_at,
+        banned_reason=ban.reason,
+        banned_by_id=ban.banned_by_id,
+    )
 
 
 def _get_org_or_404(session: Session, org_id: uuid.UUID) -> Organization:

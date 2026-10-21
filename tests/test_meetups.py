@@ -1053,6 +1053,44 @@ def test_finalize_meetup_returns_409_when_already_finalized(
     assert resp.status_code == status.HTTP_409_CONFLICT
 
 
+def test_checkin_on_finalized_meetup_without_finalized_at_does_not_say_none(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    org: Organization,
+    org_staff_member,
+):
+    """
+    Verify the 409 detail stays readable when finalized_at is NULL.
+
+    WHY: Meetups finalized outside the finalize endpoint (seed data, manual
+    SQL) have is_finalized=True but no finalized_at, and the message used
+    to read "finalized on None".
+    """
+    finalized = make_meetup(
+        session,
+        org=org,
+        name="Finalized Without Date",
+        mazmo_meetup_url="https://mazmo.net/test/finalized-no-date-1",
+    )
+    finalized.is_finalized = True
+    session.add(finalized)
+    guest = make_guest(session, mazmo_user_id=502, mazmo_handle="no_date_guest")
+    make_rsvp(session, meetup=finalized, guest=guest)
+    session.flush()
+
+    resp = client.post(
+        f"/organizations/{org.id}/meetups/{finalized.id}/guests/{guest.id}/checkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_409_CONFLICT
+    detail = resp.json()["detail"]
+    assert "None" not in detail
+    assert "has been finalized" in detail
+    assert f"/meetups/{finalized.id}/unfinalize" in detail
+
+
 def test_finalize_meetup_returns_404_for_unknown_meetup(
     client: TestClient,
     admin_headers: dict,

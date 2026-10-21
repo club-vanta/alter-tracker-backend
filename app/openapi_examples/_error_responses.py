@@ -735,7 +735,10 @@ def error_409_meetup_finalized() -> ResponsesDict:
                                 "detail": (
                                     "Cannot perform this action: meetup 'Alter Córdoba - Marzo 2024' "
                                     "was finalized on 2024-03-23 23:59:00+00:00. "
-                                    "Finalized meetups no longer accept check-ins or syncs."
+                                    "Finalized meetups no longer accept check-ins, walk-ins, syncs, payments, "
+                                    "guest type changes, or payment requirement changes. "
+                                    "An org admin can reopen it via "
+                                    "PATCH /organizations/{org_id}/meetups/{meetup_id}/unfinalize."
                                 )
                             },
                         },

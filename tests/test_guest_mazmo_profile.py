@@ -24,7 +24,7 @@ from sqlalchemy import event
 from sqlmodel import Session, select
 
 from app.models.models import GuestMazmoProfile, Meetup, Organization
-from tests.conftest import make_guest
+from tests.conftest import make_ban, make_guest, make_org_member
 
 # -- GuestMazmoProfile table -------------------------------------------------------
 
@@ -318,3 +318,53 @@ def test_link_sync_unlink_mazmo_profile_lifecycle_end_to_end(
     data = resp.json()
     assert data["mazmo_profile"] is None
     assert data["displayname"] == "Lissandra"
+
+
+# -- BannedGuestPublic.mazmo_profile ------------------------------------------------
+
+
+def test_list_banned_guests_includes_mazmo_profile(
+    client: TestClient, staff_headers: dict, session: Session, admin_user, staff_user, org: Organization
+):
+    """
+    Verify that the org banned list exposes each guest's Mazmo profile snapshot.
+
+    WHY: The frontend's banned tab shows avatars, same as every other guest list.
+    """
+    make_org_member(session, org=org, user=staff_user)
+    synced = make_guest(session, mazmo_user_id=801, mazmo_handle="banned_synced")
+    session.add(GuestMazmoProfile(guest_id=synced.id, avatar_url="https://cdn.mazmo.net/a/801.jpg", age=30))
+    manual = make_guest(session, mazmo_user_id=None, mazmo_handle=None, displayname="Manual Banned")
+    make_ban(session, org=org, guest=synced, banned_by=admin_user)
+    make_ban(session, org=org, guest=manual, banned_by=admin_user)
+    session.flush()
+
+    resp = client.get(f"/organizations/{org.id}/guests/banned", headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    by_id = {g["id"]: g for g in resp.json()["guests"]}
+    assert by_id[str(synced.id)]["mazmo_profile"]["avatar_url"] == "https://cdn.mazmo.net/a/801.jpg"
+    assert by_id[str(synced.id)]["mazmo_profile"]["age"] == 30
+    assert by_id[str(manual.id)]["mazmo_profile"] is None
+
+
+def test_ban_guest_response_includes_mazmo_profile(
+    client: TestClient, admin_headers: dict, session: Session, org: Organization
+):
+    """
+    Verify that the ban endpoint's BannedGuestPublic response carries mazmo_profile.
+
+    WHY: The frontend can render the newly banned row without refetching the list.
+    """
+    guest = make_guest(session, mazmo_user_id=802, mazmo_handle="to_ban")
+    session.add(GuestMazmoProfile(guest_id=guest.id, avatar_url="https://cdn.mazmo.net/a/802.jpg"))
+    session.flush()
+
+    resp = client.patch(
+        f"/organizations/{org.id}/guests/{guest.id}/ban",
+        json={"reason": "Testing mazmo_profile on ban"},
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["mazmo_profile"]["avatar_url"] == "https://cdn.mazmo.net/a/802.jpg"

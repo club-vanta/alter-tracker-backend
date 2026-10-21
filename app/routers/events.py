@@ -6,6 +6,10 @@ GET /organizations/{org_id}/events/meetups/{id}    -> events at a meetup (org me
 GET /organizations/{org_id}/events/guests/{id}     -> events for a guest (org member; staff: bans only)
 GET /organizations/{org_id}/events/staff/{id}      -> events by a staff member (org member; staff: own only)
 
+Global guest events (org_id NULL: GUEST_CREATED, GUEST_MAZMO_LINKED,
+GUEST_MAZMO_UNLINKED, GUEST_DISPLAYNAME_CHANGED) are included for guests
+related to the org - those with an RSVP to one of its meetups or a ban in it.
+
 All endpoints support filtering by:
   - type: Event type(s) comma-separated (see EventType in app/models/models.py for the full list)
   - since/until: Timestamp range
@@ -18,11 +22,22 @@ from datetime import datetime
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import selectinload
-from sqlmodel import Session, select
+from sqlmodel import Session, and_, col, or_, select
 
 from app.core.database import get_session
 from app.core.deps import get_org_admin, get_org_member
-from app.models.models import EventLog, EventType, Guest, Meetup, OrgRole, PossibleRoles, User, UserOrganization
+from app.models.models import (
+    EventLog,
+    EventType,
+    Guest,
+    Meetup,
+    MeetupRsvp,
+    OrganizationBan,
+    OrgRole,
+    PossibleRoles,
+    User,
+    UserOrganization,
+)
 from app.openapi_examples.events_examples import (
     LIST_ALL_EVENTS_RESPONSES,
     LIST_GUEST_EVENTS_RESPONSES,
@@ -73,6 +88,30 @@ def _parse_event_types(type_param: str | None) -> list[str] | None:
     return types
 
 
+def _org_scope(org_id: uuid.UUID):
+    """
+    WHERE clause for "events visible in this org's audit log".
+
+    Org-scoped events match on org_id. Global guest events (org_id NULL)
+    match when the guest is related to the org: RSVPed to one of its
+    meetups, or currently banned in it. Without this, global events like
+    GUEST_DISPLAYNAME_CHANGED could never show up in any org's audit log.
+    """
+    related_guest_ids = (
+        select(MeetupRsvp.guest_id)
+        .join(Meetup, col(Meetup.id) == col(MeetupRsvp.meetup_id))
+        .where(Meetup.org_id == org_id)
+        .union(select(OrganizationBan.guest_id).where(OrganizationBan.org_id == org_id))
+    )
+    return or_(
+        col(EventLog.org_id) == org_id,
+        and_(
+            col(EventLog.org_id).is_(None),
+            col(EventLog.guest_id).in_(related_guest_ids),
+        ),
+    )
+
+
 def _build_event_query(
     *,
     org_id: uuid.UUID,
@@ -89,7 +128,7 @@ def _build_event_query(
     All filters are optional and combine with AND logic.
     Returns the query (not executed) for further modification.
     """
-    query = select(EventLog).where(EventLog.org_id == org_id)
+    query = select(EventLog).where(_org_scope(org_id))
 
     event_types = _parse_event_types(type_param)
     if event_types:

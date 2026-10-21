@@ -137,6 +137,7 @@ GUEST_BANNED_FULL = {
     "mazmo_handle": "usuario_problematico",
     "displayname": "Persona Conflictiva",
     "instagram_username": None,
+    "mazmo_profile": None,
     "banned_at": TIMESTAMP_2024_03_20,
     "banned_reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03",
     "banned_by_id": 1,
