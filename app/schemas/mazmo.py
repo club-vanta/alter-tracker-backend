@@ -6,9 +6,14 @@ returned by Mazmo's internal API. We use lenient parsing (strict=False)
 since we don't control this external API.
 """
 
+import re
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
+
+# Mazmo replaces both username and displayname with this kind of hash when
+# it anonymizes an account.
+_ANONYMIZED_NAME = re.compile(r"[0-9a-f]{64}")
 
 
 class MazmoRsvpEntry(BaseModel):
@@ -77,11 +82,11 @@ class MazmoUserEntry(BaseModel):
     unrelated to this app's own ban system - see GuestMazmoProfile in
     app/models/models.py.
 
-    deleted is true for an account removed from Mazmo. Such an account is
-    still returned by the batch /users endpoint (but 404s by username),
+    Mazmo anonymizes deleted accounts and at least some banned ones: the
+    batch /users endpoint still returns them (they 404 by username), but
     with username and displayname replaced by the same 64-char hex hash
-    and avatar/age/gender/pronoun cleared. The sync must never store that
-    hash as a guest's displayname.
+    and avatar/age/gender/pronoun cleared. See is_anonymized() below. The sync
+    must never store that hash as a guest's displayname.
     """
 
     model_config = ConfigDict(strict=False)
@@ -95,3 +100,17 @@ class MazmoUserEntry(BaseModel):
     suspended: bool = False
     banned: bool = False
     deleted: bool = False
+
+
+def is_anonymized(user: MazmoUserEntry) -> bool:
+    """
+    True when Mazmo replaced this account's names with a hash.
+
+    Seen with deleted: true (deleted account) and with deleted: false,
+    banned: true (banned account). The hash check alone covers the banned
+    case without freezing the name of a banned account that Mazmo left
+    readable.
+    """
+    return user.deleted or (
+        user.username == user.displayname and _ANONYMIZED_NAME.fullmatch(user.displayname) is not None
+    )

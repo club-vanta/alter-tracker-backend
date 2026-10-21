@@ -261,7 +261,7 @@ def test_refresh_restores_name_already_replaced_by_hash(
         .where(EventLog.guest_id == guest.id)
         .where(EventLog.event_type == EventType.GUEST_DISPLAYNAME_CHANGED)
     ).one()
-    assert event.reason is not None and "Mazmo account was deleted" in event.reason
+    assert event.reason is not None and "Mazmo anonymized the account" in event.reason
 
 
 def test_refresh_leaves_hash_when_history_has_no_other_name(
@@ -306,6 +306,51 @@ def test_meetup_sync_keeps_deleted_account_rsvp_and_name(
     assert rsvp.cancelled_rsvp is False
     profile = session.get(GuestMazmoProfile, guest.id)
     assert profile is not None and profile.mazmo_deleted is True
+
+
+def test_refresh_restores_name_of_banned_account_with_hashed_name(
+    client: TestClient, admin_headers: dict, session: Session, mock_mazmo: AsyncMock
+):
+    """
+    Verify that a banned account Mazmo anonymized is treated like a deleted one.
+
+    WHY: Mazmo also hashes the names of banned accounts, with deleted: false
+    (seen with real accounts @maxslave and @pua), so the deleted flag alone
+    misses them.
+    """
+    banned_hash = "02cde3bd689d6d428acb5f0c252f3d30e0a2fabf1a9c5b795dbd9289c5a87b28"
+    guest = make_guest(session, mazmo_user_id=2101, mazmo_handle="maxslave", displayname=banned_hash)
+    _add_history(session, guest, "Maxslave", GuestDisplaynameSource.BACKFILL)
+    _add_history(session, guest, banned_hash, GuestDisplaynameSource.SYNC)
+    session.add(GuestMazmoProfile(guest_id=guest.id, gender="MALE", age=40))
+    session.flush()
+    mock_mazmo.fetch_users.return_value = {MazmoUserId(2101): _mazmo_user(banned_hash, banned_hash, banned=True)}
+
+    resp = client.post("/guests/refresh-mazmo", headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    session.refresh(guest)
+    assert guest.displayname == "Maxslave"
+    profile = session.get(GuestMazmoProfile, guest.id)
+    assert profile is not None
+    session.refresh(profile)
+    assert profile.mazmo_banned is True
+    assert profile.mazmo_deleted is False
+    assert (profile.gender, profile.age) == ("MALE", 40)
+
+
+def test_refresh_updates_name_of_banned_account_with_readable_name(
+    client: TestClient, admin_headers: dict, session: Session, mock_mazmo: AsyncMock
+):
+    """Verify that a banned account whose name Mazmo left readable is still renamed normally."""
+    guest = make_guest(session, mazmo_user_id=2201, mazmo_handle="readable", displayname="Old Name")
+    mock_mazmo.fetch_users.return_value = {MazmoUserId(2201): _mazmo_user("readable", "New Name", banned=True)}
+
+    resp = client.post("/guests/refresh-mazmo", headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    session.refresh(guest)
+    assert guest.displayname == "New Name"
 
 
 # ── fetch_users concurrency ───────────────────────────────────────────────────
