@@ -14,6 +14,7 @@ Ban management is org-scoped and lives under /organizations/{org_id}/guests/...
 """
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 import httpx
@@ -21,17 +22,28 @@ import structlog
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.deps import get_approved_user
-from app.models.models import EventLog, EventType, Guest, OrganizationBan, User
+from app.models.models import (
+    EventLog,
+    EventType,
+    Guest,
+    GuestDisplaynameHistory,
+    GuestDisplaynameSource,
+    GuestMazmoProfile,
+    OrganizationBan,
+    User,
+)
 from app.openapi_examples.guests_examples import (
     CREATE_MANUAL_GUEST_REQUEST_EXAMPLES,
     CREATE_MANUAL_GUEST_RESPONSES,
     CREATE_MAZMO_GUEST_REQUEST_EXAMPLES,
     CREATE_MAZMO_GUEST_RESPONSES,
+    GET_DISPLAYNAME_HISTORY_RESPONSES,
     GET_GUEST_BY_MAZMO_HANDLE_RESPONSES,
     GET_GUEST_RESPONSES,
     LINK_MAZMO_REQUEST_EXAMPLES,
@@ -44,11 +56,14 @@ from app.openapi_examples.guests_examples import (
 from app.schemas import (
     CreateGuestRequest,
     CreateManualGuestRequest,
+    GuestDisplaynameHistoryListResponse,
+    GuestDisplaynameHistoryPublic,
     GuestListResponse,
     GuestPublic,
     LinkMazmoRequest,
     UpdateGuestRequest,
 )
+from app.schemas.events import EventActorPublic
 from app.services.mazmo import MazmoAPIError, MazmoClient, MazmoNetworkError
 
 log = structlog.get_logger(__name__)
@@ -56,7 +71,9 @@ router = APIRouter(prefix="/guests", tags=["guests"])
 
 
 def _get_guest_or_404(session: Session, guest_id: uuid.UUID) -> Guest:
-    guest = session.get(Guest, guest_id)
+    guest = session.exec(
+        select(Guest).where(Guest.id == guest_id).options(selectinload(Guest.mazmo_profile))  # type: ignore[arg-type]
+    ).first()
     if not guest:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -90,6 +107,11 @@ async def create_guest_from_mazmo(
 
     Looks up the canonical Mazmo user ID and profile data automatically,
     so staff at the door only need to know the handle (e.g. "cindydark").
+
+    Also creates the guest's GuestMazmoProfile (avatar, age, gender,
+    pronoun, mazmo_suspended, mazmo_banned) from the same Mazmo lookup
+    response - same commit as the Guest and EventLog(GUEST_CREATED, ...)
+    rows, no extra call to Mazmo.
 
     Returns 404 if the username doesn't exist on Mazmo.
     Returns 409 if that mazmo_user_id is already registered.
@@ -137,9 +159,33 @@ async def create_guest_from_mazmo(
         actor_id=staff.id,
         guest_id=guest.id,
     )
+    history = GuestDisplaynameHistory(
+        guest_id=guest.id,
+        displayname=guest.displayname,
+        source=GuestDisplaynameSource.MAZMO_LINK,
+        actor_id=staff.id,
+    )
+
+    # Populate GuestMazmoProfile from the same lookup response already in
+    # memory - no extra Mazmo call. Always a fresh insert here (never an
+    # update): guest.id was just generated above, so no GuestMazmoProfile
+    # row can already exist for it - unlike link_guest_to_mazmo, which
+    # attaches Mazmo to a guest that may have been linked (and unlinked)
+    # before.
+    profile = GuestMazmoProfile(
+        guest_id=guest.id,
+        avatar_url=mazmo_user.avatar.default if mazmo_user.avatar else None,
+        age=mazmo_user.age,
+        gender=mazmo_user.gender[:32] if mazmo_user.gender else None,
+        pronoun=mazmo_user.pronoun[:32] if mazmo_user.pronoun else None,
+        mazmo_suspended=mazmo_user.suspended,
+        mazmo_banned=mazmo_user.banned,
+    )
 
     session.add(guest)
     session.add(event)
+    session.add(history)
+    session.add(profile)
     session.commit()
     session.refresh(guest)
 
@@ -185,9 +231,16 @@ async def create_manual_guest(
         actor_id=staff.id,
         guest_id=guest.id,
     )
+    history = GuestDisplaynameHistory(
+        guest_id=guest.id,
+        displayname=guest.displayname,
+        source=GuestDisplaynameSource.MANUAL_EDIT,
+        actor_id=staff.id,
+    )
 
     session.add(guest)
     session.add(event)
+    session.add(history)
     session.commit()
     session.refresh(guest)
 
@@ -219,7 +272,7 @@ async def list_guests(
     _staff: User = Depends(get_approved_user),
 ) -> GuestListResponse:
     """List all guests in the system (identity only, no RSVP state)."""
-    query = select(Guest)
+    query = select(Guest).options(selectinload(Guest.mazmo_profile))  # type: ignore[arg-type]
     if q:
         pattern = f"%{q}%"
         query = query.where(or_(Guest.displayname.ilike(pattern), Guest.mazmo_handle.ilike(pattern)))  # type: ignore[union-attr]
@@ -264,7 +317,9 @@ async def get_guest_by_mazmo_handle(
     _staff: User = Depends(get_approved_user),
 ) -> Guest:
     """Get a single guest by their Mazmo handle. Guests without Mazmo never match."""
-    guest = session.exec(select(Guest).where(Guest.mazmo_handle == mazmo_handle)).first()
+    guest = session.exec(
+        select(Guest).where(Guest.mazmo_handle == mazmo_handle).options(selectinload(Guest.mazmo_profile))  # type: ignore[arg-type]
+    ).first()
     if not guest:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -299,6 +354,16 @@ async def link_guest_to_mazmo(
 
     Overwrites mazmo_user_id, mazmo_handle, and displayname with the
     Mazmo profile data. instagram_username is left untouched.
+
+    If the incoming Mazmo displayname differs from the guest's previous
+    value, writes a GuestDisplaynameHistory row (source=MAZMO_LINK) and
+    an EventLog(GUEST_DISPLAYNAME_CHANGED) entry, alongside the existing
+    EventLog(GUEST_MAZMO_LINKED) - same commit, same timestamp.
+
+    Also upserts GuestMazmoProfile (avatar, age, gender, pronoun,
+    mazmo_suspended, mazmo_banned) from the same Mazmo lookup response -
+    unconditionally, not just when the displayname changed, and without
+    any extra call to Mazmo. Same commit as everything else here.
 
     Returns 404 if the guest doesn't exist.
     Returns 409 if the guest is already linked, or if the Mazmo account
@@ -346,18 +411,60 @@ async def link_guest_to_mazmo(
             ),
         )
 
+    old_displayname = guest.displayname
     guest.mazmo_user_id = mazmo_user.mazmo_user_id
     guest.mazmo_handle = mazmo_user.username
     guest.displayname = mazmo_user.displayname
 
+    now = datetime.now(UTC)
     event = EventLog(
         event_type=EventType.GUEST_MAZMO_LINKED,
         actor_id=staff.id,
         guest_id=guest.id,
+        timestamp=now,
     )
 
     session.add(guest)
     session.add(event)
+
+    if guest.displayname != old_displayname:
+        session.add(
+            GuestDisplaynameHistory(
+                guest_id=guest.id,
+                displayname=guest.displayname,
+                source=GuestDisplaynameSource.MAZMO_LINK,
+                actor_id=staff.id,
+                recorded_at=now,
+            )
+        )
+        session.add(
+            EventLog(
+                event_type=EventType.GUEST_DISPLAYNAME_CHANGED,
+                org_id=None,
+                actor_id=staff.id,
+                guest_id=guest.id,
+                timestamp=now,
+                reason=f"Displayname changed from '{old_displayname[:200]}' to '{guest.displayname[:200]}'",
+            )
+        )
+
+    # Populate GuestMazmoProfile from the same lookup response already in
+    # memory - no extra Mazmo call. Get-or-create against guest.id: a
+    # guest that was previously linked then unlinked (which deletes its
+    # profile row - see unlink_guest_mazmo below) has no existing row
+    # here, but this stays correct even if one somehow already existed.
+    profile = session.get(GuestMazmoProfile, guest.id)
+    if profile is None:
+        profile = GuestMazmoProfile(guest_id=guest.id)
+    profile.avatar_url = mazmo_user.avatar.default if mazmo_user.avatar else None
+    profile.age = mazmo_user.age
+    profile.gender = mazmo_user.gender[:32] if mazmo_user.gender else None
+    profile.pronoun = mazmo_user.pronoun[:32] if mazmo_user.pronoun else None
+    profile.mazmo_suspended = mazmo_user.suspended
+    profile.mazmo_banned = mazmo_user.banned
+    profile.synced_at = now
+    session.add(profile)
+
     try:
         session.commit()
     except IntegrityError:
@@ -405,6 +512,10 @@ async def unlink_guest_mazmo(
     kept) - it stays as whatever it was, and can be corrected afterward
     via PATCH /guests/{guest_id}. The freed mazmo_user_id can be linked
     to this guest again, or to a different one.
+
+    Also deletes the guest's GuestMazmoProfile row, if one exists.
+    Keeping stale age/gender/avatar data around for an account that is
+    no longer linked could be shown as if it were still valid.
 
     Returns 404 if the guest doesn't exist.
     Returns 409 if the guest is not currently linked.
@@ -464,6 +575,12 @@ async def unlink_guest_mazmo(
         guest_id=guest.id,
     )
 
+    # Delete-if-exists: a guest linked but never synced/re-linked has no
+    # profile row yet, and that is not an error here.
+    profile = session.get(GuestMazmoProfile, guest.id)
+    if profile is not None:
+        session.delete(profile)
+
     session.add(guest)
     session.add(event)
     session.commit()
@@ -492,7 +609,7 @@ async def update_guest(
     guest_id: uuid.UUID,
     payload: Annotated[UpdateGuestRequest, Body(openapi_examples=UPDATE_GUEST_REQUEST_EXAMPLES)],
     session: Session = Depends(get_session),
-    _staff: User = Depends(get_approved_user),
+    staff: User = Depends(get_approved_user),
 ) -> Guest:
     """
     Edit a guest's displayname and/or instagram_username.
@@ -509,13 +626,40 @@ async def update_guest(
     "explicitly cleared" cases.
 
     mazmo_user_id and mazmo_handle cannot be changed here - use
-    link-mazmo/unlink-mazmo for that. This is a cosmetic edit, not an
-    audited business event, so no event_log entry is written.
+    link-mazmo/unlink-mazmo for that.
+
+    A real displayname change (new value differs from the current one)
+    writes a GuestDisplaynameHistory row (source=MANUAL_EDIT) and an
+    EventLog(GUEST_DISPLAYNAME_CHANGED) entry, in the same commit as the
+    guest update. Omitting displayname, or "changing" it to its current
+    value, writes neither - only a real change is audited.
     """
     guest = _get_guest_or_404(session, guest_id)
 
     if "displayname" in payload.model_fields_set and payload.displayname is not None:
-        guest.displayname = payload.displayname
+        if payload.displayname != guest.displayname:
+            old_displayname = guest.displayname
+            guest.displayname = payload.displayname
+            now = datetime.now(UTC)
+            session.add(
+                GuestDisplaynameHistory(
+                    guest_id=guest.id,
+                    displayname=guest.displayname,
+                    source=GuestDisplaynameSource.MANUAL_EDIT,
+                    actor_id=staff.id,
+                    recorded_at=now,
+                )
+            )
+            session.add(
+                EventLog(
+                    event_type=EventType.GUEST_DISPLAYNAME_CHANGED,
+                    org_id=None,
+                    actor_id=staff.id,
+                    guest_id=guest.id,
+                    timestamp=now,
+                    reason=f"Displayname changed from '{old_displayname[:200]}' to '{guest.displayname[:200]}'",
+                )
+            )
     if "instagram_username" in payload.model_fields_set:
         guest.instagram_username = payload.instagram_username
 
@@ -524,3 +668,51 @@ async def update_guest(
     session.refresh(guest)
 
     return guest
+
+
+# -- Get a guest's displayname history ---------------------------------------------
+
+
+@router.get(
+    "/{guest_id}/displayname-history",
+    response_model=GuestDisplaynameHistoryListResponse,
+    summary="Get a guest's full displayname history",
+    responses=GET_DISPLAYNAME_HISTORY_RESPONSES,
+)
+async def get_guest_displayname_history(
+    guest_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    _staff: User = Depends(get_approved_user),
+) -> GuestDisplaynameHistoryListResponse:
+    """
+    Get the full displayname history for a guest, newest first.
+
+    Not paginated: a displayname changes rarely over a guest's lifetime,
+    so the complete list is always returned. A guest with no changes
+    since creation still has exactly one row (its initial value) - never
+    an empty list, since every guest creation path writes one.
+
+    Global guest endpoint, same as GET /guests/{guest_id} - not scoped
+    to an organization.
+    """
+    _get_guest_or_404(session, guest_id)
+
+    rows = session.exec(
+        select(GuestDisplaynameHistory)
+        .where(GuestDisplaynameHistory.guest_id == guest_id)
+        .options(selectinload(GuestDisplaynameHistory.actor))  # type: ignore[arg-type]
+        .order_by(GuestDisplaynameHistory.recorded_at.desc())  # type: ignore[union-attr]
+    ).all()
+
+    return GuestDisplaynameHistoryListResponse(
+        total=len(rows),
+        history=[
+            GuestDisplaynameHistoryPublic(
+                displayname=row.displayname,
+                source=row.source,
+                recorded_at=row.recorded_at,
+                actor=EventActorPublic.model_validate(row.actor) if row.actor else None,
+            )
+            for row in rows
+        ],
+    )

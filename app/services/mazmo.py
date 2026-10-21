@@ -48,7 +48,7 @@ import structlog
 
 from app.core.config import Settings
 from app.domain_types import MazmoUserId
-from app.schemas import MazmoRsvpEntry, MazmoUserEntry
+from app.schemas import MazmoAvatarEntry, MazmoRsvpEntry, MazmoUserEntry
 
 log = structlog.get_logger(__name__)
 
@@ -118,16 +118,33 @@ class MazmoUserWithId(NamedTuple):
     """
     Combined result from the single-user lookup endpoint.
 
-    NamedTuple is a tuple subclass with named fields — fields are accessible
+    NamedTuple is a tuple subclass with named fields - fields are accessible
     by name (user.username) or by index (user[1]). Immutable: you cannot
     reassign fields after construction. Used here as a lightweight internal
     struct; no Pydantic validation needed since the data comes from the API
     already parsed.
+
+    mazmo_user_id is the one field the single-user response body has
+    that MazmoUserEntry doesn't model - the batch /users endpoint
+    returns it as the dict key instead of a body field, so it stays out
+    of MazmoUserEntry to keep that schema identical between both
+    endpoints. Every other field here (username, displayname, avatar,
+    age, gender, pronoun, suspended, banned) is exactly what
+    MazmoUserEntry.model_validate() extracted - MazmoUserEntry is the
+    single place that defines what fields are read from Mazmo user
+    data, so a field added there is never silently dropped by one of
+    the two parsing paths and not the other.
     """
 
     mazmo_user_id: MazmoUserId
     username: str
     displayname: str
+    avatar: MazmoAvatarEntry | None
+    age: int | None
+    gender: str | None
+    pronoun: str | None
+    suspended: bool
+    banned: bool
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -257,7 +274,10 @@ class MazmoClient:
             username: Mazmo username, e.g. "cindydark"
 
         Returns:
-            MazmoUserWithId with mazmo_user_id, username, and displayname.
+            MazmoUserWithId with mazmo_user_id and the full profile
+            (username, displayname, avatar, age, gender, pronoun,
+            suspended, banned) - parsed via MazmoUserEntry.model_validate(),
+            the same schema fetch_users() uses for the batch endpoint.
 
         Raises:
             MazmoNetworkError: If Mazmo API is unreachable.
@@ -273,10 +293,17 @@ class MazmoClient:
             raise MazmoNetworkError(f"Cannot reach Mazmo: {exc}") from exc
 
         data = resp.json()
+        profile = MazmoUserEntry.model_validate(data)
         return MazmoUserWithId(
             mazmo_user_id=MazmoUserId(int(data["id"])),
-            username=data["username"],
-            displayname=data["displayname"],
+            username=profile.username,
+            displayname=profile.displayname,
+            avatar=profile.avatar,
+            age=profile.age,
+            gender=profile.gender,
+            pronoun=profile.pronoun,
+            suspended=profile.suspended,
+            banned=profile.banned,
         )
 
     # ── Step 2: User details (batched) ────────────────────────────────────────

@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from app.models.models import EventLog, EventType, Organization, OrgRole
-from tests.conftest import make_guest, make_meetup, make_org_member, make_rsvp, make_user
+from tests.conftest import make_ban, make_guest, make_meetup, make_org, make_org_member, make_rsvp, make_user
 
 # ======================================================================
 # EVENT CREATION FROM ACTIONS
@@ -423,6 +423,104 @@ class TestListAllEvents:
 # ======================================================================
 
 
+class TestGlobalGuestEventsInOrgAuditLog:
+    """
+    Global guest events (org_id NULL) show up in an org's audit log only
+    for guests related to that org (RSVP to one of its meetups, or a ban).
+    """
+
+    def _global_event(self, session: Session, guest_id: uuid.UUID, reason: str) -> EventLog:
+        event = EventLog(event_type=EventType.GUEST_DISPLAYNAME_CHANGED, org_id=None, guest_id=guest_id, reason=reason)
+        session.add(event)
+        session.flush()
+        return event
+
+    def test_list_all_events_includes_global_events_for_rsvped_and_banned_guests(
+        self, client: TestClient, admin_headers: dict, session: Session, admin_user, org: Organization
+    ):
+        """
+        Verify that list_all_events returns global events for guests tied to the org.
+
+        WHY: GUEST_DISPLAYNAME_CHANGED and friends are written with org_id NULL,
+        so filtering on org_id alone hid them from every org's audit log.
+        """
+        meetup = make_meetup(session, org=org)
+        rsvped = make_guest(session, mazmo_user_id=11, mazmo_handle="rsvped")
+        make_rsvp(session, meetup=meetup, guest=rsvped)
+        banned = make_guest(session, mazmo_user_id=12, mazmo_handle="banned_only")
+        make_ban(session, org=org, guest=banned, banned_by=admin_user)
+        self._global_event(session, rsvped.id, "rsvped rename")
+        self._global_event(session, banned.id, "banned rename")
+
+        resp = client.get(
+            f"/organizations/{org.id}/events/",
+            params={"type": "GUEST_DISPLAYNAME_CHANGED"},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == status.HTTP_200_OK
+        reasons = {e["reason"] for e in resp.json()["events"]}
+        assert reasons == {"rsvped rename", "banned rename"}
+
+    def test_list_all_events_excludes_global_events_for_unrelated_guests(
+        self, client: TestClient, admin_headers: dict, session: Session, org: Organization
+    ):
+        """
+        Verify that global events for guests with no tie to this org stay out.
+
+        WHY: An org's audit log should not list every guest in the system.
+        """
+        other_org = make_org(session, name="Other Org", slug="other-org")
+        other_meetup = make_meetup(session, org=other_org, mazmo_meetup_url="https://mazmo.net/test/other-org-1")
+        stranger = make_guest(session, mazmo_user_id=13, mazmo_handle="stranger")
+        make_rsvp(session, meetup=other_meetup, guest=stranger)
+        self._global_event(session, stranger.id, "stranger rename")
+
+        resp = client.get(f"/organizations/{org.id}/events/", headers=admin_headers)
+
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.json()["total"] == 0
+
+    def test_list_guest_events_admin_sees_global_events(
+        self, client: TestClient, admin_headers: dict, session: Session, org: Organization
+    ):
+        """
+        Verify that the per-guest audit log includes that guest's global events.
+
+        WHY: The guest profile audit view should show name changes alongside check-ins.
+        """
+        meetup = make_meetup(session, org=org)
+        guest = make_guest(session, mazmo_user_id=14, mazmo_handle="profiled")
+        make_rsvp(session, meetup=meetup, guest=guest)
+        self._global_event(session, guest.id, "profile rename")
+
+        resp = client.get(f"/organizations/{org.id}/events/guests/{guest.id}", headers=admin_headers)
+
+        assert resp.status_code == status.HTTP_200_OK
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["events"][0]["event_type"] == "GUEST_DISPLAYNAME_CHANGED"
+
+    def test_list_guest_events_staff_still_sees_only_ban_events(
+        self, client: TestClient, staff_headers: dict, session: Session, staff_user, org: Organization
+    ):
+        """
+        Verify that non-admin staff do not get global events through the guest endpoint.
+
+        WHY: Staff are limited to BAN/UNBAN there; the global-event scope must not widen that.
+        """
+        make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
+        meetup = make_meetup(session, org=org)
+        guest = make_guest(session, mazmo_user_id=15, mazmo_handle="staffview")
+        make_rsvp(session, meetup=meetup, guest=guest)
+        self._global_event(session, guest.id, "hidden from staff")
+
+        resp = client.get(f"/organizations/{org.id}/events/guests/{guest.id}", headers=staff_headers)
+
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.json()["total"] == 0
+
+
 class TestListMeetupEvents:
     """Tests for GET /organizations/{org_id}/events/meetups/{id}."""
 
@@ -760,6 +858,39 @@ class TestEventFiltering:
         data = resp.json()
         assert data["total"] >= 1
         assert all(e["actor"]["id"] == admin_user.id for e in data["events"])
+
+    def test_filter_by_guest_type_changed(
+        self, client: TestClient, admin_headers: dict, session: Session, org: Organization
+    ):
+        """
+        Verify that ?type=GUEST_TYPE_CHANGED filters to only guest-type-change
+        events.
+
+        WHY: GUEST_TYPE_CHANGED must be added to EventTypeFilter (not just
+        EventType) or every request with this filter value 400s.
+        """
+        from app.models.models import Meetup
+
+        guest = make_guest(session, mazmo_user_id=1, mazmo_handle="testguest")
+        meetup: Meetup = make_meetup(session, org=org)
+        make_rsvp(session, meetup=meetup, guest=guest)
+
+        client.patch(
+            f"/organizations/{org.id}/guests/{guest.id}/ban",
+            json={"reason": "Testing"},
+            headers=admin_headers,
+        )
+        client.patch(
+            f"/organizations/{org.id}/meetups/{meetup.id}/guests/{guest.id}/type",
+            json={"guest_type": "VENDOR"},
+            headers=admin_headers,
+        )
+
+        resp = client.get(f"/organizations/{org.id}/events/?type=GUEST_TYPE_CHANGED", headers=admin_headers)
+        assert resp.status_code == status.HTTP_200_OK
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["events"][0]["event_type"] == "GUEST_TYPE_CHANGED"
 
 
 # ======================================================================

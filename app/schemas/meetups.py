@@ -88,3 +88,53 @@ class SyncResponse(BaseModel):
     inserted: int
     skipped: int
     total_in_db: int
+
+
+class AttendanceStats(BaseModel):
+    """Attendance counts for a meetup, excluding cancelled RSVPs."""
+
+    total_rsvps: int
+    arrived_count: int
+    not_arrived_count: int
+    walkin_count: int
+
+
+class CancellationStats(BaseModel):
+    """Counts describing the cancelled RSVP set for a meetup."""
+
+    cancelled_count: int
+    cancelled_but_paid_count: int
+
+
+class GuestTypeStats(BaseModel):
+    """Per-category guest counts for a meetup, excluding cancelled RSVPs."""
+
+    normal_count: int
+    invited_count: int
+    vendor_count: int
+    staff_count: int
+
+
+class PaymentStats(BaseModel):
+    """
+    Payment counts for a meetup, excluding cancelled RSVPs.
+
+    paid_count and unpaid_count are scoped to guest_type=NORMAL only - a
+    non-NORMAL guest who happens to have has_paid=True (e.g. someone who
+    paid before being reclassified as staff) is counted only in
+    exempt_from_payment_count, never in paid_count or unpaid_count, so
+    guest_types.normal_count always equals paid_count + unpaid_count.
+    """
+
+    paid_count: int
+    unpaid_count: int
+    exempt_from_payment_count: int
+
+
+class MeetupStatsPublic(BaseModel):
+    """Grouped attendance/cancellation/guest-type/payment statistics for a meetup."""
+
+    attendance: AttendanceStats
+    cancellations: CancellationStats
+    guest_types: GuestTypeStats
+    payment: PaymentStats

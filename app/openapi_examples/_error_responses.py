@@ -735,7 +735,10 @@ def error_409_meetup_finalized() -> ResponsesDict:
                                 "detail": (
                                     "Cannot perform this action: meetup 'Alter Córdoba - Marzo 2024' "
                                     "was finalized on 2024-03-23 23:59:00+00:00. "
-                                    "Finalized meetups no longer accept check-ins or syncs."
+                                    "Finalized meetups no longer accept check-ins, walk-ins, syncs, payments, "
+                                    "guest type changes, or payment requirement changes. "
+                                    "An org admin can reopen it via "
+                                    "PATCH /organizations/{org_id}/meetups/{meetup_id}/unfinalize."
                                 )
                             },
                         },
@@ -982,6 +985,34 @@ def error_422_validation_reason() -> ResponsesDict:
                                         "msg": "String should have at least 5 characters",
                                         "input": "bad",
                                         "ctx": {"min_length": 5},
+                                    }
+                                ]
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_422_validation_guest_type() -> ResponsesDict:
+    """422 - guest_type is not one of NORMAL/INVITED/VENDOR/STAFF."""
+    return {
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "invalid_guest_type": {
+                            "summary": "guest_type is not a recognized category",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "type": "enum",
+                                        "loc": ["body", "guest_type"],
+                                        "msg": "Input should be 'NORMAL', 'INVITED', 'VENDOR' or 'STAFF'",
+                                        "input": "BOGUS",
                                     }
                                 ]
                             },

@@ -13,6 +13,7 @@ import pytest
 
 from app.core.config import get_settings
 from app.domain_types import MazmoUserId
+from app.schemas import MazmoUserEntry
 from app.services.mazmo import (
     MazmoAPIError,
     MazmoClient,
@@ -298,3 +299,108 @@ async def test_fetch_meetup_date_raises_api_error_on_http_error():
         async with MazmoClient(settings) as client:
             with pytest.raises(MazmoAPIError, match="Mazmo returned 404"):
                 await client.fetch_meetup_date("https://mazmo.net/test/meetup-123")
+
+
+# -- MazmoUserEntry profile fields -----------------------------------------------
+
+
+def test_mazmo_user_entry_parses_new_profile_fields():
+    """
+    Verify MazmoUserEntry.model_validate() extracts avatar.default, age,
+    gender, pronoun, suspended, and banned from a full Mazmo user payload.
+
+    WHY: These 6 fields feed GuestMazmoProfile - this is the first
+    parsing step in the whole feature's data path.
+    """
+    payload = {
+        "username": "cindydark",
+        "displayname": "Lissandra",
+        "avatar": {
+            "default": "https://cdn.mazmo.net/avatars/39119/default.jpg",
+            "small": "https://cdn.mazmo.net/avatars/39119/small.jpg",
+        },
+        "age": 29,
+        "gender": "female",
+        "pronoun": "she/her",
+        "suspended": False,
+        "banned": False,
+    }
+
+    entry = MazmoUserEntry.model_validate(payload)
+
+    assert entry.username == "cindydark"
+    assert entry.displayname == "Lissandra"
+    assert entry.avatar is not None
+    assert entry.avatar.default == "https://cdn.mazmo.net/avatars/39119/default.jpg"
+    assert entry.age == 29
+    assert entry.gender == "female"
+    assert entry.pronoun == "she/her"
+    assert entry.suspended is False
+    assert entry.banned is False
+
+
+def test_mazmo_user_entry_tolerates_missing_optional_profile_fields():
+    """
+    Verify a payload missing age/gender/pronoun/avatar still validates,
+    with those fields defaulting to None (and suspended/banned to False).
+    """
+    payload = {"username": "plainuser", "displayname": "Plain User"}
+
+    entry = MazmoUserEntry.model_validate(payload)
+
+    assert entry.avatar is None
+    assert entry.age is None
+    assert entry.gender is None
+    assert entry.pronoun is None
+    assert entry.suspended is False
+    assert entry.banned is False
+
+
+# -- fetch_user_by_username unified parsing --------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_user_by_username_returns_full_profile_data():
+    """
+    Verify MazmoClient.fetch_user_by_username() returns the numeric id
+    and all 6 new profile fields, not just username/displayname.
+
+    WHY: Before the fetch_user_by_username/fetch_users parsing
+    unification, this method hand-parsed only id/username/displayname
+    and silently dropped everything else - link-mazmo would never have
+    had access to these fields no matter what was added to
+    MazmoUserEntry.
+    """
+    settings = get_settings()
+
+    mock_response = {
+        "id": 39119,
+        "username": "cindydark",
+        "displayname": "Lissandra",
+        "avatar": {"default": "https://cdn.mazmo.net/avatars/39119/default.jpg"},
+        "age": 29,
+        "gender": "female",
+        "pronoun": "she/her",
+        "suspended": False,
+        "banned": False,
+    }
+
+    with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock) as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = mock_response
+        mock_resp.is_error = False
+        mock_get.return_value = mock_resp
+
+        async with MazmoClient(settings) as client:
+            result = await client.fetch_user_by_username("cindydark")
+
+    assert result.mazmo_user_id == MazmoUserId(39119)
+    assert result.username == "cindydark"
+    assert result.displayname == "Lissandra"
+    assert result.avatar is not None
+    assert result.avatar.default == "https://cdn.mazmo.net/avatars/39119/default.jpg"
+    assert result.age == 29
+    assert result.gender == "female"
+    assert result.pronoun == "she/her"
+    assert result.suspended is False
+    assert result.banned is False

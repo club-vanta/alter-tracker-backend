@@ -7,24 +7,54 @@ a scheduled job in the future without going through HTTP.
 Upsert strategy
 ---------------
 Guest table:
-  INSERT ... ON CONFLICT (mazmo_user_id) DO NOTHING - identity data is immutable.
+  INSERT ... ON CONFLICT (mazmo_user_id) DO UPDATE SET displayname = ...
+  WHERE guests.displayname IS DISTINCT FROM EXCLUDED.displayname
+  RETURNING id, displayname, (xmax = 0) AS was_insert - atomic against
+  concurrent syncs of different meetups sharing the same guest. Only
+  displayname is ever updated; mazmo_handle and other identity fields
+  never change via sync. Every row that appears in RETURNING (new
+  insert or real displayname change) gets a GuestDisplaynameHistory row.
+  Rows where was_insert is False (an existing guest's value changed)
+  also get an EventLog(GUEST_DISPLAYNAME_CHANGED, org_id=None) - a
+  brand new guest's first value is not a "change" worth an audit event.
 
 MeetupRsvp table:
   INSERT ... ON CONFLICT (meetup_id, guest_id) DO UPDATE - updates rsvp_time and
   reactivates cancelled RSVPs. NEVER touches check-in fields (has_arrived,
-  arrival_time, arrival_order) or payment fields (has_paid, paid_at,
-  paid_by_id).
+  arrival_time, arrival_order), payment fields (has_paid, paid_at,
+  paid_by_id), or guest_type.
+
+GuestMazmoProfile table:
+  INSERT ... ON CONFLICT (guest_id) DO UPDATE - unconditional, unlike the
+  Guest table's displayname upsert: every guest in the sync batch gets
+  this table refreshed (avatar_url, age, gender, pronoun,
+  mazmo_suspended, mazmo_banned, synced_at) on every sync, whether or
+  not their displayname changed - these fields can change independently
+  of displayname. Runs after _fetch_guest_id_map(), since it needs the
+  resolved internal guest_id for every guest in the batch, not just the
+  ones _upsert_guests()'s RETURNING clause reported as changed/inserted.
 """
 
 import uuid
+from datetime import UTC, datetime
 
 import structlog
+from sqlalchemy import literal_column
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import Session, func, select
 
 from app.core.config import Settings
 from app.domain_types import MazmoUserId
-from app.models.models import Guest, Meetup, MeetupRsvp
+from app.models.models import (
+    EventLog,
+    EventType,
+    Guest,
+    GuestDisplaynameHistory,
+    GuestDisplaynameSource,
+    GuestMazmoProfile,
+    Meetup,
+    MeetupRsvp,
+)
 from app.schemas import MazmoRsvpEntry, MazmoUserEntry, SyncResponse
 from app.services.mazmo import MazmoClient
 
@@ -73,6 +103,7 @@ class GuestSyncer:
         # UUID, not the raw mazmo_user_id.
         self._upsert_guests(guests_to_insert)
         guest_id_map = self._fetch_guest_id_map(list(rsvps.keys()))
+        self._upsert_mazmo_profiles(guest_id_map, user_details)
         rsvps_to_upsert = self._build_rsvps(rsvps, user_details, guest_id_map)
         inserted = self._upsert_rsvps(rsvps_to_upsert)
         self._update_cancelled_rsvps(guest_id_map)
@@ -173,22 +204,136 @@ class GuestSyncer:
             )
         return result
 
-    def _upsert_guests(self, guests: list[Guest]) -> int:
+    def _upsert_guests(self, guests: list[Guest]) -> None:
         """
-        Insert new guests via Postgres ON CONFLICT DO NOTHING.
-        Returns the number of rows actually inserted.
+        Upsert guests via Postgres ON CONFLICT DO UPDATE, atomic against
+        concurrent syncs of different meetups sharing the same guest
+        (Guest is a global, not per-org, table).
+
+        Only displayname is ever updated on conflict - mazmo_handle and
+        other identity fields are immutable via sync. Guests whose
+        displayname is unchanged are excluded by the WHERE clause and
+        never appear in RETURNING, so they get no history/event row -
+        same observable behavior as the previous ON CONFLICT DO NOTHING
+        for that case.
+
+        Every row that DOES appear in RETURNING gets a
+        GuestDisplaynameHistory row with source=SYNC. Only rows where
+        was_insert is False (the guest already existed) additionally
+        get an EventLog(GUEST_DISPLAYNAME_CHANGED, org_id=None) - a
+        brand new guest's first displayname is not a "change".
         """
         if not guests:
-            return 0
+            return
 
         rows = [g.model_dump(exclude={"rsvps", "meetups"}) for g in guests]
-        count_before = self._count_guests()
 
-        stmt = pg_insert(Guest).values(rows).on_conflict_do_nothing(index_elements=["mazmo_user_id"])
-        self._session.exec(stmt)  # type: ignore[arg-type]
+        # Referencing the underlying sa.Table (Guest.__table__) instead of
+        # Guest.displayname/Guest.id directly: SQLModel's class-level field
+        # annotations describe the Pydantic instance type (str, uuid.UUID)
+        # for basedpyright's benefit, not the SQLAlchemy Column - using them
+        # directly in a Core where=/returning() clause type-checks as "str
+        # has no attribute is_distinct_from". Guest.__table__ itself has no
+        # static stub either, hence the one type: ignore below - this was
+        # verified to produce zero basedpyright errors and identical runtime
+        # behavior to referencing Guest.displayname/Guest.id directly.
+        table = Guest.__table__  # type: ignore[attr-defined]
+        stmt = pg_insert(Guest).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["mazmo_user_id"],
+            set_={"displayname": stmt.excluded.displayname},
+            where=table.c.displayname.is_distinct_from(stmt.excluded.displayname),
+        ).returning(
+            table.c.id,
+            table.c.displayname,
+            literal_column("(xmax = 0)").label("was_insert"),
+        )
+        changed_rows = self._session.exec(stmt).all()  # type: ignore[arg-type]
+
+        for guest_id, displayname, was_insert in changed_rows:
+            now = datetime.now(UTC)
+            self._session.add(
+                GuestDisplaynameHistory(
+                    guest_id=guest_id,
+                    displayname=displayname,
+                    source=GuestDisplaynameSource.SYNC,
+                    actor_id=None,
+                    recorded_at=now,
+                )
+            )
+            if not was_insert:
+                self._session.add(
+                    EventLog(
+                        event_type=EventType.GUEST_DISPLAYNAME_CHANGED,
+                        org_id=None,
+                        actor_id=None,
+                        guest_id=guest_id,
+                        timestamp=now,
+                        reason=f"Displayname changed to '{displayname[:400]}' via Mazmo sync",
+                    )
+                )
+
         self._session.commit()
 
-        return self._count_guests() - count_before
+    def _upsert_mazmo_profiles(
+        self,
+        guest_id_map: dict[MazmoUserId, uuid.UUID],
+        user_details: dict[MazmoUserId, MazmoUserEntry],
+    ) -> None:
+        """
+        Unconditionally upsert GuestMazmoProfile for every guest in the
+        sync batch - unlike _upsert_guests, there is no "only if
+        changed" gate: mazmo_suspended/age/gender/pronoun/avatar_url can
+        all change independently of displayname, so a guest whose
+        displayname didn't change (and therefore never appears in
+        _upsert_guests's RETURNING set) must still get this table
+        refreshed.
+
+        Takes guest_id_map (built by _fetch_guest_id_map, covers every
+        guest in the batch - not just the ones _upsert_guests reported
+        as changed/inserted) rather than deriving guest_id from
+        _upsert_guests's return value. This is exactly why this must
+        run after _fetch_guest_id_map(), not right after
+        _upsert_guests() - see the caller in sync().
+        """
+        now = datetime.now(UTC)
+        profiles: list[GuestMazmoProfile] = []
+        for mazmo_user_id, guest_id in guest_id_map.items():
+            user = user_details.get(mazmo_user_id)
+            if user is None:
+                continue
+            profiles.append(
+                GuestMazmoProfile(
+                    guest_id=guest_id,
+                    avatar_url=user.avatar.default if user.avatar else None,
+                    age=user.age,
+                    gender=user.gender[:32] if user.gender else None,
+                    pronoun=user.pronoun[:32] if user.pronoun else None,
+                    mazmo_suspended=user.suspended,
+                    mazmo_banned=user.banned,
+                    synced_at=now,
+                )
+            )
+
+        if not profiles:
+            return
+
+        rows = [p.model_dump(exclude={"guest"}) for p in profiles]
+        stmt = pg_insert(GuestMazmoProfile).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["guest_id"],
+            set_={
+                "avatar_url": stmt.excluded.avatar_url,
+                "age": stmt.excluded.age,
+                "gender": stmt.excluded.gender,
+                "pronoun": stmt.excluded.pronoun,
+                "mazmo_suspended": stmt.excluded.mazmo_suspended,
+                "mazmo_banned": stmt.excluded.mazmo_banned,
+                "synced_at": stmt.excluded.synced_at,
+            },
+        )
+        self._session.exec(stmt)  # type: ignore[arg-type]
+        self._session.commit()
 
     def _upsert_rsvps(self, rsvps: list[MeetupRsvp]) -> int:
         """
@@ -261,10 +406,6 @@ class GuestSyncer:
                 changed,
                 self._meetup.id,
             )
-
-    def _count_guests(self) -> int:
-        """Returns the current total number of guests in the database."""
-        return self._session.exec(select(func.count()).select_from(Guest)).one()
 
     def _count_rsvps(self) -> int:
         """Returns the current total number of RSVPs for this meetup."""
