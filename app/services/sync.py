@@ -36,11 +36,11 @@ GuestMazmoProfile table:
   resolved internal guest_id for every guest in the batch, not just the
   ones _upsert_guests()'s RETURNING clause reported as changed/inserted.
 
-Deleted Mazmo accounts (user.deleted) come back with a hashed
-displayname and cleared profile fields. For them the Guest upsert only
-inserts (and restores a name an older sync already replaced with the
-hash), and the GuestMazmoProfile upsert only sets mazmo_deleted and
-synced_at.
+Accounts Mazmo anonymized (is_anonymized(): deleted, or banned with
+a hashed name) come back with a hashed displayname and cleared profile
+fields. For them the Guest upsert only inserts (and restores a name an
+older sync already replaced with the hash), and the GuestMazmoProfile
+upsert only updates the account flags and synced_at.
 
 Both upserts live in module-level functions (upsert_guest_displaynames,
 upsert_mazmo_profiles) so refresh_mazmo_guests reuses them as is.
@@ -68,6 +68,7 @@ from app.models.models import (
     MeetupRsvp,
 )
 from app.schemas import GuestMazmoRefreshResponse, MazmoRsvpEntry, MazmoUserEntry, SyncResponse
+from app.schemas.mazmo import is_anonymized
 from app.services.mazmo import MazmoClient
 
 log = structlog.get_logger(__name__)
@@ -113,7 +114,7 @@ class GuestSyncer:
         # Guests must be upserted (and their internal ids resolved) before
         # RSVPs can be built, since MeetupRsvp.guest_id is now the internal
         # UUID, not the raw mazmo_user_id.
-        self._upsert_guests(guests_to_insert, _deleted_ids(user_details))
+        self._upsert_guests(guests_to_insert, _anonymized_ids(user_details))
         guest_id_map = self._fetch_guest_id_map(list(rsvps.keys()))
         self._upsert_mazmo_profiles(guest_id_map, user_details)
         rsvps_to_upsert = self._build_rsvps(rsvps, user_details, guest_id_map)
@@ -216,9 +217,9 @@ class GuestSyncer:
             )
         return result
 
-    def _upsert_guests(self, guests: list[Guest], deleted_ids: AbstractSet[MazmoUserId] = frozenset()) -> None:
+    def _upsert_guests(self, guests: list[Guest], anonymized_ids: AbstractSet[MazmoUserId] = frozenset()) -> None:
         """See upsert_guest_displaynames."""
-        upsert_guest_displaynames(self._session, guests, deleted_ids)
+        upsert_guest_displaynames(self._session, guests, anonymized_ids)
 
     def _upsert_mazmo_profiles(
         self,
@@ -317,7 +318,7 @@ class GuestSyncer:
 def upsert_guest_displaynames(
     session: Session,
     guests: list[Guest],
-    deleted_ids: AbstractSet[MazmoUserId] = frozenset(),
+    anonymized_ids: AbstractSet[MazmoUserId] = frozenset(),
 ) -> None:
     """
     Upsert guests via Postgres ON CONFLICT DO UPDATE, atomic against
@@ -335,17 +336,17 @@ def upsert_guest_displaynames(
     get an EventLog(GUEST_DISPLAYNAME_CHANGED, org_id=None) - a
     brand new guest's first displayname is not a "change".
 
-    Guests in deleted_ids (accounts removed from Mazmo) are only
-    inserted, never updated: Mazmo replaces a deleted account's
-    displayname with a hash, which must not overwrite the real name.
-    Guests that already got that hash stored get their last real name
-    back - see _restore_names_hidden_by_deletion.
+    Guests in anonymized_ids (accounts Mazmo anonymized) are only
+    inserted, never updated: Mazmo replaces their displayname with a
+    hash, which must not overwrite the real name. Guests that already
+    got that hash stored get their last real name back - see
+    _restore_names_hidden_by_hash.
     """
     if not guests:
         return
 
-    live = [g for g in guests if g.mazmo_user_id not in deleted_ids]
-    deleted = [g for g in guests if g.mazmo_user_id in deleted_ids]
+    live = [g for g in guests if g.mazmo_user_id not in anonymized_ids]
+    anonymized = [g for g in guests if g.mazmo_user_id in anonymized_ids]
 
     # Referencing the underlying sa.Table (Guest.__table__) instead of
     # Guest.displayname/Guest.id directly: SQLModel's class-level field
@@ -375,16 +376,16 @@ def upsert_guest_displaynames(
                 event_reason=None if was_insert else f"Displayname changed to '{displayname[:400]}' via Mazmo sync",
             )
 
-    if deleted:
+    if anonymized:
         stmt = (
             pg_insert(Guest)
-            .values([g.model_dump(exclude={"rsvps", "meetups"}) for g in deleted])
+            .values([g.model_dump(exclude={"rsvps", "meetups"}) for g in anonymized])
             .on_conflict_do_nothing(index_elements=["mazmo_user_id"])
             .returning(table.c.id, table.c.displayname)
         )
         for guest_id, displayname in session.exec(stmt).all():  # type: ignore[arg-type]
             _record_displayname(session, guest_id, displayname, event_reason=None)
-        _restore_names_hidden_by_deletion(session, deleted)
+        _restore_names_hidden_by_hash(session, anonymized)
 
     session.commit()
 
@@ -414,18 +415,18 @@ def _record_displayname(session: Session, guest_id: uuid.UUID, displayname: str,
         )
 
 
-def _restore_names_hidden_by_deletion(session: Session, deleted: list[Guest]) -> None:
+def _restore_names_hidden_by_hash(session: Session, anonymized: list[Guest]) -> None:
     """
-    Give back the last real displayname to deleted-account guests whose
-    stored displayname is still Mazmo's hash.
+    Give back the last real displayname to anonymized-account guests
+    whose stored displayname is still Mazmo's hash.
 
-    Syncs that ran before the deleted flag was read stored that hash like
+    Syncs that ran before anonymized accounts were detected stored that hash like
     any rename. The guest's history still has the name it replaced, so the
     newest history value that differs from the hash is restored, recorded
     as a regular SYNC history row and audit event. Guests with no other
     value in their history are left as they are.
     """
-    hash_by_mazmo_id = {g.mazmo_user_id: g.displayname for g in deleted}
+    hash_by_mazmo_id = {g.mazmo_user_id: g.displayname for g in anonymized}
     stored = session.exec(
         select(Guest).where(Guest.mazmo_user_id.in_(list(hash_by_mazmo_id)))  # type: ignore[union-attr]
     ).all()
@@ -447,9 +448,9 @@ def _restore_names_hidden_by_deletion(session: Session, deleted: list[Guest]) ->
             session,
             guest.id,
             previous,
-            event_reason=f"Displayname restored to '{previous[:400]}': the Mazmo account was deleted",
+            event_reason=f"Displayname restored to '{previous[:400]}': Mazmo anonymized the account",
         )
-        log.info("Restored displayname of deleted Mazmo account", guest_id=str(guest.id))
+        log.info("Restored displayname of anonymized Mazmo account", guest_id=str(guest.id))
 
 
 def upsert_mazmo_profiles(
@@ -464,13 +465,14 @@ def upsert_mazmo_profiles(
     mazmo_suspended/age/gender/pronoun/avatar_url can all change
     independently of displayname.
 
-    For a deleted Mazmo account only mazmo_deleted and synced_at are
-    updated: Mazmo clears avatar/age/gender/pronoun on deletion, and the
-    last known values are more useful at the door than blanks.
+    For an account Mazmo anonymized (deleted, or banned with a hashed
+    name) only the account flags and synced_at are updated: Mazmo clears
+    avatar/age/gender/pronoun, and the last known values are more useful
+    at the door than blanks.
     """
     now = datetime.now(UTC)
     live: list[GuestMazmoProfile] = []
-    deleted: list[GuestMazmoProfile] = []
+    anonymized: list[GuestMazmoProfile] = []
     for mazmo_user_id, guest_id in guest_id_map.items():
         user = user_details.get(mazmo_user_id)
         if user is None:
@@ -486,7 +488,7 @@ def upsert_mazmo_profiles(
             mazmo_deleted=user.deleted,
             synced_at=now,
         )
-        (deleted if user.deleted else live).append(profile)
+        (anonymized if is_anonymized(user) else live).append(profile)
 
     for profiles, updated_columns in (
         (
@@ -502,7 +504,7 @@ def upsert_mazmo_profiles(
                 "synced_at",
             ),
         ),
-        (deleted, ("mazmo_deleted", "synced_at")),
+        (anonymized, ("mazmo_suspended", "mazmo_banned", "mazmo_deleted", "synced_at")),
     ):
         if not profiles:
             continue
@@ -515,8 +517,8 @@ def upsert_mazmo_profiles(
     session.commit()
 
 
-def _deleted_ids(user_details: dict[MazmoUserId, MazmoUserEntry]) -> set[MazmoUserId]:
-    return {mazmo_user_id for mazmo_user_id, user in user_details.items() if user.deleted}
+def _anonymized_ids(user_details: dict[MazmoUserId, MazmoUserEntry]) -> set[MazmoUserId]:
+    return {mazmo_user_id for mazmo_user_id, user in user_details.items() if is_anonymized(user)}
 
 
 # ── Module-level convenience functions ────────────────────────────────────────
@@ -556,7 +558,7 @@ async def refresh_mazmo_guests(session: Session, settings: Settings) -> GuestMaz
             for mazmo_user_id, user in user_details.items()
             if mazmo_user_id in guest_id_map
         ],
-        _deleted_ids(user_details),
+        _anonymized_ids(user_details),
     )
     upsert_mazmo_profiles(session, guest_id_map, user_details)
 
