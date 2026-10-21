@@ -228,6 +228,7 @@ def test_link_mazmo_with_same_displayname_creates_no_history_row(
         pronoun=None,
         suspended=False,
         banned=False,
+        deleted=False,
     )
     guest = make_guest(session, mazmo_user_id=None, mazmo_handle=None, displayname="Matching Name")
 
@@ -271,6 +272,7 @@ def test_link_mazmo_with_unchanged_displayname_creates_only_mazmo_linked_eventlo
         pronoun=None,
         suspended=False,
         banned=False,
+        deleted=False,
     )
     guest = make_guest(session, mazmo_user_id=None, mazmo_handle=None, displayname="Matching Name")
 
@@ -446,6 +448,7 @@ def test_displayname_change_history_end_to_end(
             pronoun=None,
             suspended=False,
             banned=False,
+            deleted=False,
         ),
         222: SimpleNamespace(
             username="bob",
@@ -456,6 +459,7 @@ def test_displayname_change_history_end_to_end(
             pronoun=None,
             suspended=False,
             banned=False,
+            deleted=False,
         ),
     }
     resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
@@ -478,6 +482,7 @@ def test_displayname_change_history_end_to_end(
             pronoun=None,
             suspended=False,
             banned=False,
+            deleted=False,
         ),
         222: SimpleNamespace(
             username="bob",
@@ -488,6 +493,7 @@ def test_displayname_change_history_end_to_end(
             pronoun=None,
             suspended=False,
             banned=False,
+            deleted=False,
         ),
     }
     resync_resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
@@ -530,6 +536,7 @@ def test_link_mazmo_with_name_change_end_to_end(
         pronoun=None,
         suspended=False,
         banned=False,
+        deleted=False,
     )
 
     create_resp = client.post("/guests/manual", json={"displayname": "Ana"}, headers=staff_headers)

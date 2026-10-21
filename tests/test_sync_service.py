@@ -174,6 +174,29 @@ def test_update_cancelled_rsvps_only_affects_current_meetup(session: Session):
     assert rsvp_b.cancelled_rsvp is False  # unaffected in meetup_b
 
 
+def test_update_cancelled_rsvps_skips_walkins(session: Session):
+    """
+    Verify that walk-in RSVPs are never marked as cancelled.
+
+    WHY: staff adds walk-ins at the door, so they are never on Mazmo's RSVP
+    list. Treating that absence as a cancellation showed every walk-in as
+    cancelled after the next sync.
+    """
+    org = make_org(session, name="Org 7", slug="org-7")
+    meetup = make_meetup(session, org=org)
+    walkin = make_guest(session, mazmo_user_id=701, mazmo_handle="walkin_skip")
+    rsvp = make_rsvp(session, meetup=meetup, guest=walkin)
+    rsvp.is_walkin = True
+    session.add(rsvp)
+    session.flush()
+
+    syncer = GuestSyncer(session, get_settings(), meetup)
+    syncer._update_cancelled_rsvps({})
+
+    session.refresh(rsvp)
+    assert rsvp.cancelled_rsvp is False
+
+
 # ── sync with partial user details ───────────────────────────────────────────
 
 

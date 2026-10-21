@@ -551,6 +551,7 @@ def test_sync_creates_guest_mazmo_profile_for_new_guest(
             pronoun="she/her",
             suspended=False,
             banned=False,
+            deleted=False,
         ),
         222: SimpleNamespace(
             username="bob",
@@ -561,6 +562,7 @@ def test_sync_creates_guest_mazmo_profile_for_new_guest(
             pronoun=None,
             suspended=False,
             banned=False,
+            deleted=False,
         ),
     }
 
@@ -596,6 +598,7 @@ def test_sync_updates_guest_mazmo_profile_on_subsequent_sync(
             pronoun=None,
             suspended=False,
             banned=False,
+            deleted=False,
         ),
         222: SimpleNamespace(
             username="bob",
@@ -606,6 +609,7 @@ def test_sync_updates_guest_mazmo_profile_on_subsequent_sync(
             pronoun=None,
             suspended=False,
             banned=False,
+            deleted=False,
         ),
     }
     resp1 = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
@@ -626,6 +630,7 @@ def test_sync_updates_guest_mazmo_profile_on_subsequent_sync(
             pronoun=None,
             suspended=True,
             banned=False,
+            deleted=False,
         ),
         222: SimpleNamespace(
             username="bob",
@@ -636,6 +641,7 @@ def test_sync_updates_guest_mazmo_profile_on_subsequent_sync(
             pronoun=None,
             suspended=False,
             banned=False,
+            deleted=False,
         ),
     }
     resp2 = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)
@@ -670,6 +676,7 @@ def test_sync_updates_guest_mazmo_profile_even_when_displayname_unchanged(
             pronoun=None,
             suspended=True,
             banned=False,
+            deleted=False,
         ),
         222: SimpleNamespace(
             username="bob",
@@ -680,6 +687,7 @@ def test_sync_updates_guest_mazmo_profile_even_when_displayname_unchanged(
             pronoun=None,
             suspended=False,
             banned=False,
+            deleted=False,
         ),
     }
 
@@ -710,6 +718,7 @@ def test_sync_handles_guest_with_missing_optional_profile_fields(
             pronoun="she/her",
             suspended=False,
             banned=False,
+            deleted=False,
         ),
         222: SimpleNamespace(
             username="bob",
@@ -720,6 +729,7 @@ def test_sync_handles_guest_with_missing_optional_profile_fields(
             pronoun=None,
             suspended=False,
             banned=False,
+            deleted=False,
         ),
     }
 
@@ -759,6 +769,7 @@ def test_sync_truncates_overlong_gender_and_pronoun_instead_of_failing(
             pronoun=overlong_pronoun,
             suspended=False,
             banned=False,
+            deleted=False,
         ),
         222: SimpleNamespace(
             username="bob",
@@ -769,6 +780,7 @@ def test_sync_truncates_overlong_gender_and_pronoun_instead_of_failing(
             pronoun=None,
             suspended=False,
             banned=False,
+            deleted=False,
         ),
     }
 

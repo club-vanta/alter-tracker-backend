@@ -5,6 +5,7 @@ Endpoints:
   POST  /guests/mazmo                          - Create a guest by Mazmo username
   POST  /guests/manual                         - Create a guest without a Mazmo account
   GET   /guests/                               - List all known guests, optional ?q= search
+  POST  /guests/refresh-mazmo                  - Refresh every Mazmo-linked guest from Mazmo
   GET   /guests/{guest_id}                     - Get a single guest by internal id
   GET   /guests/by-mazmo-handle/{mazmo_handle} - Get a single guest by Mazmo handle
   PATCH /guests/{guest_id}/link-mazmo          - Link an existing guest to a Mazmo account
@@ -133,6 +134,67 @@ LIST_GUESTS_RESPONSES: dict[int | str, dict[str, Any]] = {
     },
     **error_401_invalid_credentials(),
     **error_403_not_approved(),
+}
+
+# -- POST /guests/refresh-mazmo ----------------------------------------------------
+
+REFRESH_MAZMO_GUESTS_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Refresh completed",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "all_found": {
+                        "summary": "Every linked guest refreshed",
+                        "value": {"total": 312, "refreshed": 312, "not_found": 0},
+                    },
+                    "some_missing": {
+                        "summary": "Mazmo left some guests out",
+                        "description": "not_found guests keep their previous data",
+                        "value": {"total": 312, "refreshed": 309, "not_found": 3},
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_not_approved(),
+    502: {
+        "description": "Mazmo API error",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "mazmo_api_error": {
+                        "summary": "Mazmo returned an HTTP error",
+                        "value": {
+                            "detail": (
+                                "Cannot refresh guests: Mazmo API returned HTTP error 503. "
+                                "No guest data was changed. Try again in a few minutes."
+                            )
+                        },
+                    },
+                }
+            }
+        },
+    },
+    504: {
+        "description": "Mazmo API timeout",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "mazmo_timeout": {
+                        "summary": "Could not connect to Mazmo",
+                        "value": {
+                            "detail": (
+                                "Cannot refresh guests: could not connect to Mazmo API. "
+                                "Error: Connection timed out. No guest data was changed. Try again in a few moments."
+                            )
+                        },
+                    },
+                }
+            }
+        },
+    },
 }
 
 # -- GET /guests/{guest_id} --------------------------------------------------------

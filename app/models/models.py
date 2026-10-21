@@ -448,6 +448,10 @@ class GuestMazmoProfile(SQLModel, table=True):
 
     synced_at records when this snapshot was last refreshed - this data
     can drift from Mazmo's live state between syncs.
+
+    mazmo_deleted marks an account removed from Mazmo. Once set, the
+    sync stops overwriting avatar/age/gender/pronoun (Mazmo clears them
+    for deleted accounts), so the last known values stay visible.
     """
 
     __tablename__ = "guest_mazmo_profile"  # type: ignore[assignment]
@@ -459,6 +463,7 @@ class GuestMazmoProfile(SQLModel, table=True):
     pronoun: str | None = Field(default=None, max_length=32)
     mazmo_suspended: bool = Field(default=False)
     mazmo_banned: bool = Field(default=False)
+    mazmo_deleted: bool = Field(default=False)
     synced_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     guest: Guest = Relationship(back_populates="mazmo_profile")
