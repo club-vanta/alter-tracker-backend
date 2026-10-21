@@ -294,6 +294,7 @@ def test_link_sync_unlink_mazmo_profile_lifecycle_end_to_end(
             pronoun="she/her",
             suspended=True,
             banned=False,
+            deleted=False,
         ),
     }
     resp = client.post(f"/organizations/{meetup.org_id}/meetups/{meetup.id}/sync", headers=admin_headers)

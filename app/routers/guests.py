@@ -4,6 +4,7 @@ Guests router - global guest identity management.
 POST  /guests/mazmo                          -> create a guest by Mazmo username (approved user)
 POST  /guests/manual                         -> create a guest without a Mazmo account (approved user)
 GET   /guests/                               -> list all known guests, optional ?q= search (approved user)
+POST  /guests/refresh-mazmo                  -> refresh every Mazmo-linked guest from Mazmo (approved user)
 GET   /guests/{guest_id}                     -> get a single guest by internal id (approved user)
 GET   /guests/by-mazmo-handle/{mazmo_handle} -> get a single guest by Mazmo handle (approved user)
 PATCH /guests/{guest_id}/link-mazmo          -> link an existing guest to a Mazmo account (approved user)
@@ -49,6 +50,7 @@ from app.openapi_examples.guests_examples import (
     LINK_MAZMO_REQUEST_EXAMPLES,
     LINK_MAZMO_RESPONSES,
     LIST_GUESTS_RESPONSES,
+    REFRESH_MAZMO_GUESTS_RESPONSES,
     UNLINK_MAZMO_RESPONSES,
     UPDATE_GUEST_REQUEST_EXAMPLES,
     UPDATE_GUEST_RESPONSES,
@@ -59,12 +61,14 @@ from app.schemas import (
     GuestDisplaynameHistoryListResponse,
     GuestDisplaynameHistoryPublic,
     GuestListResponse,
+    GuestMazmoRefreshResponse,
     GuestPublic,
     LinkMazmoRequest,
     UpdateGuestRequest,
 )
 from app.schemas.events import EventActorPublic
 from app.services.mazmo import MazmoAPIError, MazmoClient, MazmoNetworkError
+from app.services.sync import refresh_mazmo_guests
 
 log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/guests", tags=["guests"])
@@ -180,6 +184,7 @@ async def create_guest_from_mazmo(
         pronoun=mazmo_user.pronoun[:32] if mazmo_user.pronoun else None,
         mazmo_suspended=mazmo_user.suspended,
         mazmo_banned=mazmo_user.banned,
+        mazmo_deleted=mazmo_user.deleted,
     )
 
     session.add(guest)
@@ -282,6 +287,54 @@ async def list_guests(
         total=len(guests),
         guests=[GuestPublic.model_validate(g) for g in guests],
     )
+
+
+# -- Refresh every Mazmo-linked guest -----------------------------------------------
+
+
+@router.post(
+    "/refresh-mazmo",
+    response_model=GuestMazmoRefreshResponse,
+    summary="Refresh every Mazmo-linked guest from Mazmo",
+    responses=REFRESH_MAZMO_GUESTS_RESPONSES,
+)
+async def refresh_guests_from_mazmo(
+    session: Session = Depends(get_session),
+    staff: User = Depends(get_approved_user),
+    settings: Settings = Depends(get_settings),
+) -> GuestMazmoRefreshResponse:
+    """
+    Re-fetch displayname and Mazmo profile (avatar, age, gender, pronoun,
+    suspended, banned) for every guest linked to a Mazmo account.
+
+    Useful for guests synced before the Mazmo profile existed, or who
+    haven't RSVPed to a recently synced meetup. RSVPs, check-ins, and
+    payments are never touched. Mazmo is queried before anything is
+    written, so a Mazmo failure leaves every guest as it was.
+    """
+    try:
+        result = await refresh_mazmo_guests(session, settings)
+    except httpx.HTTPStatusError as exc:
+        log.error("Mazmo HTTP error during guest refresh", status_code=exc.response.status_code)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                f"Cannot refresh guests: Mazmo API returned HTTP error {exc.response.status_code}. "
+                f"No guest data was changed. Try again in a few minutes."
+            ),
+        ) from exc
+    except httpx.RequestError as exc:
+        log.error("Mazmo network error during guest refresh", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=(
+                f"Cannot refresh guests: could not connect to Mazmo API. Error: {exc}. "
+                f"No guest data was changed. Try again in a few moments."
+            ),
+        ) from exc
+
+    log.info("Guests refreshed from Mazmo", staff=staff.username, **result.model_dump())
+    return result
 
 
 # -- Get single guest -------------------------------------------------------------
@@ -462,6 +515,7 @@ async def link_guest_to_mazmo(
     profile.pronoun = mazmo_user.pronoun[:32] if mazmo_user.pronoun else None
     profile.mazmo_suspended = mazmo_user.suspended
     profile.mazmo_banned = mazmo_user.banned
+    profile.mazmo_deleted = mazmo_user.deleted
     profile.synced_at = now
     session.add(profile)
 

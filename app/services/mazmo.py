@@ -129,7 +129,7 @@ class MazmoUserWithId(NamedTuple):
     returns it as the dict key instead of a body field, so it stays out
     of MazmoUserEntry to keep that schema identical between both
     endpoints. Every other field here (username, displayname, avatar,
-    age, gender, pronoun, suspended, banned) is exactly what
+    age, gender, pronoun, suspended, banned, deleted) is exactly what
     MazmoUserEntry.model_validate() extracted - MazmoUserEntry is the
     single place that defines what fields are read from Mazmo user
     data, so a field added there is never silently dropped by one of
@@ -145,6 +145,7 @@ class MazmoUserWithId(NamedTuple):
     pronoun: str | None
     suspended: bool
     banned: bool
+    deleted: bool
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -304,6 +305,7 @@ class MazmoClient:
             pronoun=profile.pronoun,
             suspended=profile.suspended,
             banned=profile.banned,
+            deleted=profile.deleted,
         )
 
     # ── Step 2: User details (batched) ────────────────────────────────────────
@@ -311,7 +313,8 @@ class MazmoClient:
     async def fetch_users(self, user_ids: list[MazmoUserId]) -> dict[MazmoUserId, MazmoUserEntry]:
         """
         Returns a mapping of  MazmoUserId → MazmoUserEntry  for every ID
-        provided. IDs are sent in batches to avoid URL length limits.
+        provided. IDs are sent in batches to avoid URL length limits, with
+        at most mazmo_max_concurrent_requests batches in flight at once.
         """
         if not user_ids:
             return {}
@@ -326,8 +329,11 @@ class MazmoClient:
             len(batches),
         )
 
+        semaphore = asyncio.Semaphore(self._settings.mazmo_max_concurrent_requests)
+
         async def _fetch_batch(ids: list[MazmoUserId]) -> dict[str, RawUserEntry]:
-            resp = await self._client.get(url, params={"ids": ",".join(map(str, ids))})
+            async with semaphore:
+                resp = await self._client.get(url, params={"ids": ",".join(map(str, ids))})
             self._raise_for_status(resp, f"users endpoint (batch of {len(ids)})")
             return resp.json()  # type: ignore[return-value]
 

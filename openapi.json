@@ -3201,6 +3201,124 @@
         }
       }
     },
+    "/guests/refresh-mazmo": {
+      "post": {
+        "tags": [
+          "guests"
+        ],
+        "summary": "Refresh every Mazmo-linked guest from Mazmo",
+        "description": "Re-fetch displayname and Mazmo profile (avatar, age, gender, pronoun,\nsuspended, banned) for every guest linked to a Mazmo account.\n\nUseful for guests synced before the Mazmo profile existed, or who\nhaven't RSVPed to a recently synced meetup. RSVPs, check-ins, and\npayments are never touched. Mazmo is queried before anything is\nwritten, so a Mazmo failure leaves every guest as it was.",
+        "operationId": "refresh_guests_from_mazmo_guests_refresh_mazmo_post",
+        "responses": {
+          "200": {
+            "description": "Refresh completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestMazmoRefreshResponse"
+                },
+                "examples": {
+                  "all_found": {
+                    "summary": "Every linked guest refreshed",
+                    "value": {
+                      "total": 312,
+                      "refreshed": 312,
+                      "not_found": 0
+                    }
+                  },
+                  "some_missing": {
+                    "summary": "Mazmo left some guests out",
+                    "description": "not_found guests keep their previous data",
+                    "value": {
+                      "total": 312,
+                      "refreshed": 309,
+                      "not_found": 3
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Mazmo API error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "mazmo_api_error": {
+                    "summary": "Mazmo returned an HTTP error",
+                    "value": {
+                      "detail": "Cannot refresh guests: Mazmo API returned HTTP error 503. No guest data was changed. Try again in a few minutes."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Mazmo API timeout",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "mazmo_timeout": {
+                    "summary": "Could not connect to Mazmo",
+                    "value": {
+                      "detail": "Cannot refresh guests: could not connect to Mazmo API. Error: Connection timed out. No guest data was changed. Try again in a few moments."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/guests/{guest_id}": {
       "get": {
         "tags": [
@@ -8703,6 +8821,10 @@
             "type": "boolean",
             "title": "Mazmo Banned"
           },
+          "mazmo_deleted": {
+            "type": "boolean",
+            "title": "Mazmo Deleted"
+          },
           "synced_at": {
             "type": "string",
             "format": "date-time",
@@ -8717,10 +8839,35 @@
           "pronoun",
           "mazmo_suspended",
           "mazmo_banned",
+          "mazmo_deleted",
           "synced_at"
         ],
         "title": "GuestMazmoProfilePublic",
-        "description": "Snapshot of extended Mazmo profile data for a linked, synced guest.\n\nmazmo_suspended/mazmo_banned are Mazmo's own account-level flags -\nunrelated to this app's own ban system (OrganizationBan / the\nis_banned field on GuestWithBanPublic). Prefixed even here to avoid\nthat confusion once this is flattened into JSON."
+        "description": "Snapshot of extended Mazmo profile data for a linked, synced guest.\n\nmazmo_suspended/mazmo_banned are Mazmo's own account-level flags -\nunrelated to this app's own ban system (OrganizationBan / the\nis_banned field on GuestWithBanPublic). Prefixed even here to avoid\nthat confusion once this is flattened into JSON. mazmo_deleted means\nthe account no longer exists on Mazmo (its mazmo.net link 404s)."
+      },
+      "GuestMazmoRefreshResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "refreshed": {
+            "type": "integer",
+            "title": "Refreshed"
+          },
+          "not_found": {
+            "type": "integer",
+            "title": "Not Found"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "refreshed",
+          "not_found"
+        ],
+        "title": "GuestMazmoRefreshResponse",
+        "description": "Response after refreshing every Mazmo-linked guest from Mazmo.\n\ntotal counts guests with a mazmo_user_id. not_found counts the ones\nMazmo's /users endpoint left out of its response; those keep their\nprevious data."
       },
       "GuestPublic": {
         "properties": {

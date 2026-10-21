@@ -31,7 +31,8 @@ class GuestMazmoProfilePublic(BaseModel):
     mazmo_suspended/mazmo_banned are Mazmo's own account-level flags -
     unrelated to this app's own ban system (OrganizationBan / the
     is_banned field on GuestWithBanPublic). Prefixed even here to avoid
-    that confusion once this is flattened into JSON.
+    that confusion once this is flattened into JSON. mazmo_deleted means
+    the account no longer exists on Mazmo (its mazmo.net link 404s).
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -42,6 +43,7 @@ class GuestMazmoProfilePublic(BaseModel):
     pronoun: str | None
     mazmo_suspended: bool
     mazmo_banned: bool
+    mazmo_deleted: bool
     synced_at: datetime
 
 

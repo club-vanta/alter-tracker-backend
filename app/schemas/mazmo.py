@@ -71,11 +71,17 @@ class MazmoUserEntry(BaseModel):
 
     Note: The keys are string representations of user IDs.
 
-    avatar/age/gender/pronoun/suspended/banned are all optional (or
-    default to a safe value) since Mazmo may not have them set for a
+    avatar/age/gender/pronoun/suspended/banned/deleted are all optional
+    (or default to a safe value) since Mazmo may not have them set for a
     given user. suspended/banned are Mazmo's own account-level flags,
     unrelated to this app's own ban system - see GuestMazmoProfile in
     app/models/models.py.
+
+    deleted is true for an account removed from Mazmo. Such an account is
+    still returned by the batch /users endpoint (but 404s by username),
+    with username and displayname replaced by the same 64-char hex hash
+    and avatar/age/gender/pronoun cleared. The sync must never store that
+    hash as a guest's displayname.
     """
 
     model_config = ConfigDict(strict=False)
@@ -88,3 +94,4 @@ class MazmoUserEntry(BaseModel):
     pronoun: str | None = None
     suspended: bool = False
     banned: bool = False
+    deleted: bool = False

@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     # Keeps query strings short enough to avoid 414 URI Too Long errors.
     mazmo_user_batch_size: int = 30
 
+    # Maximum number of /users batch requests in flight at once. Refreshing
+    # every guest can mean dozens of batches; firing them all together
+    # risks rate limiting from Mazmo's CDN/WAF.
+    mazmo_max_concurrent_requests: int = 4
+
     # Timeout in seconds for outbound HTTP calls to Mazmo.
     # If Mazmo doesn't respond within this window the request is aborted.
     mazmo_request_timeout: float = 15.0

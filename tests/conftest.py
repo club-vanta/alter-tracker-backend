@@ -441,6 +441,7 @@ FAKE_USERS = {
         pronoun=None,
         suspended=False,
         banned=False,
+        deleted=False,
     ),
     222: SimpleNamespace(
         username="bob",
@@ -451,6 +452,7 @@ FAKE_USERS = {
         pronoun=None,
         suspended=False,
         banned=False,
+        deleted=False,
     ),
 }
 
@@ -510,6 +512,7 @@ def mock_mazmo_for_guests():
             pronoun="she/her",
             suspended=False,
             banned=False,
+            deleted=False,
         )
 
         mock_instance.__aenter__.return_value = mock_instance

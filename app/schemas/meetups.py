@@ -90,6 +90,20 @@ class SyncResponse(BaseModel):
     total_in_db: int
 
 
+class GuestMazmoRefreshResponse(BaseModel):
+    """
+    Response after refreshing every Mazmo-linked guest from Mazmo.
+
+    total counts guests with a mazmo_user_id. not_found counts the ones
+    Mazmo's /users endpoint left out of its response; those keep their
+    previous data.
+    """
+
+    total: int
+    refreshed: int
+    not_found: int
+
+
 class AttendanceStats(BaseModel):
     """Attendance counts for a meetup, excluding cancelled RSVPs."""
 
