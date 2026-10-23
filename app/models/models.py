@@ -80,6 +80,27 @@ class GuestType(StrEnum):
     STAFF = "STAFF"
 
 
+class GuestAttendanceStatus(StrEnum):
+    """
+    Outcome of one guest's RSVP to one meetup. Derived from the RSVP and
+    meetup flags, never stored: see app.services.attendance for the rule.
+
+    ATTENDED:  checked in after signing up.
+    WALKIN:    checked in at the door without signing up. Counts as attended.
+    CANCELLED: withdrew the RSVP on Mazmo and never checked in.
+    NO_SHOW:   signed up, did not cancel, and the meetup was finalized
+               without a check-in.
+    UPCOMING:  signed up and the meetup is not finalized yet, so not having
+               arrived says nothing yet.
+    """
+
+    ATTENDED = "ATTENDED"
+    WALKIN = "WALKIN"
+    CANCELLED = "CANCELLED"
+    NO_SHOW = "NO_SHOW"
+    UPCOMING = "UPCOMING"
+
+
 class GuestDisplaynameSource(StrEnum):
     """
     Origin of a recorded guest displayname value.
