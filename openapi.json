@@ -1542,6 +1542,178 @@
         }
       }
     },
+    "/organizations/{org_id}/guests/{guest_id}/meetups": {
+      "get": {
+        "tags": [
+          "organizations"
+        ],
+        "summary": "List the meetups of this organization a guest signed up for, with attendance",
+        "description": "Every meetup of this organization the guest has an RSVP for (signed up\non Mazmo, or added at the door as a walk-in), newest first, each with\nits attendance status. Meetups of other organizations never appear.\n\nA meetup only counts as a NO_SHOW once it is finalized; before that a\nguest who has not arrived is UPCOMING. Cancelling is not a no-show.\n\nReturns 404 if the organization or the guest doesn't exist. A guest\nwith no RSVPs in this organization gets an empty list.",
+        "operationId": "list_guest_meetups_organizations__org_id__guests__guest_id__meetups_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "guest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Guest Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The guest's meetups in this organization, newest first, with attendance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestMeetupAttendanceListResponse"
+                },
+                "examples": {
+                  "mixed_attendance": {
+                    "summary": "A guest who missed a finalized meetup",
+                    "value": {
+                      "total": 3,
+                      "summary": {
+                        "attended": 1,
+                        "walkin": 0,
+                        "no_show": 1,
+                        "cancelled": 0,
+                        "upcoming": 1
+                      },
+                      "meetups": [
+                        {
+                          "meetup_id": "f1e2d3c4-b5a6-7890-abcd-ef0987654321",
+                          "name": "Sadoplace Pecados",
+                          "date": "2026-10-25T23:00:00Z",
+                          "status": "UPCOMING",
+                          "rsvp_time": "2026-10-14T18:20:00Z",
+                          "guest_type": "NORMAL"
+                        },
+                        {
+                          "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                          "name": "Noche de Cuerdas",
+                          "date": "2026-10-11T23:00:00Z",
+                          "status": "NO_SHOW",
+                          "rsvp_time": "2026-10-02T15:12:00Z",
+                          "guest_type": "NORMAL"
+                        },
+                        {
+                          "meetup_id": "0a1b2c3d-4e5f-6789-abcd-ef1234567890",
+                          "name": "Munch Palermo",
+                          "date": "2026-09-25T22:00:00Z",
+                          "status": "ATTENDED",
+                          "rsvp_time": "2026-09-20T12:00:00Z",
+                          "arrival_time": "2026-09-26T00:47:00Z",
+                          "guest_type": "NORMAL"
+                        }
+                      ]
+                    }
+                  },
+                  "no_meetups": {
+                    "summary": "Guest never signed up for a meetup of this org",
+                    "value": {
+                      "total": 0,
+                      "summary": {
+                        "attended": 0,
+                        "walkin": 0,
+                        "no_show": 0,
+                        "cancelled": 0,
+                        "upcoming": 0
+                      },
+                      "meetups": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "org_not_found": {
+                    "summary": "Organization UUID does not exist",
+                    "value": {
+                      "detail": "Organization c3d4e5f6-a7b8-9012-cdef-123456789012 not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/organizations/{org_id}/guests/{guest_id}/ban": {
       "patch": {
         "tags": [
@@ -8688,6 +8860,52 @@
         "title": "EventLogPublic",
         "description": "Single event log entry for API responses.\n\nContains the full context of what happened: who did what to whom,\nwhen, and why. Relationships are expanded for convenience.\n\nFields:\n  - id: Unique event identifier\n  - event_type: What happened (see EventType in app/models/models.py for the full list)\n  - timestamp: When it happened (UTC)\n  - actor: Staff member who performed the action\n  - guest: Guest who was affected (if applicable)\n  - meetup_id: Related meetup UUID (for check-in events)\n  - reason: Why the action was taken (required for bans, optional for undos)"
       },
+      "GuestAttendanceStatus": {
+        "type": "string",
+        "enum": [
+          "ATTENDED",
+          "WALKIN",
+          "CANCELLED",
+          "NO_SHOW",
+          "UPCOMING"
+        ],
+        "title": "GuestAttendanceStatus",
+        "description": "Outcome of one guest's RSVP to one meetup. Derived from the RSVP and\nmeetup flags, never stored: see app.services.attendance for the rule.\n\nATTENDED:  checked in after signing up.\nWALKIN:    checked in at the door without signing up. Counts as attended.\nCANCELLED: withdrew the RSVP on Mazmo and never checked in.\nNO_SHOW:   signed up, did not cancel, and the meetup was finalized\n           without a check-in.\nUPCOMING:  signed up and the meetup is not finalized yet, so not having\n           arrived says nothing yet."
+      },
+      "GuestAttendanceSummary": {
+        "properties": {
+          "attended": {
+            "type": "integer",
+            "title": "Attended"
+          },
+          "walkin": {
+            "type": "integer",
+            "title": "Walkin"
+          },
+          "no_show": {
+            "type": "integer",
+            "title": "No Show"
+          },
+          "cancelled": {
+            "type": "integer",
+            "title": "Cancelled"
+          },
+          "upcoming": {
+            "type": "integer",
+            "title": "Upcoming"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attended",
+          "walkin",
+          "no_show",
+          "cancelled",
+          "upcoming"
+        ],
+        "title": "GuestAttendanceSummary",
+        "description": "Counts of a guest's meetups in one org by status.\n\nattended includes walk-ins; walkin is the subset of attended who came\nwithout signing up. attended + no_show + cancelled + upcoming == total."
+      },
       "GuestDisplaynameHistoryListResponse": {
         "properties": {
           "total": {
@@ -8868,6 +9086,85 @@
         ],
         "title": "GuestMazmoRefreshResponse",
         "description": "Response after refreshing every Mazmo-linked guest from Mazmo.\n\ntotal counts guests with a mazmo_user_id. not_found counts the ones\nMazmo's /users endpoint left out of its response; those keep their\nprevious data."
+      },
+      "GuestMeetupAttendanceListResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/GuestAttendanceSummary"
+          },
+          "meetups": {
+            "items": {
+              "$ref": "#/components/schemas/GuestMeetupAttendancePublic"
+            },
+            "type": "array",
+            "title": "Meetups"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "summary",
+          "meetups"
+        ],
+        "title": "GuestMeetupAttendanceListResponse",
+        "description": "Every meetup of one org a guest has an RSVP row for, newest first.\n\nNot paginated: a guest attends at most a few dozen meetups of one org."
+      },
+      "GuestMeetupAttendancePublic": {
+        "properties": {
+          "meetup_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Meetup Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GuestAttendanceStatus"
+          },
+          "rsvp_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Rsvp Time"
+          },
+          "arrival_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arrival Time"
+          },
+          "guest_type": {
+            "type": "string",
+            "title": "Guest Type",
+            "default": "NORMAL"
+          }
+        },
+        "type": "object",
+        "required": [
+          "meetup_id",
+          "name",
+          "date",
+          "status",
+          "rsvp_time"
+        ],
+        "title": "GuestMeetupAttendancePublic",
+        "description": "One meetup of the org that a guest signed up for or walked into, with\nits attendance outcome (see app.services.attendance).\n\nrsvp_time for a WALKIN is when staff added them at the door, not a\nsign-up."
       },
       "GuestPublic": {
         "properties": {

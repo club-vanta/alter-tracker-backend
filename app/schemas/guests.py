@@ -13,7 +13,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.models import GuestType
+from app.models.models import GuestAttendanceStatus, GuestType
 from app.schemas.events import EventActorPublic
 
 
@@ -279,3 +279,51 @@ class GuestDisplaynameHistoryListResponse(BaseModel):
 
     total: int
     history: list[GuestDisplaynameHistoryPublic]
+
+
+# -- Meetup attendance -------------------------------------------------------------
+
+
+class GuestMeetupAttendancePublic(BaseModel):
+    """
+    One meetup of the org that a guest signed up for or walked into, with
+    its attendance outcome (see app.services.attendance).
+
+    rsvp_time for a WALKIN is when staff added them at the door, not a
+    sign-up.
+    """
+
+    meetup_id: uuid.UUID
+    name: str
+    date: datetime
+    status: GuestAttendanceStatus
+    rsvp_time: datetime
+    arrival_time: datetime | None = None
+    guest_type: str = "NORMAL"
+
+
+class GuestAttendanceSummary(BaseModel):
+    """
+    Counts of a guest's meetups in one org by status.
+
+    attended includes walk-ins; walkin is the subset of attended who came
+    without signing up. attended + no_show + cancelled + upcoming == total.
+    """
+
+    attended: int
+    walkin: int
+    no_show: int
+    cancelled: int
+    upcoming: int
+
+
+class GuestMeetupAttendanceListResponse(BaseModel):
+    """
+    Every meetup of one org a guest has an RSVP row for, newest first.
+
+    Not paginated: a guest attends at most a few dozen meetups of one org.
+    """
+
+    total: int
+    summary: GuestAttendanceSummary
+    meetups: list[GuestMeetupAttendancePublic]

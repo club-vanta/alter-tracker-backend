@@ -11,6 +11,7 @@ Endpoints:
   PATCH  /organizations/{org_id}/members/{user_id}    - Change member role (SITE_ADMIN)
   DELETE /organizations/{org_id}/members/{user_id}    - Remove member (SITE_ADMIN)
   GET    /organizations/{org_id}/guests/banned        - List banned guests (org member)
+  GET    /organizations/{org_id}/guests/{id}/meetups  - A guest's meetups and attendance (org member)
   PATCH  /organizations/{org_id}/guests/{id}/ban      - Ban a guest (org admin)
   PATCH  /organizations/{org_id}/guests/{id}/unban    - Unban a guest (org admin)
 """
@@ -20,6 +21,7 @@ from typing import Any
 from app.openapi_examples._constants import (
     GUEST_BANNED_FULL,
     GUEST_NORMAL,
+    MEETUP_UUID,
     ORG_EXAMPLE,
     ORG_EXAMPLE_2,
     ORG_MEMBER_ADMIN,
@@ -377,6 +379,68 @@ LIST_BANNED_IN_ORG_RESPONSES: dict[int | str, dict[str, Any]] = {
     },
     **error_401_invalid_credentials(),
     **error_403_not_approved(),
+    **error_404_org(),
+}
+
+# -- GET /organizations/{org_id}/guests/{id}/meetups --------------------------
+
+GET_GUEST_MEETUPS_IN_ORG_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "The guest's meetups in this organization, newest first, with attendance",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "mixed_attendance": {
+                        "summary": "A guest who missed a finalized meetup",
+                        "value": {
+                            "total": 3,
+                            "summary": {"attended": 1, "walkin": 0, "no_show": 1, "cancelled": 0, "upcoming": 1},
+                            "meetups": [
+                                {
+                                    "meetup_id": "f1e2d3c4-b5a6-7890-abcd-ef0987654321",
+                                    "name": "Sadoplace Pecados",
+                                    "date": "2026-10-25T23:00:00Z",
+                                    "status": "UPCOMING",
+                                    "rsvp_time": "2026-10-14T18:20:00Z",
+                                    "arrival_time": None,
+                                    "guest_type": "NORMAL",
+                                },
+                                {
+                                    "meetup_id": MEETUP_UUID,
+                                    "name": "Noche de Cuerdas",
+                                    "date": "2026-10-11T23:00:00Z",
+                                    "status": "NO_SHOW",
+                                    "rsvp_time": "2026-10-02T15:12:00Z",
+                                    "arrival_time": None,
+                                    "guest_type": "NORMAL",
+                                },
+                                {
+                                    "meetup_id": "0a1b2c3d-4e5f-6789-abcd-ef1234567890",
+                                    "name": "Munch Palermo",
+                                    "date": "2026-09-25T22:00:00Z",
+                                    "status": "ATTENDED",
+                                    "rsvp_time": "2026-09-20T12:00:00Z",
+                                    "arrival_time": "2026-09-26T00:47:00Z",
+                                    "guest_type": "NORMAL",
+                                },
+                            ],
+                        },
+                    },
+                    "no_meetups": {
+                        "summary": "Guest never signed up for a meetup of this org",
+                        "value": {
+                            "total": 0,
+                            "summary": {"attended": 0, "walkin": 0, "no_show": 0, "cancelled": 0, "upcoming": 0},
+                            "meetups": [],
+                        },
+                    },
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_not_approved(),
+    **error_404_guest(),
     **error_404_org(),
 }
 
