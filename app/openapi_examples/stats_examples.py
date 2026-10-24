@@ -4,6 +4,8 @@ OpenAPI examples for stats router endpoints.
 Endpoints:
   GET /organizations/{org_id}/stats/attendance
   GET /organizations/{org_id}/stats/arrivals
+  GET /organizations/{org_id}/stats/demographics
+  GET /organizations/{org_id}/stats/retention
 """
 
 from typing import Any
@@ -316,6 +318,125 @@ DEMOGRAPHIC_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_respo
                         "demographics": {
                             "summary": "A period compared with the previous period",
                             "value": DEMOGRAPHIC_STATS_EXAMPLE,
+                        },
+                    }
+                }
+            },
+        }
+    },
+    error_401_invalid_credentials(),
+    error_403_admin_required(),
+    error_404_meetup(),
+    error_422_validation(),
+)
+
+
+# -- GET /organizations/{org_id}/stats/retention --
+
+# Six monthly meetups, 2026-01-01 to 2026-07-01, 40 unique guests with 88 attendances
+# between them. 16 had their first time in the period (the cohort sizes and the "new"
+# column), 24 had come before. The cohort lists run to July because "today" is in July.
+RETENTION_STATS_EXAMPLE = {
+    "summary": {
+        "attendees": 40,
+        "new_guests": 16,
+        "returning": 24,
+        "new_share": 0.4,
+        "first_timer_return_rate": 0.625,
+    },
+    "meetups": [
+        {
+            "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567801",
+            "name": "Alter Enero",
+            "date": "2026-01-10T22:00:00Z",
+            "new": 5,
+            "returning": 8,
+        },
+        {
+            "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567802",
+            "name": "Alter Febrero",
+            "date": "2026-02-07T22:00:00Z",
+            "new": 3,
+            "returning": 11,
+        },
+        {
+            "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567803",
+            "name": "Alter Marzo",
+            "date": "2026-03-07T22:00:00Z",
+            "new": 3,
+            "returning": 12,
+        },
+        {
+            "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567804",
+            "name": "Alter Abril",
+            "date": "2026-04-04T22:00:00Z",
+            "new": 2,
+            "returning": 13,
+        },
+        {
+            "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567805",
+            "name": "Alter Mayo",
+            "date": "2026-05-09T22:00:00Z",
+            "new": 2,
+            "returning": 14,
+        },
+        {
+            "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567806",
+            "name": "Alter Junio",
+            "date": "2026-06-06T22:00:00Z",
+            "new": 1,
+            "returning": 14,
+        },
+    ],
+    "cohorts": [
+        {"month": "2026-01", "size": 5, "retention": [0.6, 0.4, 0.4, 0.2, 0.4, 0.2]},
+        {"month": "2026-02", "size": 3, "retention": [0.6667, 0.3333, 0.3333, 0.0, 0.3333]},
+        {"month": "2026-03", "size": 3, "retention": [0.6667, 0.3333, 0.6667, 0.3333]},
+        {"month": "2026-04", "size": 2, "retention": [0.5, 0.5, 0.0]},
+        {"month": "2026-05", "size": 2, "retention": [0.5, 0.5]},
+        {"month": "2026-06", "size": 1, "retention": [1.0]},
+    ],
+    "frequency": [
+        {"bucket": "ONE", "guests": 16},
+        {"bucket": "TWO", "guests": 12},
+        {"bucket": "THREE_FIVE", "guests": 10},
+        {"bucket": "SIX_PLUS", "guests": 2},
+    ],
+    "lapsed": [
+        {
+            "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+            "displayname": "Lucia",
+            "attended_before": 8,
+            "last_attended": "2025-12-13T22:00:00Z",
+        },
+        {
+            "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678902",
+            "displayname": "Mateo",
+            "attended_before": 3,
+            "last_attended": "2025-12-13T22:00:00Z",
+        },
+    ],
+    "lapsed_total": 7,
+    "comparison_kind": "PREVIOUS_PERIOD",
+    "comparison": {
+        "attendees": 34,
+        "new_guests": 12,
+        "returning": 22,
+        "new_share": 0.3529,
+        "first_timer_return_rate": 0.5,
+    },
+}
+
+RETENTION_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_responses(
+    {
+        200: {
+            "description": "New and returning guests, cohorts, frequency and lapsed regulars of finalized meetups",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "retention": {
+                            "summary": "A period compared with the previous period",
+                            "value": RETENTION_STATS_EXAMPLE,
                         },
                     }
                 }

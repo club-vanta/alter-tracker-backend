@@ -10,7 +10,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.models import StatsComparisonKind, StatsLeadTimeBucket
+from app.models.models import StatsComparisonKind, StatsFrequencyBucket, StatsLeadTimeBucket
 
 # -- Attendance --
 
@@ -168,5 +168,88 @@ class DemographicStatsPublic(BaseModel):
     summary: DemographicSummaryPublic
     comparison_kind: StatsComparisonKind | None
     comparison: DemographicSummaryPublic | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# -- Retention --
+
+
+class MeetupNewReturningPublic(BaseModel):
+    """Unique attendees of one finalized meetup: new ones had their first time there."""
+
+    meetup_id: uuid.UUID
+    name: str
+    date: datetime
+    new: int
+    returning: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CohortRowPublic(BaseModel):
+    """
+    Guests whose first time was in month ("YYYY-MM", Buenos Aires). retention[i] is the
+    share of them who attended in month i + 1 after it. Months that have not happened
+    yet are left out, so the list can be shorter than 12.
+    """
+
+    month: str
+    size: int
+    retention: list[float]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FrequencyRowPublic(BaseModel):
+    """Unique guests with a number of attendances in the period, in one StatsFrequencyBucket."""
+
+    bucket: StatsFrequencyBucket
+    guests: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LapsedRegularPublic(BaseModel):
+    """A guest with several attendances before the period and none in it."""
+
+    guest_id: uuid.UUID
+    displayname: str
+    attended_before: int
+    last_attended: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RetentionSummaryPublic(BaseModel):
+    """
+    Unique guests in scope. new_share and first_timer_return_rate are null with nothing to
+    divide by; the return rate counts later attendances even after the period ends.
+    """
+
+    attendees: int
+    new_guests: int
+    returning: int
+    new_share: float | None
+    first_timer_return_rate: float | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RetentionStatsPublic(BaseModel):
+    """
+    New and returning guests, cohorts, frequency and lapsed regulars, with the figures to
+    compare against. For one meetup the lists are empty and lapsed_total is null; for a
+    period without a start, lapsed is empty and lapsed_total is null.
+    """
+
+    summary: RetentionSummaryPublic
+    meetups: list[MeetupNewReturningPublic]
+    cohorts: list[CohortRowPublic]
+    frequency: list[FrequencyRowPublic]
+    lapsed: list[LapsedRegularPublic]
+    lapsed_total: int | None
+    comparison_kind: StatsComparisonKind | None
+    comparison: RetentionSummaryPublic | None
 
     model_config = ConfigDict(from_attributes=True)
