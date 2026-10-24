@@ -279,6 +279,70 @@ def test_attendance_stats_returns_200_with_exact_totals(
     assert body["comparison"] is None
 
 
+def test_attendance_stats_returns_200_for_one_meetup_compared_with_period_average(
+    client: TestClient, session: Session, org: Organization, admin_headers: dict
+):
+    selected = _finalized_meetup(session, org, datetime(2026, 4, 5, 22, tzinfo=UTC))
+    for _ in range(3):
+        _rsvp(session, selected, has_arrived=True)
+    _rsvp(session, selected, cancelled_rsvp=True)
+    for _ in range(2):
+        _rsvp(session, selected)
+    _rsvp(session, selected, has_arrived=True, is_walkin=True)
+    other = _finalized_meetup(session, org, datetime(2026, 4, 8, 22, tzinfo=UTC))
+    for _ in range(2):
+        _rsvp(session, other, has_arrived=True)
+    for _ in range(2):
+        _rsvp(session, other)
+
+    resp = client.get(
+        _stats_url(org),
+        params={"from": "2026-04-01", "to": "2026-04-11", "meetup_id": str(selected.id)},
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json() == {
+        "meetups": [
+            {
+                "meetup_id": str(selected.id),
+                "name": selected.name,
+                "date": "2026-04-05T22:00:00",
+                "signed_up": 6,
+                "cancelled": 1,
+                "attended": 4,
+                "walkin": 1,
+                "no_show": 2,
+            }
+        ],
+        "totals": {
+            "events": 1,
+            "signed_up": 6,
+            "cancelled": 1,
+            "attended": 4,
+            "walkin": 1,
+            "no_show": 2,
+            "cancellation_rate": 0.1667,
+            "no_show_rate": 0.4,
+            "avg_signed_up_per_event": 6.0,
+            "avg_attended_per_event": 4.0,
+        },
+        "comparison_kind": "PERIOD_AVERAGE",
+        "comparison": {
+            "events": 2,
+            "signed_up": 10,
+            "cancelled": 1,
+            "attended": 6,
+            "walkin": 1,
+            "no_show": 4,
+            "cancellation_rate": 0.1,
+            "no_show_rate": 0.4444,
+            "avg_signed_up_per_event": 5.0,
+            "avg_attended_per_event": 3.0,
+        },
+    }
+
+
 def test_attendance_stats_returns_200_for_org_admin(client: TestClient, session: Session, org: Organization):
     meetup = _finalized_meetup(session, org, datetime(2026, 4, 5, 22, tzinfo=UTC))
     org_admin = make_user(session, username="org_admin")
