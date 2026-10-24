@@ -8296,7 +8296,7 @@
                           "cancelled": 4,
                           "attended": 30,
                           "walkin": 3,
-                          "no_show": 6
+                          "no_show": 9
                         },
                         {
                           "meetup_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
@@ -8315,9 +8315,9 @@
                         "cancelled": 6,
                         "attended": 61,
                         "walkin": 4,
-                        "no_show": 10,
+                        "no_show": 13,
                         "cancellation_rate": 0.0789,
-                        "no_show_rate": 0.1429,
+                        "no_show_rate": 0.1857,
                         "avg_signed_up_per_event": 38.0,
                         "avg_attended_per_event": 30.5
                       },
