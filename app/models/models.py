@@ -113,6 +113,17 @@ class StatsComparisonKind(StrEnum):
     PERIOD_AVERAGE = "PERIOD_AVERAGE"
 
 
+class StatsLeadTimeBucket(StrEnum):
+    """How many whole local days before the meetup an RSVP was made."""
+
+    SAME_DAY = "SAME_DAY"
+    ONE_DAY = "ONE_DAY"
+    TWO_THREE = "TWO_THREE"
+    FOUR_SEVEN = "FOUR_SEVEN"
+    EIGHT_FOURTEEN = "EIGHT_FOURTEEN"
+    FIFTEEN_PLUS = "FIFTEEN_PLUS"
+
+
 class GuestDisplaynameSource(StrEnum):
     """
     Origin of a recorded guest displayname value.
