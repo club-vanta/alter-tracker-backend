@@ -28,6 +28,11 @@ def ratio(numerator: int, denominator: int, digits: int) -> float | None:
     return round(numerator / denominator, digits) if denominator > 0 else None
 
 
+def as_utc(value: datetime) -> datetime:
+    """The test database returns naive datetimes, production timestamptz; both mean UTC."""
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
 class InvalidStatsPeriodError(ValueError):
     """Raised when a period's start is not strictly before its end."""
 

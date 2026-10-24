@@ -136,6 +136,15 @@ class StatsAgeBucket(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
+class StatsFrequencyBucket(StrEnum):
+    """How many times a guest attended in the selected period."""
+
+    ONE = "ONE"
+    TWO = "TWO"
+    THREE_FIVE = "THREE_FIVE"
+    SIX_PLUS = "SIX_PLUS"
+
+
 class GuestDisplaynameSource(StrEnum):
     """
     Origin of a recorded guest displayname value.

@@ -14,7 +14,7 @@ import math
 import uuid
 from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import ColumnElement, Select, select
 from sqlmodel import Session, col
@@ -31,6 +31,7 @@ from app.services.stats.scope import (
     AUDIENCE_GUEST_TYPES,
     STATS_TZ,
     StatsPeriod,
+    as_utc,
     finalized_meetup_conditions,
     ratio,
 )
@@ -193,11 +194,6 @@ class _RsvpRow:
     status: GuestAttendanceStatus | None
 
 
-def _as_utc(value: datetime) -> datetime:
-    """The test database returns naive datetimes, production timestamptz; both mean UTC."""
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-
-
 def _rsvp_query(*conditions: ColumnElement[bool]) -> Select[tuple[datetime, datetime, datetime | None, str | None]]:
     """Uses SQLAlchemy's select because sqlmodel's overloads stop at four columns."""
     return (
@@ -216,9 +212,9 @@ def _rsvp_query(*conditions: ColumnElement[bool]) -> Select[tuple[datetime, date
 def _load_rows(session: Session, *conditions: ColumnElement[bool]) -> list[_RsvpRow]:
     return [
         _RsvpRow(
-            meetup_date=_as_utc(meetup_date),
-            rsvp_time=_as_utc(rsvp_time),
-            arrival_time=_as_utc(arrival_time) if arrival_time is not None else None,
+            meetup_date=as_utc(meetup_date),
+            rsvp_time=as_utc(rsvp_time),
+            arrival_time=as_utc(arrival_time) if arrival_time is not None else None,
             status=GuestAttendanceStatus(status) if status is not None else None,
         )
         for meetup_date, rsvp_time, arrival_time, status in session.execute(_rsvp_query(*conditions)).all()
