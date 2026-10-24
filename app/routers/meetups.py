@@ -20,6 +20,7 @@ PATCH /organizations/{org_id}/meetups/{meetup_id}/unfinalize     -> unfinalize (
 """
 
 import uuid
+from collections import Counter
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -79,6 +80,7 @@ from app.schemas import (
     SyncResponse,
 )
 from app.services.mazmo import MazmoAPIError, MazmoClient, MazmoNetworkError
+from app.services.payment import PaymentStanding, payment_standing
 from app.services.sync import sync_guests
 
 log = structlog.get_logger(__name__)
@@ -447,13 +449,8 @@ async def get_meetup_stats(
     walkin_count = 0
     cancelled_count = 0
     cancelled_but_paid_count = 0
-    normal_count = 0
-    invited_count = 0
-    vendor_count = 0
-    staff_count = 0
-    paid_count = 0
-    unpaid_count = 0
-    exempt_from_payment_count = 0
+    guest_types: Counter[str] = Counter()
+    payments: Counter[PaymentStanding] = Counter()
 
     for cancelled_rsvp, has_arrived, is_walkin, guest_type, has_paid in rows:
         if cancelled_rsvp:
@@ -470,21 +467,8 @@ async def get_meetup_stats(
         if is_walkin:
             walkin_count += 1
 
-        if guest_type == GuestType.NORMAL.value:
-            normal_count += 1
-            if has_paid:
-                paid_count += 1
-            else:
-                unpaid_count += 1
-        elif guest_type == GuestType.INVITED.value:
-            invited_count += 1
-            exempt_from_payment_count += 1
-        elif guest_type == GuestType.VENDOR.value:
-            vendor_count += 1
-            exempt_from_payment_count += 1
-        elif guest_type == GuestType.STAFF.value:
-            staff_count += 1
-            exempt_from_payment_count += 1
+        guest_types[guest_type] += 1
+        payments[payment_standing(guest_type, has_paid)] += 1
 
     return MeetupStatsPublic(
         attendance=AttendanceStats(
@@ -498,15 +482,15 @@ async def get_meetup_stats(
             cancelled_but_paid_count=cancelled_but_paid_count,
         ),
         guest_types=GuestTypeStats(
-            normal_count=normal_count,
-            invited_count=invited_count,
-            vendor_count=vendor_count,
-            staff_count=staff_count,
+            normal_count=guest_types[GuestType.NORMAL],
+            invited_count=guest_types[GuestType.INVITED],
+            vendor_count=guest_types[GuestType.VENDOR],
+            staff_count=guest_types[GuestType.STAFF],
         ),
         payment=PaymentStats(
-            paid_count=paid_count,
-            unpaid_count=unpaid_count,
-            exempt_from_payment_count=exempt_from_payment_count,
+            paid_count=payments[PaymentStanding.PAID],
+            unpaid_count=payments[PaymentStanding.PENDING],
+            exempt_from_payment_count=payments[PaymentStanding.EXEMPT],
         ),
     )
 

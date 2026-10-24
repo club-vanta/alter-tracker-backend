@@ -110,10 +110,14 @@ def _clock(local_start: datetime, minutes: int) -> str:
     return (local_start + timedelta(minutes=minutes)).strftime("%H:%M")
 
 
+def floor_to_quarter_hour(moment: datetime) -> datetime:
+    """The start of the clock quarter hour that moment falls in, in moment's own time zone."""
+    return moment.replace(minute=moment.minute // BUCKET_MINUTES * BUCKET_MINUTES, second=0, microsecond=0)
+
+
 def _clock_bucket_start(local_start: datetime, offset: int) -> int:
     """Offset of the quarter hour of the local clock that the arrival falls in."""
-    arrival = local_start + timedelta(minutes=offset)
-    floored = arrival.replace(minute=arrival.minute // BUCKET_MINUTES * BUCKET_MINUTES, second=0, microsecond=0)
+    floored = floor_to_quarter_hour(local_start + timedelta(minutes=offset))
     return (floored - local_start) // timedelta(minutes=1)
 
 
