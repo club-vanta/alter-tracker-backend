@@ -38,6 +38,9 @@ from app.services.stats.scope import (
 
 BUCKET_MINUTES = 15
 FIRST_HOUR_MINUTES = 60
+# Arrivals outside this window of minutes from the start (late catch-up check-ins, clock errors) are excluded.
+MIN_OFFSET_MINUTES = -120
+MAX_OFFSET_MINUTES = 720  # exclusive
 
 # Upper day bound (inclusive) of each lead-time bucket; the last one is open.
 _LEAD_TIME_LIMITS: tuple[tuple[int, StatsLeadTimeBucket], ...] = (
@@ -68,10 +71,12 @@ class ArrivalSummary:
     """
     Offsets are minutes from the meetup start. The *_local_time fields are
     "HH:MM" only for one event's own summary. first_hour_share counts arrivals
-    before minute 60, early ones included.
+    before minute 60, early ones included. arrivals counts only the arrivals
+    inside the offset window; excluded_arrivals counts those outside it.
     """
 
     arrivals: int
+    excluded_arrivals: int
     peak: ArrivalBucket | None
     median_minutes: int | None
     p90_minutes: int | None
@@ -101,11 +106,6 @@ class ArrivalStats:
 # -- Pure functions --
 
 
-def _to_minute(local_start: datetime) -> datetime:
-    """Drop seconds so clock buckets and offsets (whole minutes) agree."""
-    return local_start.replace(second=0, microsecond=0)
-
-
 def _clock(local_start: datetime, minutes: int) -> str:
     return (local_start + timedelta(minutes=minutes)).strftime("%H:%M")
 
@@ -130,8 +130,6 @@ def arrival_curve(offsets: list[int], *, local_start: datetime | None = None) ->
     """
     if not offsets:
         return []
-    if local_start is not None:
-        local_start = _to_minute(local_start)
     if local_start is None:
         counts = Counter(offset // BUCKET_MINUTES * BUCKET_MINUTES for offset in offsets)
     else:
@@ -152,18 +150,17 @@ def _percentile(sorted_offsets: list[int], p: float) -> int:
 
 
 def summarize_arrivals(
-    offsets: list[int], curve: list[ArrivalBucket], *, local_start: datetime | None = None
+    offsets: list[int], curve: list[ArrivalBucket], *, local_start: datetime | None = None, excluded: int = 0
 ) -> ArrivalSummary:
     """Peak bucket (earliest on ties), median, p90 and first-hour share. Local times need local_start."""
     if not offsets:
-        return ArrivalSummary(0, None, None, None, None, None, None)
-    if local_start is not None:
-        local_start = _to_minute(local_start)
+        return ArrivalSummary(0, excluded, None, None, None, None, None, None)
     ordered = sorted(offsets)
     median = _percentile(ordered, 0.5)
     p90 = _percentile(ordered, 0.9)
     return ArrivalSummary(
         arrivals=len(offsets),
+        excluded_arrivals=excluded,
         peak=max(curve, key=lambda bucket: bucket.arrivals),
         median_minutes=median,
         p90_minutes=p90,
@@ -210,9 +207,10 @@ def _rsvp_query(*conditions: ColumnElement[bool]) -> Select[tuple[datetime, date
 
 
 def _load_rows(session: Session, *conditions: ColumnElement[bool]) -> list[_RsvpRow]:
+    """Meetup starts are cut to the minute so offsets, clock buckets and local times agree."""
     return [
         _RsvpRow(
-            meetup_date=as_utc(meetup_date),
+            meetup_date=as_utc(meetup_date).replace(second=0, microsecond=0),
             rsvp_time=as_utc(rsvp_time),
             arrival_time=as_utc(arrival_time) if arrival_time is not None else None,
             status=GuestAttendanceStatus(status) if status is not None else None,
@@ -226,13 +224,18 @@ def _load_rows(session: Session, *conditions: ColumnElement[bool]) -> list[_Rsvp
 _ARRIVED = (GuestAttendanceStatus.ATTENDED, GuestAttendanceStatus.WALKIN)
 
 
-def _offsets(rows: list[_RsvpRow]) -> list[int]:
-    """Whole minutes (rounded down) from each meetup start to each arrival."""
-    return [
+def _offsets(rows: list[_RsvpRow]) -> tuple[list[int], int]:
+    """
+    Whole minutes (rounded down) from each meetup start to each arrival inside
+    the offset window, and the number of arrivals left out for being outside it.
+    """
+    every = [
         (row.arrival_time - row.meetup_date) // timedelta(minutes=1)
         for row in rows
         if row.status in _ARRIVED and row.arrival_time is not None
     ]
+    included = [offset for offset in every if MIN_OFFSET_MINUTES <= offset < MAX_OFFSET_MINUTES]
+    return included, len(every) - len(included)
 
 
 def _lead_time_rows(rows: list[_RsvpRow]) -> list[LeadTimeRow]:
@@ -262,8 +265,8 @@ def _lead_time_rows(rows: list[_RsvpRow]) -> list[LeadTimeRow]:
 
 
 def _summary_of(rows: list[_RsvpRow]) -> ArrivalSummary:
-    offsets = _offsets(rows)
-    return summarize_arrivals(offsets, arrival_curve(offsets))
+    offsets, excluded = _offsets(rows)
+    return summarize_arrivals(offsets, arrival_curve(offsets), excluded=excluded)
 
 
 # -- Entry point --
@@ -289,11 +292,11 @@ def arrival_stats(
         kind = StatsComparisonKind.PREVIOUS_PERIOD if previous else None
 
     local_start = rows[0].meetup_date.astimezone(STATS_TZ) if meetup_id is not None and rows else None
-    offsets = _offsets(rows)
+    offsets, excluded = _offsets(rows)
     curve = arrival_curve(offsets, local_start=local_start)
     return ArrivalStats(
         curve=curve,
-        summary=summarize_arrivals(offsets, curve, local_start=local_start),
+        summary=summarize_arrivals(offsets, curve, local_start=local_start, excluded=excluded),
         lead_time=_lead_time_rows(rows),
         comparison_kind=kind,
         comparison=_summary_of(comparison_rows) if comparison_rows is not None else None,

@@ -79,14 +79,6 @@ def test_arrival_curve_clock_buckets_floor_to_the_quarter_hour():
     assert curve == [ArrivalBucket(-10, "22:00", 2), ArrivalBucket(5, "22:15", 1)]
 
 
-def test_arrival_curve_clock_buckets_ignore_the_start_seconds():
-    start = datetime(2026, 4, 5, 22, 50, 30, tzinfo=STATS_TZ)
-
-    curve = arrival_curve([-1, 9, 10], local_start=start)
-
-    assert curve == [ArrivalBucket(-5, "22:45", 2), ArrivalBucket(10, "23:00", 1)]
-
-
 def test_summarize_arrivals_percentiles_and_first_hour():
     summary = summarize_arrivals(OFFSETS, arrival_curve(OFFSETS))
 
@@ -112,6 +104,7 @@ def test_summarize_arrivals_empty():
     summary = summarize_arrivals([], [])
 
     assert summary.arrivals == 0
+    assert summary.excluded_arrivals == 0
     assert summary.peak is None
     assert summary.median_minutes is None
     assert summary.p90_minutes is None
@@ -196,6 +189,67 @@ def test_arrival_stats_without_arrivals_is_empty(session: Session):
         assert stats.summary.arrivals == 0
         assert stats.summary.peak is None
         assert stats.summary.first_hour_share is None
+
+
+def test_arrival_stats_excludes_arrivals_outside_the_offset_window(session: Session):
+    org = make_org(session)
+    meetup = _finalized_meetup(session, org, datetime(2026, 4, 5, 22, tzinfo=UTC))
+    for minutes in (-121, -120, 719, 720, 900):
+        _arrived(session, meetup, minutes)
+
+    for meetup_id in (None, meetup.id):
+        stats = arrival_stats(session, org.id, ALL_TIME, meetup_id)
+
+        assert stats.summary.arrivals == 2
+        assert stats.summary.excluded_arrivals == 3
+        assert (stats.curve[0].start_minute, stats.curve[-1].start_minute) == (-120, 705)
+        assert sum(b.arrivals for b in stats.curve) == 2
+        assert stats.summary.median_minutes == -120
+        assert stats.summary.p90_minutes == 719
+        assert stats.summary.first_hour_share == 0.5
+
+
+def test_arrival_stats_excludes_outliers_from_the_comparison(session: Session):
+    org = make_org(session)
+    april = _finalized_meetup(session, org, datetime(2026, 4, 5, 22, tzinfo=UTC))
+    _arrived(session, april, 10)
+    march = _finalized_meetup(session, org, datetime(2026, 3, 25, 22, tzinfo=UTC))
+    _arrived(session, march, 30)
+    _arrived(session, march, 900)
+
+    stats = arrival_stats(session, org.id, StatsPeriod(date(2026, 4, 1), date(2026, 4, 11)), None)
+
+    assert stats.comparison is not None
+    assert stats.comparison.arrivals == 1
+    assert stats.comparison.excluded_arrivals == 1
+    assert stats.comparison.median_minutes == 30
+
+
+def test_arrival_stats_only_excluded_arrivals_leaves_the_summary_empty(session: Session):
+    org = make_org(session)
+    meetup = _finalized_meetup(session, org, datetime(2026, 4, 5, 22, tzinfo=UTC))
+    _arrived(session, meetup, 900)
+
+    stats = arrival_stats(session, org.id, ALL_TIME, None)
+
+    assert stats.curve == []
+    assert stats.summary.arrivals == 0
+    assert stats.summary.excluded_arrivals == 1
+    assert stats.summary.peak is None
+
+
+def test_arrival_stats_truncates_the_start_to_the_minute(session: Session):
+    org = make_org(session)
+    start = datetime(2026, 4, 5, 22, 50, 30, tzinfo=STATS_TZ).astimezone(UTC)
+    meetup = _finalized_meetup(session, org, start)
+    arrival = datetime(2026, 4, 5, 23, 0, 10, tzinfo=STATS_TZ).astimezone(UTC)
+    _rsvp(session, meetup, has_arrived=True, arrival_time=arrival)
+
+    stats = arrival_stats(session, org.id, ALL_TIME, meetup.id)
+
+    assert stats.curve == [ArrivalBucket(10, "23:00", 1)]
+    assert stats.summary.median_minutes == 10
+    assert stats.summary.median_local_time == "23:00"
 
 
 def test_arrival_stats_lead_time_counts_and_rates(session: Session):
@@ -372,6 +426,7 @@ def test_arrival_stats_returns_200_with_exact_aggregate_body(
         ],
         "summary": {
             "arrivals": 4,
+            "excluded_arrivals": 0,
             "peak": {"start_minute": -15, "local_time": None, "arrivals": 1},
             "median_minutes": 5,
             "p90_minutes": 30,
@@ -404,6 +459,7 @@ def test_arrival_stats_returns_200_for_one_meetup_in_clock_time(
         "curve": [{"start_minute": 0, "local_time": "19:00", "arrivals": 1}],
         "summary": {
             "arrivals": 1,
+            "excluded_arrivals": 0,
             "peak": {"start_minute": 0, "local_time": "19:00", "arrivals": 1},
             "median_minutes": 10,
             "p90_minutes": 10,
@@ -415,6 +471,7 @@ def test_arrival_stats_returns_200_for_one_meetup_in_clock_time(
         "comparison_kind": "PERIOD_AVERAGE",
         "comparison": {
             "arrivals": 2,
+            "excluded_arrivals": 0,
             "peak": {"start_minute": 0, "local_time": None, "arrivals": 1},
             "median_minutes": 10,
             "p90_minutes": 50,
@@ -449,6 +506,7 @@ def test_arrival_stats_returns_empty_body_for_empty_period(client: TestClient, o
         "curve": [],
         "summary": {
             "arrivals": 0,
+            "excluded_arrivals": 0,
             "peak": None,
             "median_minutes": None,
             "p90_minutes": None,
@@ -459,4 +517,43 @@ def test_arrival_stats_returns_empty_body_for_empty_period(client: TestClient, o
         "lead_time": _lead_time(),
         "comparison_kind": None,
         "comparison": None,
+    }
+
+
+def test_arrival_stats_returns_200_with_exact_previous_period_body(
+    client: TestClient, session: Session, org: Organization, admin_headers: dict
+):
+    april = _finalized_meetup(session, org, datetime(2026, 4, 5, 22, tzinfo=UTC))
+    _arrived(session, april, 10)
+    march = _finalized_meetup(session, org, datetime(2026, 3, 25, 22, tzinfo=UTC))
+    _arrived(session, march, 30)
+    _arrived(session, march, 900)
+
+    resp = client.get(_arrivals_url(org), params={"from": "2026-04-01", "to": "2026-04-11"}, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json() == {
+        "curve": [{"start_minute": 0, "local_time": None, "arrivals": 1}],
+        "summary": {
+            "arrivals": 1,
+            "excluded_arrivals": 0,
+            "peak": {"start_minute": 0, "local_time": None, "arrivals": 1},
+            "median_minutes": 10,
+            "p90_minutes": 10,
+            "median_local_time": None,
+            "p90_local_time": None,
+            "first_hour_share": 1.0,
+        },
+        "lead_time": _lead_time(signed_up=1, no_show_rate=0.0),
+        "comparison_kind": "PREVIOUS_PERIOD",
+        "comparison": {
+            "arrivals": 1,
+            "excluded_arrivals": 1,
+            "peak": {"start_minute": 30, "local_time": None, "arrivals": 1},
+            "median_minutes": 30,
+            "p90_minutes": 30,
+            "median_local_time": None,
+            "p90_local_time": None,
+            "first_hour_share": 1.0,
+        },
     }

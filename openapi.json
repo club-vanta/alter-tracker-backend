@@ -8515,42 +8515,47 @@
                       "curve": [
                         {
                           "start_minute": -15,
-                          "arrivals": 2
+                          "arrivals": 3
                         },
                         {
                           "start_minute": 0,
-                          "arrivals": 8
+                          "arrivals": 10
                         },
                         {
                           "start_minute": 15,
-                          "arrivals": 14
+                          "arrivals": 17
                         },
                         {
                           "start_minute": 30,
-                          "arrivals": 12
+                          "arrivals": 15
                         },
                         {
                           "start_minute": 45,
-                          "arrivals": 7
+                          "arrivals": 11
                         },
                         {
                           "start_minute": 60,
-                          "arrivals": 4
+                          "arrivals": 6
                         },
                         {
                           "start_minute": 75,
-                          "arrivals": 2
+                          "arrivals": 3
+                        },
+                        {
+                          "start_minute": 90,
+                          "arrivals": 1
                         }
                       ],
                       "summary": {
-                        "arrivals": 49,
+                        "arrivals": 66,
+                        "excluded_arrivals": 2,
                         "peak": {
                           "start_minute": 15,
-                          "arrivals": 14
+                          "arrivals": 17
                         },
-                        "median_minutes": 32,
-                        "p90_minutes": 63,
-                        "first_hour_share": 0.8776
+                        "median_minutes": 33,
+                        "p90_minutes": 66,
+                        "first_hour_share": 0.8485
                       },
                       "lead_time": [
                         {
@@ -8599,6 +8604,7 @@
                       "comparison_kind": "PREVIOUS_PERIOD",
                       "comparison": {
                         "arrivals": 44,
+                        "excluded_arrivals": 1,
                         "peak": {
                           "start_minute": 15,
                           "arrivals": 12
@@ -9321,6 +9327,10 @@
             "type": "integer",
             "title": "Arrivals"
           },
+          "excluded_arrivals": {
+            "type": "integer",
+            "title": "Excluded Arrivals"
+          },
           "peak": {
             "anyOf": [
               {
@@ -9390,6 +9400,7 @@
         "type": "object",
         "required": [
           "arrivals",
+          "excluded_arrivals",
           "peak",
           "median_minutes",
           "p90_minutes",
@@ -9398,7 +9409,7 @@
           "first_hour_share"
         ],
         "title": "ArrivalSummaryPublic",
-        "description": "Offsets are minutes from the meetup start. The *_local_time fields are\n\"HH:MM\" only for one meetup's own summary. Everything but arrivals is null\nwhen nobody arrived."
+        "description": "Offsets are minutes from the meetup start. The *_local_time fields are\n\"HH:MM\" only for one meetup's own summary. arrivals counts the arrivals\nfrom 120 minutes before to 720 minutes after the start; excluded_arrivals\ncounts those outside that window, which no other field includes. The\noptional fields are null when nobody arrived inside the window."
       },
       "AttendanceStats": {
         "properties": {
