@@ -3,9 +3,11 @@
 from datetime import UTC, date, datetime
 from itertools import count
 
+from fastapi import status
+from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from app.models.models import GuestType, Meetup, Organization, StatsComparisonKind
+from app.models.models import GuestType, Meetup, Organization, OrgRole, StatsComparisonKind
 from app.services.stats.attendance import (
     MeetupAttendanceRow,
     attendance_stats,
@@ -13,7 +15,7 @@ from app.services.stats.attendance import (
     summarize_rows,
 )
 from app.services.stats.scope import StatsPeriod
-from tests.conftest import make_guest, make_meetup, make_org, make_rsvp
+from tests.conftest import get_auth_headers, make_guest, make_meetup, make_org, make_org_member, make_rsvp, make_user
 
 ALL_TIME = StatsPeriod(None, None)
 RSVP_TIME = datetime(2026, 1, 1, tzinfo=UTC)
@@ -197,3 +199,140 @@ def test_attendance_stats_single_meetup_ignores_period_bounds(session: Session):
     assert [r.meetup_id for r in stats.meetups] == [outside.id]
     assert stats.comparison is not None
     assert stats.comparison.events == 0
+
+
+# -- GET /organizations/{org_id}/stats/attendance --
+
+
+def _stats_url(org: Organization) -> str:
+    return f"/organizations/{org.id}/stats/attendance"
+
+
+def test_attendance_stats_returns_401_without_auth(client: TestClient, org: Organization):
+    resp = client.get(_stats_url(org))
+
+    assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_attendance_stats_returns_403_for_staff_member(
+    client: TestClient, session: Session, org: Organization, staff_user, staff_headers: dict
+):
+    make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
+
+    resp = client.get(_stats_url(org), headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_attendance_stats_returns_403_for_admin_of_other_org(client: TestClient, session: Session, org: Organization):
+    other_org = make_org(session, name="Other Org", slug="other-org")
+    other_admin = make_user(session, username="other_admin")
+    make_org_member(session, org=other_org, user=other_admin, role=OrgRole.ADMIN)
+    headers = get_auth_headers(client, "other_admin", "a-very-secure-passphrase")
+
+    resp = client.get(_stats_url(org), headers=headers)
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_attendance_stats_returns_200_with_exact_totals(
+    client: TestClient, session: Session, org: Organization, admin_headers: dict
+):
+    meetup = _finalized_meetup(session, org, datetime(2026, 4, 5, 22, tzinfo=UTC))
+    for _ in range(3):
+        _rsvp(session, meetup, has_arrived=True)
+    _rsvp(session, meetup, cancelled_rsvp=True)
+    for _ in range(2):
+        _rsvp(session, meetup)
+    _rsvp(session, meetup, has_arrived=True, is_walkin=True)
+    _rsvp(session, meetup, is_walkin=True)
+
+    resp = client.get(_stats_url(org), headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    body = resp.json()
+    assert body["meetups"] == [
+        {
+            "meetup_id": str(meetup.id),
+            "name": meetup.name,
+            "date": "2026-04-05T22:00:00",
+            "signed_up": 6,
+            "cancelled": 1,
+            "attended": 4,
+            "walkin": 1,
+            "no_show": 2,
+        }
+    ]
+    assert body["totals"] == {
+        "events": 1,
+        "signed_up": 6,
+        "cancelled": 1,
+        "attended": 4,
+        "walkin": 1,
+        "no_show": 2,
+        "cancellation_rate": 0.1667,
+        "no_show_rate": 0.4,
+        "avg_signed_up_per_event": 6.0,
+        "avg_attended_per_event": 4.0,
+    }
+    assert body["comparison_kind"] is None
+    assert body["comparison"] is None
+
+
+def test_attendance_stats_returns_200_for_site_admin(
+    client: TestClient, session: Session, org: Organization, site_admin_headers: dict
+):
+    _finalized_meetup(session, org, datetime(2026, 4, 5, 22, tzinfo=UTC))
+
+    resp = client.get(_stats_url(org), headers=site_admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["totals"]["events"] == 1
+
+
+def test_attendance_stats_returns_422_when_from_not_before_to(
+    client: TestClient, org: Organization, admin_headers: dict
+):
+    resp = client.get(_stats_url(org), params={"from": "2026-05-01", "to": "2026-05-01"}, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert resp.json()["detail"] == (
+        "Cannot compute stats: 'from' (2026-05-01) must be before 'to' (2026-05-01). Pick a later 'to' date."
+    )
+
+
+def test_attendance_stats_returns_404_for_unfinalized_meetup(
+    client: TestClient, session: Session, org: Organization, admin_headers: dict
+):
+    meetup = make_meetup(session, org=org, is_finalized=False)
+
+    resp = client.get(_stats_url(org), params={"meetup_id": str(meetup.id)}, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+    assert resp.json()["detail"] == (
+        f"Cannot compute stats: meetup {meetup.id} is not a finalized meetup of organization {org.id}. "
+        "List the org's meetups to find a finalized one."
+    )
+
+
+def test_attendance_stats_returns_404_for_meetup_of_other_org(
+    client: TestClient, session: Session, org: Organization, admin_headers: dict
+):
+    other_org = make_org(session, name="Other Org", slug="other-org")
+    foreign = _finalized_meetup(session, other_org, datetime(2026, 4, 5, 22, tzinfo=UTC))
+
+    resp = client.get(_stats_url(org), params={"meetup_id": str(foreign.id)}, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_attendance_stats_returns_empty_totals_for_empty_period(
+    client: TestClient, org: Organization, admin_headers: dict
+):
+    resp = client.get(_stats_url(org), headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    body = resp.json()
+    assert body["meetups"] == []
+    assert body["totals"]["events"] == 0
+    assert body["totals"]["no_show_rate"] is None

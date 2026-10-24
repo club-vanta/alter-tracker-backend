@@ -13,7 +13,7 @@ from datetime import UTC, date, datetime, time
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import ColumnElement
-from sqlmodel import select
+from sqlmodel import Session, select
 from sqlmodel.sql.expression import SelectOfScalar
 
 from app.models.models import GuestType, Meetup
@@ -80,3 +80,9 @@ def finalized_meetup_conditions(org_id: uuid.UUID, period: StatsPeriod) -> list[
 def finalized_meetups_in(org_id: uuid.UUID, period: StatsPeriod) -> SelectOfScalar[Meetup]:
     """The org's finalized meetups inside the period."""
     return select(Meetup).where(*finalized_meetup_conditions(org_id, period))
+
+
+def is_finalized_meetup_of_org(session: Session, org_id: uuid.UUID, meetup_id: uuid.UUID) -> bool:
+    """Whether meetup_id is a finalized meetup of the org (any date)."""
+    conditions = [*finalized_meetup_conditions(org_id, StatsPeriod(None, None)), Meetup.id == meetup_id]  # type: ignore[arg-type]
+    return session.exec(select(Meetup.id).where(*conditions)).first() is not None

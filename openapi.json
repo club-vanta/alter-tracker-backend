@@ -8194,6 +8194,231 @@
         }
       }
     },
+    "/organizations/{org_id}/stats/attendance": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Attendance of finalized meetups in a period",
+        "operationId": "get_attendance_stats_organizations__org_id__stats_attendance_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "First local date to include. Omit for no lower bound.",
+              "title": "From"
+            },
+            "description": "First local date to include. Omit for no lower bound."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Local date the period ends before. Omit for no upper bound.",
+              "title": "To"
+            },
+            "description": "Local date the period ends before. Omit for no upper bound."
+          },
+          {
+            "name": "meetup_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Focus on one finalized meetup instead of the whole period.",
+              "title": "Meetup Id"
+            },
+            "description": "Focus on one finalized meetup instead of the whole period."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attendance of finalized meetups in the period",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttendanceStatsPublic"
+                },
+                "examples": {
+                  "attendance": {
+                    "summary": "Two meetups compared with the previous period",
+                    "value": {
+                      "meetups": [
+                        {
+                          "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                          "name": "Alter Abril",
+                          "date": "2026-04-05T22:00:00Z",
+                          "signed_up": 40,
+                          "cancelled": 4,
+                          "attended": 30,
+                          "walkin": 3,
+                          "no_show": 6
+                        },
+                        {
+                          "meetup_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+                          "name": "Alter Abril II",
+                          "date": "2026-04-19T22:00:00Z",
+                          "signed_up": 36,
+                          "cancelled": 2,
+                          "attended": 31,
+                          "walkin": 1,
+                          "no_show": 4
+                        }
+                      ],
+                      "totals": {
+                        "events": 2,
+                        "signed_up": 76,
+                        "cancelled": 6,
+                        "attended": 61,
+                        "walkin": 4,
+                        "no_show": 10,
+                        "cancellation_rate": 0.0789,
+                        "no_show_rate": 0.1429,
+                        "avg_signed_up_per_event": 38.0,
+                        "avg_attended_per_event": 30.5
+                      },
+                      "comparison_kind": "PREVIOUS_PERIOD",
+                      "comparison": {
+                        "events": 2,
+                        "signed_up": 70,
+                        "cancelled": 7,
+                        "attended": 54,
+                        "walkin": 2,
+                        "no_show": 11,
+                        "cancellation_rate": 0.1,
+                        "no_show_rate": 0.1746,
+                        "avg_signed_up_per_event": 35.0,
+                        "avg_attended_per_event": 27.0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Org admin privileges needed",
+                    "value": {
+                      "detail": "Organization admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_required_field": {
+                    "summary": "Missing required field",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "missing",
+                          "loc": [
+                            "body",
+                            "field_name"
+                          ],
+                          "msg": "Field required",
+                          "input": {}
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/users/": {
       "get": {
         "tags": [
@@ -8378,6 +8603,136 @@
         ],
         "title": "AttendanceStats",
         "description": "Attendance counts for a meetup, excluding cancelled RSVPs."
+      },
+      "AttendanceStatsPublic": {
+        "properties": {
+          "meetups": {
+            "items": {
+              "$ref": "#/components/schemas/MeetupAttendanceRowPublic"
+            },
+            "type": "array",
+            "title": "Meetups"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/AttendanceTotalsPublic"
+          },
+          "comparison_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatsComparisonKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comparison": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttendanceTotalsPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "meetups",
+          "totals",
+          "comparison_kind",
+          "comparison"
+        ],
+        "title": "AttendanceStatsPublic",
+        "description": "Attendance per meetup and in total, with the figures to compare against."
+      },
+      "AttendanceTotalsPublic": {
+        "properties": {
+          "events": {
+            "type": "integer",
+            "title": "Events"
+          },
+          "signed_up": {
+            "type": "integer",
+            "title": "Signed Up"
+          },
+          "cancelled": {
+            "type": "integer",
+            "title": "Cancelled"
+          },
+          "attended": {
+            "type": "integer",
+            "title": "Attended"
+          },
+          "walkin": {
+            "type": "integer",
+            "title": "Walkin"
+          },
+          "no_show": {
+            "type": "integer",
+            "title": "No Show"
+          },
+          "cancellation_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancellation Rate"
+          },
+          "no_show_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Show Rate"
+          },
+          "avg_signed_up_per_event": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Signed Up Per Event"
+          },
+          "avg_attended_per_event": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Attended Per Event"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events",
+          "signed_up",
+          "cancelled",
+          "attended",
+          "walkin",
+          "no_show",
+          "cancellation_rate",
+          "no_show_rate",
+          "avg_signed_up_per_event",
+          "avg_attended_per_event"
+        ],
+        "title": "AttendanceTotalsPublic",
+        "description": "Sums over several meetups. A rate or average with nothing to divide by is null."
       },
       "BanGuestRequest": {
         "properties": {
@@ -9419,6 +9774,57 @@
         "title": "LinkMazmoRequest",
         "description": "Request body for linking an existing guest to a Mazmo account."
       },
+      "MeetupAttendanceRowPublic": {
+        "properties": {
+          "meetup_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Meetup Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date"
+          },
+          "signed_up": {
+            "type": "integer",
+            "title": "Signed Up"
+          },
+          "cancelled": {
+            "type": "integer",
+            "title": "Cancelled"
+          },
+          "attended": {
+            "type": "integer",
+            "title": "Attended"
+          },
+          "walkin": {
+            "type": "integer",
+            "title": "Walkin"
+          },
+          "no_show": {
+            "type": "integer",
+            "title": "No Show"
+          }
+        },
+        "type": "object",
+        "required": [
+          "meetup_id",
+          "name",
+          "date",
+          "signed_up",
+          "cancelled",
+          "attended",
+          "walkin",
+          "no_show"
+        ],
+        "title": "MeetupAttendanceRowPublic",
+        "description": "Audience attendance of one finalized meetup. attended includes walkin."
+      },
       "MeetupCreate": {
         "properties": {
           "name": {
@@ -10050,6 +10456,15 @@
         ],
         "title": "StaffRegisterRequest",
         "description": "Request body for staff registration.\n\nStrict mode ensures exact type matching - no coercion from strings to ints, etc.\nPassword has a minimum length of 15 characters for security."
+      },
+      "StatsComparisonKind": {
+        "type": "string",
+        "enum": [
+          "PREVIOUS_PERIOD",
+          "PERIOD_AVERAGE"
+        ],
+        "title": "StatsComparisonKind",
+        "description": "What an org statistics block is compared against.\n\nPREVIOUS_PERIOD: the period of the same length right before the selected one.\nPERIOD_AVERAGE:  one meetup compared with the whole selected period."
       },
       "SyncResponse": {
         "properties": {

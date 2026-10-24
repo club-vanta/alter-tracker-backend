@@ -78,6 +78,7 @@ from app.schemas.organizations import (
     OrgPublic,
     OrgUpdate,
 )
+from app.schemas.stats import AttendanceStatsPublic, AttendanceTotalsPublic, MeetupAttendanceRowPublic
 from app.schemas.users import UserSearchResult
 
 __all__ = [
@@ -85,6 +86,8 @@ __all__ = [
     "AddOrgMemberRequest",
     "ApproveUserRequest",
     "AttendanceStats",
+    "AttendanceStatsPublic",
+    "AttendanceTotalsPublic",
     "BanGuestRequest",
     "BannedGuestListResponse",
     "BannedGuestPublic",
@@ -116,6 +119,7 @@ __all__ = [
     "MazmoAvatarEntry",
     "MazmoRsvpEntry",
     "MazmoUserEntry",
+    "MeetupAttendanceRowPublic",
     "MeetupCreate",
     "MeetupGuestListResponse",
     "MeetupGuestPublic",
