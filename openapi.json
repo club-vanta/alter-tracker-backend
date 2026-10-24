@@ -1548,7 +1548,7 @@
           "organizations"
         ],
         "summary": "List the meetups of this organization a guest signed up for, with attendance",
-        "description": "Every meetup of this organization the guest has an RSVP for (signed up\non Mazmo, or added at the door as a walk-in), newest first, each with\nits attendance status. Meetups of other organizations never appear.\n\nA meetup only counts as a NO_SHOW once it is finalized; before that a\nguest who has not arrived is UPCOMING. Cancelling is not a no-show.\n\nReturns 404 if the organization or the guest doesn't exist. A guest\nwith no RSVPs in this organization gets an empty list.",
+        "description": "Every meetup of this organization the guest signed up for on Mazmo or\nwas checked in to as a walk-in, newest first, each with its attendance\nstatus, plus totals. Meetups of other organizations never appear.\n\nA meetup only counts as a NO_SHOW once it is finalized; before that a\nguest who has not arrived is UPCOMING. Cancelling is not a no-show.\nThe rule lives in app.services.attendance.\n\nReturns 404 if the organization or the guest doesn't exist. A guest\nwith no RSVPs in this organization gets an empty list.",
         "operationId": "list_guest_meetups_organizations__org_id__guests__guest_id__meetups_get",
         "security": [
           {
@@ -1687,10 +1687,16 @@
             }
           },
           "404": {
-            "description": "Organization not found",
+            "description": "Guest or organization not found",
             "content": {
               "application/json": {
                 "examples": {
+                  "guest_not_found": {
+                    "summary": "Guest UUID does not exist",
+                    "value": {
+                      "detail": "Cannot list meetups: guest id=e5f6a7b8-c9d0-1234-efab-345678901234 does not exist in our database. Find the guest via GET /guests/."
+                    }
+                  },
                   "org_not_found": {
                     "summary": "Organization UUID does not exist",
                     "value": {
@@ -9150,9 +9156,7 @@
             "title": "Arrival Time"
           },
           "guest_type": {
-            "type": "string",
-            "title": "Guest Type",
-            "default": "NORMAL"
+            "$ref": "#/components/schemas/GuestType"
           }
         },
         "type": "object",
@@ -9161,10 +9165,12 @@
           "name",
           "date",
           "status",
-          "rsvp_time"
+          "rsvp_time",
+          "arrival_time",
+          "guest_type"
         ],
         "title": "GuestMeetupAttendancePublic",
-        "description": "One meetup of the org that a guest signed up for or walked into, with\nits attendance outcome (see app.services.attendance).\n\nrsvp_time for a WALKIN is when staff added them at the door, not a\nsign-up."
+        "description": "One meetup of the org that a guest signed up for or walked into, with\nits attendance outcome (see app.services.attendance).\n\nrsvp_time for a WALKIN is when staff added them at the door, not a\nsign-up. Every field is always present so generated clients get them\nas required."
       },
       "GuestPublic": {
         "properties": {

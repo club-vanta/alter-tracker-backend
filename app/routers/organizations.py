@@ -16,7 +16,6 @@ PATCH  /organizations/{org_id}/guests/{id}/unban         -> unban a guest in org
 """
 
 import uuid
-from collections import Counter
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -31,9 +30,7 @@ from app.models.models import (
     EventLog,
     EventType,
     Guest,
-    GuestAttendanceStatus,
-    Meetup,
-    MeetupRsvp,
+    GuestType,
     Organization,
     OrganizationBan,
     OrgRole,
@@ -76,7 +73,7 @@ from app.schemas import (
     OrgPublic,
     OrgUpdate,
 )
-from app.services.attendance import attendance_status
+from app.services.attendance import list_guest_attendance, summarize_attendance
 
 log = structlog.get_logger(__name__)
 router = APIRouter(tags=["organizations"])
@@ -398,7 +395,7 @@ async def list_banned_guests(
     return BannedGuestListResponse(total=len(guests), guests=guests)
 
 
-# ── A guest's meetups and attendance ─────────────────────────────────────────
+# -- A guest's meetups and attendance -----------------------------------------
 
 
 @router.get(
@@ -414,12 +411,13 @@ async def list_guest_meetups(
     _member: User = Depends(get_org_member),
 ) -> GuestMeetupAttendanceListResponse:
     """
-    Every meetup of this organization the guest has an RSVP for (signed up
-    on Mazmo, or added at the door as a walk-in), newest first, each with
-    its attendance status. Meetups of other organizations never appear.
+    Every meetup of this organization the guest signed up for on Mazmo or
+    was checked in to as a walk-in, newest first, each with its attendance
+    status, plus totals. Meetups of other organizations never appear.
 
     A meetup only counts as a NO_SHOW once it is finalized; before that a
     guest who has not arrived is UPCOMING. Cancelling is not a no-show.
+    The rule lives in app.services.attendance.
 
     Returns 404 if the organization or the guest doesn't exist. A guest
     with no RSVPs in this organization gets an empty list.
@@ -428,41 +426,30 @@ async def list_guest_meetups(
     if not session.get(Guest, guest_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=(f"Guest with id={guest_id} does not exist in our database. Double-check the ID via GET /guests/."),
+            detail=(
+                f"Cannot list meetups: guest id={guest_id} does not exist in our database. "
+                f"Find the guest via GET /guests/."
+            ),
         )
 
-    rows = session.exec(
-        select(MeetupRsvp, Meetup)
-        .join(Meetup, MeetupRsvp.meetup_id == Meetup.id)  # type: ignore[arg-type]
-        .where(MeetupRsvp.guest_id == guest_id)
-        .where(Meetup.org_id == org_id)
-        .order_by(Meetup.date.desc(), Meetup.id)  # type: ignore[attr-defined]
-    ).all()
-
-    meetups = [
-        GuestMeetupAttendancePublic(
-            meetup_id=meetup.id,
-            name=meetup.name,
-            date=meetup.date,
-            status=attendance_status(rsvp, meetup),
-            rsvp_time=rsvp.rsvp_time,
-            arrival_time=rsvp.arrival_time,
-            guest_type=rsvp.guest_type,
-        )
-        for rsvp, meetup in rows
-    ]
-    counts = Counter(m.status for m in meetups)
+    attendance = list_guest_attendance(session, org_id, guest_id)
+    counts = summarize_attendance(a.status for a in attendance)
 
     return GuestMeetupAttendanceListResponse(
-        total=len(meetups),
-        summary=GuestAttendanceSummary(
-            attended=counts[GuestAttendanceStatus.ATTENDED] + counts[GuestAttendanceStatus.WALKIN],
-            walkin=counts[GuestAttendanceStatus.WALKIN],
-            no_show=counts[GuestAttendanceStatus.NO_SHOW],
-            cancelled=counts[GuestAttendanceStatus.CANCELLED],
-            upcoming=counts[GuestAttendanceStatus.UPCOMING],
-        ),
-        meetups=meetups,
+        total=len(attendance),
+        summary=GuestAttendanceSummary.model_validate(counts),
+        meetups=[
+            GuestMeetupAttendancePublic(
+                meetup_id=a.meetup.id,
+                name=a.meetup.name,
+                date=a.meetup.date,
+                status=a.status,
+                rsvp_time=a.rsvp.rsvp_time,
+                arrival_time=a.rsvp.arrival_time,
+                guest_type=GuestType(a.rsvp.guest_type),
+            )
+            for a in attendance
+        ],
     )
 
 

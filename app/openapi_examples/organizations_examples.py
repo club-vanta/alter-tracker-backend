@@ -21,6 +21,7 @@ from typing import Any
 from app.openapi_examples._constants import (
     GUEST_BANNED_FULL,
     GUEST_NORMAL,
+    GUEST_UUID,
     MEETUP_UUID,
     ORG_EXAMPLE,
     ORG_EXAMPLE_2,
@@ -37,6 +38,7 @@ from app.openapi_examples._error_responses import (
     error_409_already_banned,
     error_409_not_banned,
     error_422_validation_reason,
+    merge_error_responses,
 )
 
 # -- POST /organizations/ -----------------------------------------------------
@@ -440,8 +442,29 @@ GET_GUEST_MEETUPS_IN_ORG_RESPONSES: dict[int | str, dict[str, Any]] = {
     },
     **error_401_invalid_credentials(),
     **error_403_not_approved(),
-    **error_404_guest(),
-    **error_404_org(),
+    **merge_error_responses(
+        {
+            404: {
+                "description": "Guest or organization not found",
+                "content": {
+                    "application/json": {
+                        "examples": {
+                            "guest_not_found": {
+                                "summary": "Guest UUID does not exist",
+                                "value": {
+                                    "detail": (
+                                        f"Cannot list meetups: guest id={GUEST_UUID} does not exist in our "
+                                        f"database. Find the guest via GET /guests/."
+                                    )
+                                },
+                            },
+                        }
+                    }
+                },
+            }
+        },
+        error_404_org(),
+    ),
 }
 
 # -- PATCH /organizations/{org_id}/guests/{id}/ban ----------------------------

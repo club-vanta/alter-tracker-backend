@@ -290,16 +290,19 @@ class GuestMeetupAttendancePublic(BaseModel):
     its attendance outcome (see app.services.attendance).
 
     rsvp_time for a WALKIN is when staff added them at the door, not a
-    sign-up.
+    sign-up. Every field is always present so generated clients get them
+    as required.
     """
+
+    model_config = ConfigDict(from_attributes=True)
 
     meetup_id: uuid.UUID
     name: str
     date: datetime
     status: GuestAttendanceStatus
     rsvp_time: datetime
-    arrival_time: datetime | None = None
-    guest_type: str = "NORMAL"
+    arrival_time: datetime | None
+    guest_type: GuestType
 
 
 class GuestAttendanceSummary(BaseModel):
@@ -309,6 +312,8 @@ class GuestAttendanceSummary(BaseModel):
     attended includes walk-ins; walkin is the subset of attended who came
     without signing up. attended + no_show + cancelled + upcoming == total.
     """
+
+    model_config = ConfigDict(from_attributes=True)
 
     attended: int
     walkin: int

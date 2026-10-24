@@ -264,7 +264,9 @@ class MeetupRsvp(SQLModel, table=True):
     __tablename__ = "meetup_rsvps"  # type: ignore[assignment]
 
     meetup_id: uuid.UUID = Field(foreign_key="meetups.id", primary_key=True)
-    guest_id: uuid.UUID = Field(foreign_key="guests.id", primary_key=True)
+    # Indexed on its own: the PK leads with meetup_id, so "all RSVPs of one
+    # guest" (the guest profile attendance list) could not use it.
+    guest_id: uuid.UUID = Field(foreign_key="guests.id", primary_key=True, index=True)
 
     rsvp_time: datetime
     cancelled_rsvp: bool = Field(default=False)
