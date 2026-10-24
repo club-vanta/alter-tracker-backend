@@ -14,7 +14,6 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import ColumnElement
 from sqlmodel import Session, select
-from sqlmodel.sql.expression import SelectOfScalar
 
 from app.models.models import GuestType, Meetup
 
@@ -52,8 +51,8 @@ class StatsPeriod:
     def utc_bounds(self) -> tuple[datetime | None, datetime | None]:
         """Local midnight of each date, converted to UTC."""
         return (
-            _local_midnight_utc(self.start) if self.start else None,
-            _local_midnight_utc(self.end) if self.end else None,
+            _local_midnight_utc(self.start) if self.start is not None else None,
+            _local_midnight_utc(self.end) if self.end is not None else None,
         )
 
     def previous(self) -> "StatsPeriod | None":
@@ -75,11 +74,6 @@ def finalized_meetup_conditions(org_id: uuid.UUID, period: StatsPeriod) -> list[
     if end is not None:
         conditions.append(Meetup.date < end)  # type: ignore[arg-type]
     return conditions
-
-
-def finalized_meetups_in(org_id: uuid.UUID, period: StatsPeriod) -> SelectOfScalar[Meetup]:
-    """The org's finalized meetups inside the period."""
-    return select(Meetup).where(*finalized_meetup_conditions(org_id, period))
 
 
 def is_finalized_meetup_of_org(session: Session, org_id: uuid.UUID, meetup_id: uuid.UUID) -> bool:
