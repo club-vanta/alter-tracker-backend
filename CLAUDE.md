@@ -503,3 +503,22 @@ format         # ruff format
 7. **Tests con real DB**: nunca mockear la sesión/DB en tests.
 8. **Error messages accionables**: siempre decir qué falló, por qué, y qué hacer.
 9. **Solo ASCII en strings, comentarios y documentacion**: usar solo caracteres ASCII basicos. No usar em-dashes, flechas Unicode, ni otros caracteres especiales no-ASCII. Usar `-` en lugar de em-dash, `->` en lugar de flecha Unicode, etc.
+10. **Calidad de PR senior**: todo cambio tiene que estar bien configurado, ser eficiente y modular, y aprobar el review de un senior. "Funciona" no alcanza:
+    - Seguir las capas y los patrones de este documento. Sin codigo duplicado, codigo muerto ni logs de debug.
+    - Logica nueva con tests, y bug fixes con un test que falle sin el fix.
+    - Antes de dar algo por terminado tienen que pasar `basedpyright`, `lint` y `run-tests`.
+    - En cambios no triviales, correr un agente de review (por ejemplo `/code-review`) sobre el diff antes de abrir el PR. Revisa correctitud, calidad del codigo y arquitectura. Corregir los hallazgos reales, rebatir los incorrectos con una razon, y recien ahi abrir el PR.
+
+---
+
+## Lecciones de reviews anteriores
+
+Cada punto fue un hallazgo real en un PR anterior. Revisarlos antes de pedir review.
+
+- **Reglas de negocio en services, no en routers.** Conteos y clasificaciones van en el service (ejemplo: `summarize_attendance` en `app/services/attendance.py`). El router solo mapea el resultado al schema de respuesta. Si la regla esta en el router, la proxima feature la copia.
+- **Response schemas sin defaults en campos que siempre se completan.** Un default (`= None`, `= "NORMAL"`) hace que OpenAPI marque el campo como opcional y el frontend recibe tipos opcionales. Usar el enum del dominio (`GuestType`), no `str`.
+- **Combinar respuestas OpenAPI con `merge_error_responses`**, nunca con `**`. Dos errores con el mismo status (dos 404) se pisan y uno desaparece del `openapi.json`.
+- **Indices para patrones de query nuevos.** Si una query filtra por una columna que no es la primera de la PK o de un indice (ejemplo: `meetup_rsvps.guest_id`), agregar `index=True` y la migration.
+- **Cada fila de la tabla de reglas del spec tiene su test.** El caso walk-in sin check-in quedo sin test y aparecio como NO_SHOW incorrecto en el review.
+- **Tests de cada ruta nueva**: incluir `test_..._returns_401_without_auth`, y verificar valores concretos (timestamps, conteos), no solo `is not None`.
+- **Separadores de seccion en ASCII**: `# -- Seccion --`, no caracteres de dibujo de cajas.
