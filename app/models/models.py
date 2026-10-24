@@ -101,6 +101,18 @@ class GuestAttendanceStatus(StrEnum):
     UPCOMING = "UPCOMING"
 
 
+class StatsComparisonKind(StrEnum):
+    """
+    What an org statistics block is compared against.
+
+    PREVIOUS_PERIOD: the period of the same length right before the selected one.
+    PERIOD_AVERAGE:  one meetup compared with the whole selected period.
+    """
+
+    PREVIOUS_PERIOD = "PREVIOUS_PERIOD"
+    PERIOD_AVERAGE = "PERIOD_AVERAGE"
+
+
 class GuestDisplaynameSource(StrEnum):
     """
     Origin of a recorded guest displayname value.
