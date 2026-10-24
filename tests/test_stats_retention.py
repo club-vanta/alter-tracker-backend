@@ -1,7 +1,9 @@
 """Tests for the org retention statistics service."""
 
+import uuid
 from datetime import UTC, date, datetime
 from itertools import count
+from typing import Any
 
 from sqlmodel import Session
 
@@ -44,12 +46,12 @@ def _guest(session: Session) -> Guest:
     return make_guest(session, mazmo_user_id=n, mazmo_handle=f"guest{n}", displayname=f"Guest {n}")
 
 
-def _attend(session: Session, guest: Guest, *meetups: Meetup, **kwargs) -> None:
+def _attend(session: Session, guest: Guest, *meetups: Meetup, **kwargs: Any) -> None:
     for meetup in meetups:
         make_rsvp(session, meetup=meetup, guest=guest, has_arrived=True, **kwargs)
 
 
-def _stats(session: Session, org: Organization, period: StatsPeriod, meetup_id=None):
+def _stats(session: Session, org: Organization, period: StatsPeriod, meetup_id: uuid.UUID | None = None):
     return retention_stats(session, org.id, period, meetup_id, today=TODAY)
 
 
@@ -173,7 +175,45 @@ def test_retention_meetups_in_date_order(session: Session):
     assert stats.meetups[0].date.tzinfo is not None
 
 
+def test_retention_same_start_time_counts_the_guest_once_as_new(session: Session):
+    org = make_org(session)
+    first, second = _meetup(session, org, 3), _meetup(session, org, 3)
+    guest = _guest(session)
+    _attend(session, guest, first, second)
+
+    stats = _stats(session, org, MARCH)
+
+    assert stats.summary == RetentionSummary(
+        attendees=1, new_guests=1, returning=0, new_share=1.0, first_timer_return_rate=1.0
+    )
+    assert sorted((m.new, m.returning) for m in stats.meetups) == [(0, 1), (1, 0)]
+
+
+def test_retention_invited_counts_as_audience_and_vendor_does_not(session: Session):
+    org = make_org(session)
+    march = _meetup(session, org, 3)
+    invited, vendor = _guest(session), _guest(session)
+    _attend(session, invited, march, guest_type=GuestType.INVITED.value)
+    _attend(session, vendor, march, guest_type=GuestType.VENDOR.value)
+
+    stats = _stats(session, org, MARCH)
+
+    assert (stats.summary.attendees, stats.summary.new_guests) == (1, 1)
+
+
 # -- cohorts --
+
+
+def test_retention_all_time_cohorts_are_ordered_by_month(session: Session):
+    org = make_org(session)
+    january, february = _meetup(session, org, 1), _meetup(session, org, 2)
+    first, second = _guest(session), _guest(session)
+    _attend(session, second, february)
+    _attend(session, first, january, february)
+
+    stats = retention_stats(session, org.id, ALL_TIME, None, today=date(2026, 3, 15))
+
+    assert stats.cohorts == [CohortRow("2026-01", 1, [1.0, 0.0]), CohortRow("2026-02", 1, [0.0])]
 
 
 def test_retention_cohorts_by_month(session: Session):

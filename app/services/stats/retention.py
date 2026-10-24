@@ -6,9 +6,9 @@ An attendance is an audience RSVP (NORMAL, INVITED) with status ATTENDED or
 WALKIN, from attendance_status_expr, on a finalized meetup of the org. Every
 metric counts unique guests. A guest's first time is their earliest
 attendance in the org over all time, so it never depends on the selected
-period: the attendances of all time are one CTE, first and last dates come
-from window functions over it, and the period or the one meetup is a filter
-on top.
+period: the attendances of all time are one CTE, the first-time flag, the
+first date and the total count come from window functions over it, and the
+period or the one meetup is a filter on top.
 """
 
 import uuid
@@ -133,16 +133,21 @@ def frequency_bucket(attendances: int) -> StatsFrequencyBucket:
 def _attendances(org_id: uuid.UUID) -> CTE:
     """
     Every audience attendance of the org's finalized meetups of all time, with
-    the guest's first and last attendance date. One RSVP per guest per meetup,
-    so date == first_date marks exactly the guest's first time.
+    is_first (the guest's earliest attendance, by date then meetup id, so two
+    meetups at the same start time still give one first time), the date of that
+    first attendance, and the guest's total attendances.
     """
+    guest = col(MeetupRsvp.guest_id)
     return (
         select(
             col(MeetupRsvp.guest_id).label("guest_id"),
             col(Meetup.id).label("meetup_id"),
             col(Meetup.date).label("date"),
-            func.min(Meetup.date).over(partition_by=col(MeetupRsvp.guest_id)).label("first_date"),
-            func.max(Meetup.date).over(partition_by=col(MeetupRsvp.guest_id)).label("last_date"),
+            (func.row_number().over(partition_by=guest, order_by=[col(Meetup.date), col(Meetup.id)]) == 1).label(
+                "is_first"
+            ),
+            func.min(Meetup.date).over(partition_by=guest).label("first_date"),
+            func.count().over(partition_by=guest).label("total"),
         )
         .select_from(Meetup)
         .join(MeetupRsvp, MeetupRsvp.meetup_id == Meetup.id)  # type: ignore[arg-type]
@@ -177,12 +182,11 @@ def _scope(att: CTE, period: StatsPeriod, meetup_id: uuid.UUID | None) -> list[C
 
 
 def _summary(session: Session, att: CTE, scope: list[ColumnElement[bool]]) -> RetentionSummary:
-    first_time = att.c.date == att.c.first_date
     attendees, new_guests, came_back = session.execute(
         select(
             func.count(att.c.guest_id.distinct()),
-            func.count(att.c.guest_id.distinct()).filter(first_time),
-            func.count(att.c.guest_id.distinct()).filter(first_time, att.c.last_date > att.c.first_date),
+            func.count(att.c.guest_id.distinct()).filter(att.c.is_first),
+            func.count(att.c.guest_id.distinct()).filter(att.c.is_first, att.c.total > 1),
         ).where(*scope)
     ).one()
     return RetentionSummary(
@@ -204,8 +208,8 @@ def _meetups(session: Session, att: CTE, org_id: uuid.UUID, period: StatsPeriod)
             col(Meetup.id),
             col(Meetup.name),
             col(Meetup.date),
-            func.count(att.c.guest_id).filter(att.c.date == att.c.first_date),
-            func.count(att.c.guest_id).filter(att.c.date > att.c.first_date),
+            func.count(att.c.guest_id).filter(att.c.is_first),
+            func.count(att.c.guest_id).filter(att.c.is_first.is_(False)),
         )
         .select_from(Meetup)
         .outerjoin(att, att.c.meetup_id == Meetup.id)
@@ -280,8 +284,15 @@ def _lapsed(session: Session, att: CTE, period: StatsPeriod) -> tuple[list[Lapse
     before = att.c.date < start
     attended_before = func.count().filter(before)
     last_attended = func.max(att.c.date).filter(before)
+    total = func.count().over().label("lapsed_total")
     query = (
-        select(att.c.guest_id, col(Guest.displayname), attended_before, last_attended, func.count().over())
+        select(
+            att.c.guest_id,
+            col(Guest.displayname).label("displayname"),
+            attended_before.label("attended_before"),
+            last_attended.label("last_attended"),
+            total,
+        )
         .select_from(att)
         .join(Guest, Guest.id == att.c.guest_id)  # type: ignore[arg-type]
         .group_by(att.c.guest_id, col(Guest.displayname))
@@ -291,10 +302,15 @@ def _lapsed(session: Session, att: CTE, period: StatsPeriod) -> tuple[list[Lapse
     )
     rows = session.execute(query).all()
     lapsed = [
-        LapsedRegular(guest_id=guest_id, displayname=name, attended_before=times, last_attended=as_utc(last))
-        for guest_id, name, times, last, _ in rows
+        LapsedRegular(
+            guest_id=row.guest_id,
+            displayname=row.displayname,
+            attended_before=row.attended_before,
+            last_attended=as_utc(row.last_attended),
+        )
+        for row in rows
     ]
-    return lapsed, rows[0][4] if rows else 0
+    return lapsed, rows[0].lapsed_total if rows else 0
 
 
 # -- Entry point --
