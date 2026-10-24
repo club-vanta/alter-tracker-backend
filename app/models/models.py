@@ -124,6 +124,18 @@ class StatsLeadTimeBucket(StrEnum):
     FIFTEEN_PLUS = "FIFTEEN_PLUS"
 
 
+class StatsAgeBucket(StrEnum):
+    """Age range of an attendee, from the Mazmo profile. UNKNOWN covers missing and implausible ages."""
+
+    AGE_18_24 = "AGE_18_24"
+    AGE_25_29 = "AGE_25_29"
+    AGE_30_34 = "AGE_30_34"
+    AGE_35_39 = "AGE_35_39"
+    AGE_40_49 = "AGE_40_49"
+    AGE_50_PLUS = "AGE_50_PLUS"
+    UNKNOWN = "UNKNOWN"
+
+
 class GuestDisplaynameSource(StrEnum):
     """
     Origin of a recorded guest displayname value.
