@@ -5,6 +5,7 @@ GET /organizations/{org_id}/stats/attendance -> attendance per meetup and in tot
 """
 
 import uuid
+from dataclasses import dataclass
 from datetime import date
 from typing import Annotated
 
@@ -22,13 +23,15 @@ from app.services.stats.scope import InvalidStatsPeriodError, StatsPeriod, is_fi
 router = APIRouter(tags=["stats"])
 
 
-@router.get(
-    "/organizations/{org_id}/stats/attendance",
-    response_model=AttendanceStatsPublic,
-    summary="Attendance of finalized meetups in a period",
-    responses=ATTENDANCE_STATS_RESPONSES,
-)
-async def get_attendance_stats(
+@dataclass(frozen=True)
+class StatsScope:
+    """The validated period and optional meetup focus shared by every stats endpoint."""
+
+    period: StatsPeriod
+    meetup_id: uuid.UUID | None
+
+
+def stats_scope(
     org_id: uuid.UUID,
     from_date: Annotated[
         date | None, Query(alias="from", description="First local date to include. Omit for no lower bound.")
@@ -40,8 +43,9 @@ async def get_attendance_stats(
         uuid.UUID | None, Query(description="Focus on one finalized meetup instead of the whole period.")
     ] = None,
     session: Session = Depends(get_session),
+    # Declared so FastAPI resolves auth first: 401/403 must win over this dependency's 404/422.
     _admin: User = Depends(get_org_admin),
-) -> AttendanceStatsPublic:
+) -> StatsScope:
     try:
         period = StatsPeriod(from_date, to_date)
     except InvalidStatsPeriodError:
@@ -61,4 +65,19 @@ async def get_attendance_stats(
             ),
         )
 
-    return AttendanceStatsPublic.model_validate(attendance_stats(session, org_id, period, meetup_id))
+    return StatsScope(period=period, meetup_id=meetup_id)
+
+
+@router.get(
+    "/organizations/{org_id}/stats/attendance",
+    response_model=AttendanceStatsPublic,
+    summary="Attendance of finalized meetups in a period",
+    responses=ATTENDANCE_STATS_RESPONSES,
+)
+async def get_attendance_stats(
+    org_id: uuid.UUID,
+    scope: StatsScope = Depends(stats_scope),
+    session: Session = Depends(get_session),
+    _admin: User = Depends(get_org_admin),
+) -> AttendanceStatsPublic:
+    return AttendanceStatsPublic.model_validate(attendance_stats(session, org_id, scope.period, scope.meetup_id))
