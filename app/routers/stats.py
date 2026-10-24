@@ -3,6 +3,7 @@ Stats router - org-scoped statistics over finalized meetups.
 
 GET /organizations/{org_id}/stats/attendance -> attendance per meetup and in total (org admin)
 GET /organizations/{org_id}/stats/arrivals   -> arrival times and sign-up lead time (org admin)
+GET /organizations/{org_id}/stats/demographics -> gender and age of attendees (org admin)
 """
 
 import uuid
@@ -16,10 +17,15 @@ from sqlmodel import Session
 from app.core.database import get_session
 from app.core.deps import get_org_admin
 from app.models.models import User
-from app.openapi_examples.stats_examples import ARRIVAL_STATS_RESPONSES, ATTENDANCE_STATS_RESPONSES
-from app.schemas import ArrivalStatsPublic, AttendanceStatsPublic
+from app.openapi_examples.stats_examples import (
+    ARRIVAL_STATS_RESPONSES,
+    ATTENDANCE_STATS_RESPONSES,
+    DEMOGRAPHIC_STATS_RESPONSES,
+)
+from app.schemas import ArrivalStatsPublic, AttendanceStatsPublic, DemographicStatsPublic
 from app.services.stats.arrivals import arrival_stats
 from app.services.stats.attendance import attendance_stats
+from app.services.stats.demographics import demographic_stats
 from app.services.stats.scope import InvalidStatsPeriodError, StatsPeriod, is_finalized_meetup_of_org
 
 router = APIRouter(tags=["stats"])
@@ -98,3 +104,18 @@ async def get_arrival_stats(
     _admin: User = Depends(get_org_admin),
 ) -> ArrivalStatsPublic:
     return ArrivalStatsPublic.model_validate(arrival_stats(session, org_id, scope.period, scope.meetup_id))
+
+
+@router.get(
+    "/organizations/{org_id}/stats/demographics",
+    response_model=DemographicStatsPublic,
+    summary="Gender and age of the people who attend finalized meetups",
+    responses=DEMOGRAPHIC_STATS_RESPONSES,
+)
+async def get_demographic_stats(
+    org_id: uuid.UUID,
+    scope: StatsScope = Depends(stats_scope),
+    session: Session = Depends(get_session),
+    _admin: User = Depends(get_org_admin),
+) -> DemographicStatsPublic:
+    return DemographicStatsPublic.model_validate(demographic_stats(session, org_id, scope.period, scope.meetup_id))

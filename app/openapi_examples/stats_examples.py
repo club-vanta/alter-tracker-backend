@@ -152,3 +152,175 @@ ARRIVAL_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_responses
     error_404_meetup(),
     error_422_validation(),
 )
+
+
+# -- GET /organizations/{org_id}/stats/demographics --
+
+DEMOGRAPHIC_STATS_EXAMPLE = {
+    "gender": [
+        {
+            "key": "MALE",
+            "attended": 36,
+            "expected": 42,
+            "no_show": 7,
+            "no_show_rate": 0.1667,
+            "attended_share": 0.45,
+            "expected_share": 0.4468,
+        },
+        {
+            "key": "WOMAN_CIS",
+            "attended": 28,
+            "expected": 33,
+            "no_show": 6,
+            "no_show_rate": 0.1818,
+            "attended_share": 0.35,
+            "expected_share": 0.3511,
+        },
+        {
+            "key": "UNDEFINED",
+            "attended": 6,
+            "expected": 7,
+            "no_show": 1,
+            "no_show_rate": 0.1429,
+            "attended_share": 0.075,
+            "expected_share": 0.0745,
+        },
+        {
+            "key": None,
+            "attended": 10,
+            "expected": 12,
+            "no_show": 2,
+            "no_show_rate": 0.1667,
+            "attended_share": 0.125,
+            "expected_share": 0.1277,
+        },
+    ],
+    "age": [
+        {
+            "key": "AGE_18_24",
+            "attended": 16,
+            "expected": 20,
+            "no_show": 4,
+            "no_show_rate": 0.2,
+            "attended_share": 0.2,
+            "expected_share": 0.2128,
+        },
+        {
+            "key": "AGE_25_29",
+            "attended": 20,
+            "expected": 23,
+            "no_show": 4,
+            "no_show_rate": 0.1739,
+            "attended_share": 0.25,
+            "expected_share": 0.2447,
+        },
+        {
+            "key": "AGE_30_34",
+            "attended": 14,
+            "expected": 16,
+            "no_show": 3,
+            "no_show_rate": 0.1875,
+            "attended_share": 0.175,
+            "expected_share": 0.1702,
+        },
+        {
+            "key": "AGE_35_39",
+            "attended": 8,
+            "expected": 9,
+            "no_show": 1,
+            "no_show_rate": 0.1111,
+            "attended_share": 0.1,
+            "expected_share": 0.0957,
+        },
+        {
+            "key": "AGE_40_49",
+            "attended": 8,
+            "expected": 9,
+            "no_show": 1,
+            "no_show_rate": 0.1111,
+            "attended_share": 0.1,
+            "expected_share": 0.0957,
+        },
+        {
+            "key": "AGE_50_PLUS",
+            "attended": 4,
+            "expected": 5,
+            "no_show": 1,
+            "no_show_rate": 0.2,
+            "attended_share": 0.05,
+            "expected_share": 0.0532,
+        },
+        {
+            "key": "UNKNOWN",
+            "attended": 10,
+            "expected": 12,
+            "no_show": 2,
+            "no_show_rate": 0.1667,
+            "attended_share": 0.125,
+            "expected_share": 0.1277,
+        },
+    ],
+    "summary": {
+        "attended": 80,
+        "median_age": 28.5,
+        "known_age_share": 0.875,
+        "gender_shares": [
+            {"key": "MALE", "attended_share": 0.45},
+            {"key": "WOMAN_CIS", "attended_share": 0.35},
+            {"key": "UNDEFINED", "attended_share": 0.075},
+            {"key": None, "attended_share": 0.125},
+        ],
+        "age_shares": [
+            {"key": "AGE_18_24", "attended_share": 0.2},
+            {"key": "AGE_25_29", "attended_share": 0.25},
+            {"key": "AGE_30_34", "attended_share": 0.175},
+            {"key": "AGE_35_39", "attended_share": 0.1},
+            {"key": "AGE_40_49", "attended_share": 0.1},
+            {"key": "AGE_50_PLUS", "attended_share": 0.05},
+            {"key": "UNKNOWN", "attended_share": 0.125},
+        ],
+    },
+    "comparison_kind": "PREVIOUS_PERIOD",
+    "comparison": {
+        "attended": 72,
+        "median_age": 29.0,
+        "known_age_share": 0.8611,
+        "gender_shares": [
+            {"key": "MALE", "attended_share": 0.4722},
+            {"key": "WOMAN_CIS", "attended_share": 0.3333},
+            {"key": "UNDEFINED", "attended_share": 0.0556},
+            {"key": None, "attended_share": 0.1389},
+        ],
+        "age_shares": [
+            {"key": "AGE_18_24", "attended_share": 0.1944},
+            {"key": "AGE_25_29", "attended_share": 0.25},
+            {"key": "AGE_30_34", "attended_share": 0.1667},
+            {"key": "AGE_35_39", "attended_share": 0.1111},
+            {"key": "AGE_40_49", "attended_share": 0.0833},
+            {"key": "AGE_50_PLUS", "attended_share": 0.0556},
+            {"key": "UNKNOWN", "attended_share": 0.1389},
+        ],
+    },
+}
+
+DEMOGRAPHIC_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_responses(
+    {
+        200: {
+            "description": "Gender and age of the people who attended finalized meetups in the period",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "demographics": {
+                            "summary": "A period compared with the previous period",
+                            "value": DEMOGRAPHIC_STATS_EXAMPLE,
+                        },
+                    }
+                }
+            },
+        }
+    },
+    error_401_invalid_credentials(),
+    error_403_admin_required(),
+    error_404_meetup(),
+    error_422_validation(),
+)

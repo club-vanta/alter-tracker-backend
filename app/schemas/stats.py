@@ -114,3 +114,56 @@ class ArrivalStatsPublic(BaseModel):
     comparison: ArrivalSummaryPublic | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# -- Demographics --
+
+
+class DemographicGroupPublic(BaseModel):
+    """
+    One gender or age group of audience RSVPs. key is a Mazmo gender code (null:
+    unknown) or a StatsAgeBucket value. Rates and shares are null with nothing to divide by.
+    """
+
+    key: str | None
+    attended: int
+    expected: int
+    no_show: int
+    no_show_rate: float | None
+    attended_share: float | None
+    expected_share: float | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class GroupSharePublic(BaseModel):
+    """Share of the attended RSVPs that fall in one group (null when nobody attended)."""
+
+    key: str | None
+    attended_share: float | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DemographicSummaryPublic(BaseModel):
+    """The figures compared between two scopes. median_age and known_age_share are null when nobody attended."""
+
+    attended: int
+    median_age: float | None
+    known_age_share: float | None
+    gender_shares: list[GroupSharePublic]
+    age_shares: list[GroupSharePublic]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DemographicStatsPublic(BaseModel):
+    """Gender and age of the people who attend, with the figures to compare against. One RSVP counts once."""
+
+    gender: list[DemographicGroupPublic]
+    age: list[DemographicGroupPublic]
+    summary: DemographicSummaryPublic
+    comparison_kind: StatsComparisonKind | None
+    comparison: DemographicSummaryPublic | None
+
+    model_config = ConfigDict(from_attributes=True)
