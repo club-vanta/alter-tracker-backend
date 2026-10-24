@@ -12,9 +12,9 @@ from attendance_status_expr.
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any
 
 from sqlalchemy import ColumnElement, Select, and_, case, func, select
+from sqlalchemy.orm import Mapped
 from sqlmodel import Session, col
 
 from app.models.models import (
@@ -101,7 +101,7 @@ def age_bucket(age: int | None) -> StatsAgeBucket:
     return StatsAgeBucket.AGE_50_PLUS
 
 
-def age_bucket_expr(age: Any) -> ColumnElement[str]:
+def age_bucket_expr(age: ColumnElement[int] | Mapped[int | None]) -> ColumnElement[str]:
     """
     SQL twin of age_bucket(): a CASE returning StatsAgeBucket values.
 
@@ -133,7 +133,7 @@ def _counts_query(*conditions: ColumnElement[bool]) -> Select:
     status = attendance_status_expr()
     walkin = GuestAttendanceStatus.WALKIN.value
     gender = _gender_expr()
-    bucket = age_bucket_expr(GuestMazmoProfile.age)
+    bucket = age_bucket_expr(col(GuestMazmoProfile.age))
     return (
         select(
             gender,
@@ -191,8 +191,8 @@ class _Scope:
 
 
 def _load_scope(session: Session, *conditions: ColumnElement[bool]) -> _Scope:
-    gender_totals: dict[str | None, list[int]] = defaultdict(lambda: [0, 0, 0])
-    age_totals: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0])
+    gender_totals: defaultdict[str | None, list[int]] = defaultdict(lambda: [0, 0, 0])
+    age_totals: defaultdict[str, list[int]] = defaultdict(lambda: [0, 0, 0])
     for gender, bucket, attended, expected, no_show in session.execute(_counts_query(*conditions)).all():
         for totals in (gender_totals[gender], age_totals[bucket]):
             totals[0] += attended
@@ -224,14 +224,14 @@ def _groups(counts: dict[str | None, _Counts]) -> list[DemographicGroup]:
 
 
 def _gender_groups(scope: _Scope) -> list[DemographicGroup]:
-    """Largest first, ties by code, unknown (None) last."""
-    groups = _groups(scope.by_gender)
+    """Largest first, ties by code, unknown (None) last. Groups with nobody attended or expected are dropped."""
+    groups = _groups({key: c for key, c in scope.by_gender.items() if c.attended or c.expected})
     return sorted(groups, key=lambda g: (g.key is None, -g.attended, g.key or ""))
 
 
 def _age_groups(scope: _Scope) -> list[DemographicGroup]:
     """All buckets in enum order, empty ones as zeros."""
-    return _groups({b.value: scope.by_age.get(b.value, _Counts()) for b in StatsAgeBucket})  # type: ignore[arg-type]
+    return _groups({b.value: scope.by_age.get(b.value, _Counts()) for b in StatsAgeBucket})
 
 
 def _summarize(scope: _Scope) -> DemographicSummary:
@@ -262,8 +262,10 @@ def demographic_stats(
 
     if meetup_id is not None:
         scope = _load_scope(
-            session, *finalized_meetup_conditions(org_id, StatsPeriod(None, None)), col(Meetup.id) == meetup_id
-        )  # type: ignore[arg-type]
+            session,
+            *finalized_meetup_conditions(org_id, StatsPeriod(None, None)),
+            Meetup.id == meetup_id,  # type: ignore[arg-type]
+        )
         comparison_kind = StatsComparisonKind.PERIOD_AVERAGE
         comparison = _summarize(_load_scope(session, *period_conditions))
     else:

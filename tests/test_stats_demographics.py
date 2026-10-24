@@ -3,7 +3,6 @@
 from datetime import UTC, datetime
 from itertools import count
 
-import pytest
 from sqlalchemy import Integer, cast, literal, select
 from sqlmodel import Session
 
@@ -114,21 +113,45 @@ def test_demographics_groups_by_gender_with_unknown_last(session: Session):
         ("FEMALE", 0.2857),
         (None, 0.2857),
     ]
+    assert {g.key: g.attended for g in stats.age}[StatsAgeBucket.UNKNOWN.value] == 7
+
+
+def test_demographics_blank_gender_is_unknown_and_undefined_is_its_own_group(session: Session):
+    org = make_org(session)
+    meetup = _finalized_meetup(session, org, APRIL)
+    _rsvp(session, meetup, profile=True, gender="   ", has_arrived=True)
+    _rsvp(session, meetup, profile=True, gender="UNDEFINED", has_arrived=True)
+
+    stats = demographic_stats(session, org.id, ALL_TIME, None)
+
+    assert [(g.key, g.attended) for g in stats.gender] == [("UNDEFINED", 1), (None, 1)]
+
+
+def test_demographics_drops_gender_groups_with_nobody_attended_or_expected(session: Session):
+    org = make_org(session)
+    meetup = _finalized_meetup(session, org, APRIL)
+    _rsvp(session, meetup, profile=True, gender="MALE", has_arrived=True)
+    _rsvp(session, meetup, profile=True, gender="FEMALE", cancelled_rsvp=True)
+    _rsvp(session, meetup, profile=True, gender="WOMAN_CIS", is_walkin=True)
+
+    stats = demographic_stats(session, org.id, ALL_TIME, None)
+
+    assert [g.key for g in stats.gender] == ["MALE"]
 
 
 def test_demographics_age_buckets_and_median(session: Session):
     org = make_org(session)
     meetup = _finalized_meetup(session, org, APRIL)
-    for age in [22, 27, 31, 31, 45, 126, None]:
+    for age in [22, 27, 31, 31, 45, 126, 3, None]:
         _rsvp(session, meetup, profile=True, age=age, has_arrived=True)
 
     stats = demographic_stats(session, org.id, ALL_TIME, None)
 
     assert [g.key for g in stats.age] == [b.value for b in StatsAgeBucket]
-    assert [g.attended for g in stats.age] == [1, 1, 2, 0, 1, 0, 2]
+    assert [g.attended for g in stats.age] == [1, 1, 2, 0, 1, 0, 3]
     assert stats.summary.median_age == 31.0
-    assert stats.summary.known_age_share == 0.7143
-    assert [s.attended_share for s in stats.summary.age_shares] == [0.1429, 0.1429, 0.2857, 0.0, 0.1429, 0.0, 0.2857]
+    assert stats.summary.known_age_share == 0.625
+    assert [s.attended_share for s in stats.summary.age_shares] == [0.125, 0.125, 0.25, 0.0, 0.125, 0.0, 0.375]
 
 
 def test_demographics_median_rounds_to_one_decimal(session: Session):
@@ -237,14 +260,12 @@ def test_demographics_single_meetup_compares_with_period(session: Session):
     assert (stats.comparison.attended, stats.comparison.median_age) == (3, 30.0)
 
 
-@pytest.mark.parametrize("meetup_scope", [False, True])
-def test_demographics_empty_org_has_zero_comparison(session: Session, meetup_scope: bool):
+def test_demographics_single_meetup_without_attendance_has_zero_comparison(session: Session):
     org = make_org(session)
     meetup = _finalized_meetup(session, org, APRIL)
 
-    stats = demographic_stats(session, org.id, ALL_TIME, meetup.id if meetup_scope else None)
+    stats = demographic_stats(session, org.id, ALL_TIME, meetup.id)
 
     assert stats.summary.attended == 0
-    if meetup_scope:
-        assert stats.comparison is not None
-        assert stats.comparison.median_age is None
+    assert stats.comparison is not None
+    assert (stats.comparison.attended, stats.comparison.median_age) == (0, None)
