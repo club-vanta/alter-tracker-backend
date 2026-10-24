@@ -279,15 +279,18 @@ def test_attendance_stats_returns_200_with_exact_totals(
     assert body["comparison"] is None
 
 
-def test_attendance_stats_returns_200_for_site_admin(
-    client: TestClient, session: Session, org: Organization, site_admin_headers: dict
-):
-    _finalized_meetup(session, org, datetime(2026, 4, 5, 22, tzinfo=UTC))
+def test_attendance_stats_returns_200_for_org_admin(client: TestClient, session: Session, org: Organization):
+    meetup = _finalized_meetup(session, org, datetime(2026, 4, 5, 22, tzinfo=UTC))
+    org_admin = make_user(session, username="org_admin")
+    make_org_member(session, org=org, user=org_admin, role=OrgRole.ADMIN)
+    headers = get_auth_headers(client, "org_admin", "a-very-secure-passphrase")
 
-    resp = client.get(_stats_url(org), headers=site_admin_headers)
+    resp = client.get(_stats_url(org), headers=headers)
 
     assert resp.status_code == status.HTTP_200_OK
-    assert resp.json()["totals"]["events"] == 1
+    body = resp.json()
+    assert [row["meetup_id"] for row in body["meetups"]] == [str(meetup.id)]
+    assert body["totals"]["events"] == 1
 
 
 def test_attendance_stats_returns_422_when_from_not_before_to(
