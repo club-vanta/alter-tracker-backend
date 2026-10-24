@@ -8419,6 +8419,279 @@
         }
       }
     },
+    "/organizations/{org_id}/stats/arrivals": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Arrival times and sign-up lead time of finalized meetups",
+        "operationId": "get_arrival_stats_organizations__org_id__stats_arrivals_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "First local date to include. Omit for no lower bound.",
+              "title": "From"
+            },
+            "description": "First local date to include. Omit for no lower bound."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Local date the period ends before. Omit for no upper bound.",
+              "title": "To"
+            },
+            "description": "Local date the period ends before. Omit for no upper bound."
+          },
+          {
+            "name": "meetup_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Focus on one finalized meetup instead of the whole period.",
+              "title": "Meetup Id"
+            },
+            "description": "Focus on one finalized meetup instead of the whole period."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Arrival times and sign-up lead time of finalized meetups in the period",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArrivalStatsPublic"
+                },
+                "examples": {
+                  "arrivals": {
+                    "summary": "A period compared with the previous period",
+                    "value": {
+                      "curve": [
+                        {
+                          "start_minute": -15,
+                          "arrivals": 2
+                        },
+                        {
+                          "start_minute": 0,
+                          "arrivals": 8
+                        },
+                        {
+                          "start_minute": 15,
+                          "arrivals": 14
+                        },
+                        {
+                          "start_minute": 30,
+                          "arrivals": 12
+                        },
+                        {
+                          "start_minute": 45,
+                          "arrivals": 7
+                        },
+                        {
+                          "start_minute": 60,
+                          "arrivals": 4
+                        },
+                        {
+                          "start_minute": 75,
+                          "arrivals": 2
+                        }
+                      ],
+                      "summary": {
+                        "arrivals": 49,
+                        "peak": {
+                          "start_minute": 15,
+                          "arrivals": 14
+                        },
+                        "median_minutes": 32,
+                        "p90_minutes": 63,
+                        "first_hour_share": 0.8776
+                      },
+                      "lead_time": [
+                        {
+                          "bucket": "SAME_DAY",
+                          "signed_up": 12,
+                          "cancelled": 1,
+                          "no_show": 2,
+                          "no_show_rate": 0.1818
+                        },
+                        {
+                          "bucket": "ONE_DAY",
+                          "signed_up": 20,
+                          "cancelled": 2,
+                          "no_show": 3,
+                          "no_show_rate": 0.1667
+                        },
+                        {
+                          "bucket": "TWO_THREE",
+                          "signed_up": 25,
+                          "cancelled": 3,
+                          "no_show": 4,
+                          "no_show_rate": 0.1818
+                        },
+                        {
+                          "bucket": "FOUR_SEVEN",
+                          "signed_up": 14,
+                          "cancelled": 2,
+                          "no_show": 2,
+                          "no_show_rate": 0.1667
+                        },
+                        {
+                          "bucket": "EIGHT_FOURTEEN",
+                          "signed_up": 8,
+                          "cancelled": 1,
+                          "no_show": 1,
+                          "no_show_rate": 0.1429
+                        },
+                        {
+                          "bucket": "FIFTEEN_PLUS",
+                          "signed_up": 4,
+                          "cancelled": 1,
+                          "no_show": 0,
+                          "no_show_rate": 0.0
+                        }
+                      ],
+                      "comparison_kind": "PREVIOUS_PERIOD",
+                      "comparison": {
+                        "arrivals": 44,
+                        "peak": {
+                          "start_minute": 15,
+                          "arrivals": 12
+                        },
+                        "median_minutes": 35,
+                        "p90_minutes": 66,
+                        "first_hour_share": 0.8409
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Org admin privileges needed",
+                    "value": {
+                      "detail": "Organization admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_required_field": {
+                    "summary": "Missing required field",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "missing",
+                          "loc": [
+                            "body",
+                            "field_name"
+                          ],
+                          "msg": "Field required",
+                          "input": {}
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/users/": {
       "get": {
         "tags": [
@@ -8574,6 +8847,173 @@
         ],
         "title": "ApproveUserRequest",
         "description": "Request body for approving or revoking a user's access.\n\nAdmins use this to flip the is_approved flag on staff accounts.\nNew registrations start unapproved and require admin action."
+      },
+      "ArrivalBucketPublic": {
+        "properties": {
+          "start_minute": {
+            "type": "integer",
+            "title": "Start Minute"
+          },
+          "local_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Time"
+          },
+          "arrivals": {
+            "type": "integer",
+            "title": "Arrivals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start_minute",
+          "local_time",
+          "arrivals"
+        ],
+        "title": "ArrivalBucketPublic",
+        "description": "Arrivals in one 15 minute bucket starting start_minute minutes from the\nmeetup start (negative = before). local_time is \"HH:MM\" for one meetup, null otherwise."
+      },
+      "ArrivalStatsPublic": {
+        "properties": {
+          "curve": {
+            "items": {
+              "$ref": "#/components/schemas/ArrivalBucketPublic"
+            },
+            "type": "array",
+            "title": "Curve"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ArrivalSummaryPublic"
+          },
+          "lead_time": {
+            "items": {
+              "$ref": "#/components/schemas/LeadTimeRowPublic"
+            },
+            "type": "array",
+            "title": "Lead Time"
+          },
+          "comparison_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatsComparisonKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comparison": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArrivalSummaryPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "curve",
+          "summary",
+          "lead_time",
+          "comparison_kind",
+          "comparison"
+        ],
+        "title": "ArrivalStatsPublic",
+        "description": "When people arrive and how far ahead they signed up, with the figures to compare against."
+      },
+      "ArrivalSummaryPublic": {
+        "properties": {
+          "arrivals": {
+            "type": "integer",
+            "title": "Arrivals"
+          },
+          "peak": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArrivalBucketPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "median_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Minutes"
+          },
+          "p90_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P90 Minutes"
+          },
+          "median_local_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Local Time"
+          },
+          "p90_local_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P90 Local Time"
+          },
+          "first_hour_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Hour Share"
+          }
+        },
+        "type": "object",
+        "required": [
+          "arrivals",
+          "peak",
+          "median_minutes",
+          "p90_minutes",
+          "median_local_time",
+          "p90_local_time",
+          "first_hour_share"
+        ],
+        "title": "ArrivalSummaryPublic",
+        "description": "Offsets are minutes from the meetup start. The *_local_time fields are\n\"HH:MM\" only for one meetup's own summary. Everything but arrivals is null\nwhen nobody arrived."
       },
       "AttendanceStats": {
         "properties": {
@@ -9757,6 +10197,46 @@
         "title": "HealthResponse",
         "description": "Full health check response.\n\nThe overall status is \"healthy\" only if all critical services are healthy.\nNon-critical services being down results in \"degraded\" status."
       },
+      "LeadTimeRowPublic": {
+        "properties": {
+          "bucket": {
+            "$ref": "#/components/schemas/StatsLeadTimeBucket"
+          },
+          "signed_up": {
+            "type": "integer",
+            "title": "Signed Up"
+          },
+          "cancelled": {
+            "type": "integer",
+            "title": "Cancelled"
+          },
+          "no_show": {
+            "type": "integer",
+            "title": "No Show"
+          },
+          "no_show_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Show Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bucket",
+          "signed_up",
+          "cancelled",
+          "no_show",
+          "no_show_rate"
+        ],
+        "title": "LeadTimeRowPublic",
+        "description": "Audience sign-ups made in one lead-time bucket. no_show_rate is null with nobody to divide by."
+      },
       "LinkMazmoRequest": {
         "properties": {
           "username": {
@@ -10465,6 +10945,19 @@
         ],
         "title": "StatsComparisonKind",
         "description": "What an org statistics block is compared against.\n\nPREVIOUS_PERIOD: the period of the same length right before the selected one.\nPERIOD_AVERAGE:  one meetup compared with the whole selected period."
+      },
+      "StatsLeadTimeBucket": {
+        "type": "string",
+        "enum": [
+          "SAME_DAY",
+          "ONE_DAY",
+          "TWO_THREE",
+          "FOUR_SEVEN",
+          "EIGHT_FOURTEEN",
+          "FIFTEEN_PLUS"
+        ],
+        "title": "StatsLeadTimeBucket",
+        "description": "How many whole local days before the meetup an RSVP was made."
       },
       "SyncResponse": {
         "properties": {

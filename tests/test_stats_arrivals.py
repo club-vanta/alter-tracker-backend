@@ -3,9 +3,11 @@
 from datetime import UTC, date, datetime, timedelta
 from itertools import count
 
+from fastapi import status
+from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from app.models.models import GuestType, Meetup, Organization, StatsComparisonKind, StatsLeadTimeBucket
+from app.models.models import GuestType, Meetup, Organization, OrgRole, StatsComparisonKind, StatsLeadTimeBucket
 from app.services.stats.arrivals import (
     ArrivalBucket,
     LeadTimeRow,
@@ -15,7 +17,7 @@ from app.services.stats.arrivals import (
     summarize_arrivals,
 )
 from app.services.stats.scope import STATS_TZ, StatsPeriod
-from tests.conftest import make_guest, make_meetup, make_org, make_rsvp
+from tests.conftest import get_auth_headers, make_guest, make_meetup, make_org, make_org_member, make_rsvp, make_user
 
 ALL_TIME = StatsPeriod(None, None)
 OFFSETS = [-10, 0, 5, 14, 15, 44, 90]
@@ -279,3 +281,182 @@ def test_arrival_stats_single_meetup_compares_with_period(session: Session):
     assert stats.comparison is not None
     assert stats.comparison.arrivals == 2
     assert stats.comparison.median_local_time is None
+
+
+# -- GET /organizations/{org_id}/stats/arrivals --
+
+
+def _arrivals_url(org: Organization) -> str:
+    return f"/organizations/{org.id}/stats/arrivals"
+
+
+def _lead_time(**one_day: int | float | None) -> list[dict]:
+    """Six lead-time rows, all zero except ONE_DAY with the given fields."""
+    rows = [
+        {"bucket": bucket.value, "signed_up": 0, "cancelled": 0, "no_show": 0, "no_show_rate": None}
+        for bucket in StatsLeadTimeBucket
+    ]
+    rows[1].update(one_day)
+    return rows
+
+
+def test_arrival_stats_returns_401_without_auth(client: TestClient, org: Organization):
+    resp = client.get(_arrivals_url(org))
+
+    assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_arrival_stats_returns_403_for_staff_member(
+    client: TestClient, session: Session, org: Organization, staff_user, staff_headers: dict
+):
+    make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
+
+    resp = client.get(_arrivals_url(org), headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_arrival_stats_returns_403_before_checking_the_period_for_staff(
+    client: TestClient, session: Session, org: Organization, staff_user, staff_headers: dict
+):
+    make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
+
+    resp = client.get(_arrivals_url(org), params={"from": "2026-05-01", "to": "2026-05-01"}, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_arrival_stats_returns_403_before_checking_the_meetup_for_staff(
+    client: TestClient, session: Session, org: Organization, staff_user, staff_headers: dict
+):
+    make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
+    meetup = make_meetup(session, org=org, is_finalized=False)
+
+    resp = client.get(_arrivals_url(org), params={"meetup_id": str(meetup.id)}, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_arrival_stats_returns_200_for_org_admin(client: TestClient, session: Session, org: Organization):
+    meetup = _finalized_meetup(session, org, datetime(2026, 4, 5, 22, tzinfo=UTC))
+    _arrived(session, meetup, 5)
+    org_admin = make_user(session, username="org_admin")
+    make_org_member(session, org=org, user=org_admin, role=OrgRole.ADMIN)
+    headers = get_auth_headers(client, "org_admin", "a-very-secure-passphrase")
+
+    resp = client.get(_arrivals_url(org), headers=headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["summary"]["arrivals"] == 1
+
+
+def test_arrival_stats_returns_200_with_exact_aggregate_body(
+    client: TestClient, session: Session, org: Organization, admin_headers: dict
+):
+    meetup = _finalized_meetup(session, org, datetime(2026, 4, 5, 22, tzinfo=UTC))
+    for minutes in (-10, 5, 20):
+        _arrived(session, meetup, minutes)
+    _arrived(session, meetup, 30, is_walkin=True)
+    _rsvp(session, meetup)
+    _rsvp(session, meetup, cancelled_rsvp=True)
+
+    resp = client.get(_arrivals_url(org), headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json() == {
+        "curve": [
+            {"start_minute": -15, "local_time": None, "arrivals": 1},
+            {"start_minute": 0, "local_time": None, "arrivals": 1},
+            {"start_minute": 15, "local_time": None, "arrivals": 1},
+            {"start_minute": 30, "local_time": None, "arrivals": 1},
+        ],
+        "summary": {
+            "arrivals": 4,
+            "peak": {"start_minute": -15, "local_time": None, "arrivals": 1},
+            "median_minutes": 5,
+            "p90_minutes": 30,
+            "median_local_time": None,
+            "p90_local_time": None,
+            "first_hour_share": 1.0,
+        },
+        "lead_time": _lead_time(signed_up=5, cancelled=1, no_show=1, no_show_rate=0.25),
+        "comparison_kind": None,
+        "comparison": None,
+    }
+
+
+def test_arrival_stats_returns_200_for_one_meetup_in_clock_time(
+    client: TestClient, session: Session, org: Organization, admin_headers: dict
+):
+    selected = _finalized_meetup(session, org, datetime(2026, 4, 5, 22, tzinfo=UTC))
+    _arrived(session, selected, 10)
+    other = _finalized_meetup(session, org, datetime(2026, 4, 8, 22, tzinfo=UTC))
+    _arrived(session, other, 50)
+
+    resp = client.get(
+        _arrivals_url(org),
+        params={"from": "2026-04-01", "to": "2026-04-11", "meetup_id": str(selected.id)},
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json() == {
+        "curve": [{"start_minute": 0, "local_time": "19:00", "arrivals": 1}],
+        "summary": {
+            "arrivals": 1,
+            "peak": {"start_minute": 0, "local_time": "19:00", "arrivals": 1},
+            "median_minutes": 10,
+            "p90_minutes": 10,
+            "median_local_time": "19:10",
+            "p90_local_time": "19:10",
+            "first_hour_share": 1.0,
+        },
+        "lead_time": _lead_time(signed_up=1, no_show_rate=0.0),
+        "comparison_kind": "PERIOD_AVERAGE",
+        "comparison": {
+            "arrivals": 2,
+            "peak": {"start_minute": 0, "local_time": None, "arrivals": 1},
+            "median_minutes": 10,
+            "p90_minutes": 50,
+            "median_local_time": None,
+            "p90_local_time": None,
+            "first_hour_share": 1.0,
+        },
+    }
+
+
+def test_arrival_stats_returns_404_for_unfinalized_meetup(
+    client: TestClient, session: Session, org: Organization, admin_headers: dict
+):
+    meetup = make_meetup(session, org=org, is_finalized=False)
+
+    resp = client.get(_arrivals_url(org), params={"meetup_id": str(meetup.id)}, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_arrival_stats_returns_422_when_from_not_before_to(client: TestClient, org: Organization, admin_headers: dict):
+    resp = client.get(_arrivals_url(org), params={"from": "2026-05-01", "to": "2026-04-01"}, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_arrival_stats_returns_empty_body_for_empty_period(client: TestClient, org: Organization, admin_headers: dict):
+    resp = client.get(_arrivals_url(org), headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json() == {
+        "curve": [],
+        "summary": {
+            "arrivals": 0,
+            "peak": None,
+            "median_minutes": None,
+            "p90_minutes": None,
+            "median_local_time": None,
+            "p90_local_time": None,
+            "first_hour_share": None,
+        },
+        "lead_time": _lead_time(),
+        "comparison_kind": None,
+        "comparison": None,
+    }
