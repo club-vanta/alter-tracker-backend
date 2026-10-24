@@ -10,6 +10,7 @@ PATCH  /organizations/{org_id}/members/{user_id}         -> change member role (
 DELETE /organizations/{org_id}/members/{user_id}         -> remove member (ORG_ADMIN or SITE_ADMIN)
 GET    /organizations/{org_id}/members                   -> list members (SITE_ADMIN)
 GET    /organizations/{org_id}/guests/banned             -> list banned guests in org (org member)
+GET    /organizations/{org_id}/guests/{id}/meetups       -> a guest's meetups in org with attendance (org member)
 PATCH  /organizations/{org_id}/guests/{id}/ban           -> ban a guest in org (org admin)
 PATCH  /organizations/{org_id}/guests/{id}/unban         -> unban a guest in org (org admin)
 """
@@ -25,7 +26,17 @@ from sqlmodel import Session, select
 
 from app.core.database import get_session
 from app.core.deps import get_org_admin, get_org_member, get_site_admin
-from app.models.models import EventLog, EventType, Guest, Organization, OrganizationBan, OrgRole, User, UserOrganization
+from app.models.models import (
+    EventLog,
+    EventType,
+    Guest,
+    GuestType,
+    Organization,
+    OrganizationBan,
+    OrgRole,
+    User,
+    UserOrganization,
+)
 from app.openapi_examples.organizations_examples import (
     ADD_MEMBER_REQUEST_EXAMPLES,
     ADD_MEMBER_RESPONSES,
@@ -33,6 +44,7 @@ from app.openapi_examples.organizations_examples import (
     BAN_GUEST_RESPONSES,
     CREATE_ORG_REQUEST_EXAMPLES,
     CREATE_ORG_RESPONSES,
+    GET_GUEST_MEETUPS_IN_ORG_RESPONSES,
     GET_ORG_RESPONSES,
     LIST_BANNED_IN_ORG_RESPONSES,
     LIST_ORG_MEMBERS_RESPONSES,
@@ -49,7 +61,10 @@ from app.schemas import (
     BanGuestRequest,
     BannedGuestListResponse,
     BannedGuestPublic,
+    GuestAttendanceSummary,
     GuestMazmoProfilePublic,
+    GuestMeetupAttendanceListResponse,
+    GuestMeetupAttendancePublic,
     GuestPublic,
     OrgCreate,
     OrgListResponse,
@@ -58,6 +73,7 @@ from app.schemas import (
     OrgPublic,
     OrgUpdate,
 )
+from app.services.attendance import list_guest_attendance, summarize_attendance
 
 log = structlog.get_logger(__name__)
 router = APIRouter(tags=["organizations"])
@@ -377,6 +393,64 @@ async def list_banned_guests(
     guests = [_to_banned_guest_public(ban.guest, ban) for ban in bans]
 
     return BannedGuestListResponse(total=len(guests), guests=guests)
+
+
+# -- A guest's meetups and attendance -----------------------------------------
+
+
+@router.get(
+    "/organizations/{org_id}/guests/{guest_id}/meetups",
+    response_model=GuestMeetupAttendanceListResponse,
+    summary="List the meetups of this organization a guest signed up for, with attendance",
+    responses=GET_GUEST_MEETUPS_IN_ORG_RESPONSES,
+)
+async def list_guest_meetups(
+    org_id: uuid.UUID,
+    guest_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    _member: User = Depends(get_org_member),
+) -> GuestMeetupAttendanceListResponse:
+    """
+    Every meetup of this organization the guest signed up for on Mazmo or
+    was checked in to as a walk-in, newest first, each with its attendance
+    status, plus totals. Meetups of other organizations never appear.
+
+    A meetup only counts as a NO_SHOW once it is finalized; before that a
+    guest who has not arrived is UPCOMING. Cancelling is not a no-show.
+    The rule lives in app.services.attendance.
+
+    Returns 404 if the organization or the guest doesn't exist. A guest
+    with no RSVPs in this organization gets an empty list.
+    """
+    _get_org_or_404(session, org_id)
+    if not session.get(Guest, guest_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Cannot list meetups: guest id={guest_id} does not exist in our database. "
+                f"Find the guest via GET /guests/."
+            ),
+        )
+
+    attendance = list_guest_attendance(session, org_id, guest_id)
+    counts = summarize_attendance(a.status for a in attendance)
+
+    return GuestMeetupAttendanceListResponse(
+        total=len(attendance),
+        summary=GuestAttendanceSummary.model_validate(counts),
+        meetups=[
+            GuestMeetupAttendancePublic(
+                meetup_id=a.meetup.id,
+                name=a.meetup.name,
+                date=a.meetup.date,
+                status=a.status,
+                rsvp_time=a.rsvp.rsvp_time,
+                arrival_time=a.rsvp.arrival_time,
+                guest_type=GuestType(a.rsvp.guest_type),
+            )
+            for a in attendance
+        ],
+    )
 
 
 # ── Ban guest ─────────────────────────────────────────────────────────────────

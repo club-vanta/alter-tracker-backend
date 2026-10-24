@@ -13,6 +13,33 @@ from typing import Any
 # Type alias for FastAPI responses dict
 ResponsesDict = dict[int | str, dict[str, Any]]
 
+
+def merge_error_responses(*responses: ResponsesDict) -> ResponsesDict:
+    """
+    Combine error factories that share a status code into one entry whose
+    examples are the union of theirs.
+
+    `{**error_404_guest(), **error_404_org()}` keeps only the last 404, so
+    the guest example silently disappears from the docs; this keeps both.
+    The first factory's description wins.
+    """
+    merged: ResponsesDict = {}
+    for response in responses:
+        for code, entry in response.items():
+            if code not in merged:
+                merged[code] = {
+                    **entry,
+                    "content": {
+                        "application/json": {"examples": dict(entry["content"]["application/json"]["examples"])}
+                    },
+                }
+            else:
+                merged[code]["content"]["application/json"]["examples"].update(
+                    entry["content"]["application/json"]["examples"]
+                )
+    return merged
+
+
 # ── Generic HTTP Errors ───────────────────────────────────────────────────────
 
 
