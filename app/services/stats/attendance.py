@@ -15,7 +15,7 @@ from sqlmodel import Session, col
 
 from app.models.models import GuestAttendanceStatus, Meetup, MeetupRsvp, StatsComparisonKind
 from app.services.attendance import attendance_status_expr
-from app.services.stats.scope import AUDIENCE_GUEST_TYPES, StatsPeriod, finalized_meetup_conditions
+from app.services.stats.scope import AUDIENCE_GUEST_TYPES, StatsPeriod, finalized_meetup_conditions, ratio
 
 # -- Result shapes --
 
@@ -129,10 +129,6 @@ def _single_meetup_rows(session: Session, org_id: uuid.UUID, meetup_id: uuid.UUI
 # -- Totals --
 
 
-def _ratio(numerator: int, denominator: int, digits: int) -> float | None:
-    return round(numerator / denominator, digits) if denominator > 0 else None
-
-
 def summarize_rows(rows: list[MeetupAttendanceRow]) -> AttendanceTotals:
     """Sum the rows. Rates are rounded to 4 decimals, averages to 1."""
     events = len(rows)
@@ -147,10 +143,10 @@ def summarize_rows(rows: list[MeetupAttendanceRow]) -> AttendanceTotals:
         attended=attended,
         walkin=sum(r.walkin for r in rows),
         no_show=no_show,
-        cancellation_rate=_ratio(cancelled, signed_up, 4),
-        no_show_rate=_ratio(no_show, signed_up - cancelled, 4),
-        avg_signed_up_per_event=_ratio(signed_up, events, 1),
-        avg_attended_per_event=_ratio(attended, events, 1),
+        cancellation_rate=ratio(cancelled, signed_up, 4),
+        no_show_rate=ratio(no_show, signed_up - cancelled, 4),
+        avg_signed_up_per_event=ratio(signed_up, events, 1),
+        avg_attended_per_event=ratio(attended, events, 1),
     )
 
 

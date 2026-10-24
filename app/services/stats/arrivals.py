@@ -16,7 +16,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Select, select
+from sqlalchemy import ColumnElement, Select, select
 from sqlmodel import Session, col
 
 from app.models.models import (
@@ -27,7 +27,13 @@ from app.models.models import (
     StatsLeadTimeBucket,
 )
 from app.services.attendance import attendance_status_expr
-from app.services.stats.scope import AUDIENCE_GUEST_TYPES, STATS_TZ, StatsPeriod, finalized_meetup_conditions
+from app.services.stats.scope import (
+    AUDIENCE_GUEST_TYPES,
+    STATS_TZ,
+    StatsPeriod,
+    finalized_meetup_conditions,
+    ratio,
+)
 
 BUCKET_MINUTES = 15
 FIRST_HOUR_MINUTES = 60
@@ -94,6 +100,11 @@ class ArrivalStats:
 # -- Pure functions --
 
 
+def _to_minute(local_start: datetime) -> datetime:
+    """Drop seconds so clock buckets and offsets (whole minutes) agree."""
+    return local_start.replace(second=0, microsecond=0)
+
+
 def _clock(local_start: datetime, minutes: int) -> str:
     return (local_start + timedelta(minutes=minutes)).strftime("%H:%M")
 
@@ -118,6 +129,8 @@ def arrival_curve(offsets: list[int], *, local_start: datetime | None = None) ->
     """
     if not offsets:
         return []
+    if local_start is not None:
+        local_start = _to_minute(local_start)
     if local_start is None:
         counts = Counter(offset // BUCKET_MINUTES * BUCKET_MINUTES for offset in offsets)
     else:
@@ -143,6 +156,8 @@ def summarize_arrivals(
     """Peak bucket (earliest on ties), median, p90 and first-hour share. Local times need local_start."""
     if not offsets:
         return ArrivalSummary(0, None, None, None, None, None, None)
+    if local_start is not None:
+        local_start = _to_minute(local_start)
     ordered = sorted(offsets)
     median = _percentile(ordered, 0.5)
     p90 = _percentile(ordered, 0.9)
@@ -153,7 +168,7 @@ def summarize_arrivals(
         p90_minutes=p90,
         median_local_time=_clock(local_start, median) if local_start is not None else None,
         p90_local_time=_clock(local_start, p90) if local_start is not None else None,
-        first_hour_share=round(sum(1 for o in offsets if o < FIRST_HOUR_MINUTES) / len(offsets), 4),
+        first_hour_share=ratio(sum(1 for o in offsets if o < FIRST_HOUR_MINUTES), len(offsets), 4),
     )
 
 
@@ -183,7 +198,7 @@ def _as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
-def _rsvp_query(*conditions) -> Select:
+def _rsvp_query(*conditions: ColumnElement[bool]) -> Select[tuple[datetime, datetime, datetime | None, str | None]]:
     """Uses SQLAlchemy's select because sqlmodel's overloads stop at four columns."""
     return (
         select(
@@ -198,7 +213,7 @@ def _rsvp_query(*conditions) -> Select:
     )
 
 
-def _load_rows(session: Session, *conditions) -> list[_RsvpRow]:
+def _load_rows(session: Session, *conditions: ColumnElement[bool]) -> list[_RsvpRow]:
     return [
         _RsvpRow(
             meetup_date=_as_utc(meetup_date),
@@ -244,11 +259,7 @@ def _lead_time_rows(rows: list[_RsvpRow]) -> list[LeadTimeRow]:
             signed_up=signed_up[bucket],
             cancelled=cancelled[bucket],
             no_show=no_show[bucket],
-            no_show_rate=(
-                round(no_show[bucket] / (signed_up[bucket] - cancelled[bucket]), 4)
-                if signed_up[bucket] > cancelled[bucket]
-                else None
-            ),
+            no_show_rate=ratio(no_show[bucket], signed_up[bucket] - cancelled[bucket], 4),
         )
         for bucket in StatsLeadTimeBucket
     ]
@@ -272,7 +283,7 @@ def arrival_stats(
     """
     if meetup_id is not None:
         all_time = finalized_meetup_conditions(org_id, StatsPeriod(None, None))
-        rows = _load_rows(session, *all_time, Meetup.id == meetup_id)
+        rows = _load_rows(session, *all_time, Meetup.id == meetup_id)  # type: ignore[arg-type]
         comparison_rows = _load_rows(session, *finalized_meetup_conditions(org_id, period))
         kind = StatsComparisonKind.PERIOD_AVERAGE
     else:

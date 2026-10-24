@@ -77,6 +77,14 @@ def test_arrival_curve_clock_buckets_floor_to_the_quarter_hour():
     assert curve == [ArrivalBucket(-10, "22:00", 2), ArrivalBucket(5, "22:15", 1)]
 
 
+def test_arrival_curve_clock_buckets_ignore_the_start_seconds():
+    start = datetime(2026, 4, 5, 22, 50, 30, tzinfo=STATS_TZ)
+
+    curve = arrival_curve([-1, 9, 10], local_start=start)
+
+    assert curve == [ArrivalBucket(-5, "22:45", 2), ArrivalBucket(10, "23:00", 1)]
+
+
 def test_summarize_arrivals_percentiles_and_first_hour():
     summary = summarize_arrivals(OFFSETS, arrival_curve(OFFSETS))
 

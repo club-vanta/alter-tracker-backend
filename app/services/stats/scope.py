@@ -23,6 +23,11 @@ STATS_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 AUDIENCE_GUEST_TYPES: tuple[str, ...] = (GuestType.NORMAL.value, GuestType.INVITED.value)
 
 
+def ratio(numerator: int, denominator: int, digits: int) -> float | None:
+    """numerator / denominator rounded to digits decimals; None when the denominator is zero."""
+    return round(numerator / denominator, digits) if denominator > 0 else None
+
+
 class InvalidStatsPeriodError(ValueError):
     """Raised when a period's start is not strictly before its end."""
 
