@@ -1,9 +1,11 @@
 """
 Attendance service - what a guest's RSVPs say about whether they showed up.
 
-The rule (attendance_status) and the totals (summarize_attendance) live here,
-not in a router, so the guest profile endpoint and any future org-wide
-attendance statistics share the exact same definition of a no-show.
+The rule lives here in two forms, not in a router: attendance_status (Python,
+one RSVP at a time) and attendance_status_expr (a SQL CASE for aggregating in
+the database). A parity test keeps them equal, so the guest profile endpoint
+and the org-wide attendance statistics share the exact same definition of a
+no-show. The totals (summarize_attendance) live here too.
 """
 
 import uuid
@@ -11,6 +13,7 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from sqlalchemy import ColumnElement, case, null
 from sqlmodel import Session, select
 
 from app.models.models import GuestAttendanceStatus, Meetup, MeetupRsvp
@@ -62,6 +65,31 @@ def attendance_status(rsvp: MeetupRsvp, meetup: Meetup) -> GuestAttendanceStatus
     if meetup.is_finalized:
         return GuestAttendanceStatus.NO_SHOW
     return GuestAttendanceStatus.UPCOMING
+
+
+def attendance_status_expr() -> ColumnElement[str | None]:
+    """
+    SQL twin of attendance_status(): a CASE returning the GuestAttendanceStatus
+    values as strings, NULL for a walk-in never checked in. Branches follow the
+    same order as the Python rule. The query must join Meetup to MeetupRsvp.
+
+    WHY: org statistics aggregate thousands of RSVPs in the database; loading
+    them to call the Python rule would be slow. test_attendance_status_expr_
+    matches_python_rule keeps the two forms from drifting.
+    """
+    return case(
+        (
+            MeetupRsvp.has_arrived.is_(True),  # type: ignore[attr-defined]
+            case(
+                (MeetupRsvp.is_walkin.is_(True), GuestAttendanceStatus.WALKIN.value),  # type: ignore[attr-defined]
+                else_=GuestAttendanceStatus.ATTENDED.value,
+            ),
+        ),
+        (MeetupRsvp.is_walkin.is_(True), null()),  # type: ignore[attr-defined]
+        (MeetupRsvp.cancelled_rsvp.is_(True), GuestAttendanceStatus.CANCELLED.value),  # type: ignore[attr-defined]
+        (Meetup.is_finalized.is_(True), GuestAttendanceStatus.NO_SHOW.value),  # type: ignore[attr-defined]
+        else_=GuestAttendanceStatus.UPCOMING.value,
+    )
 
 
 def list_guest_attendance(session: Session, org_id: uuid.UUID, guest_id: uuid.UUID) -> list[GuestMeetupAttendance]:
