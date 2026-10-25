@@ -92,7 +92,14 @@ def finalized_meetup_conditions(org_id: uuid.UUID, period: StatsPeriod) -> list[
     return conditions
 
 
+def single_meetup_conditions(org_id: uuid.UUID, meetup_id: uuid.UUID) -> list[ColumnElement[bool]]:
+    """WHERE conditions selecting one finalized meetup of the org, whatever its date."""
+    return [
+        *finalized_meetup_conditions(org_id, StatsPeriod(None, None)),
+        Meetup.id == meetup_id,  # type: ignore[arg-type]
+    ]
+
+
 def is_finalized_meetup_of_org(session: Session, org_id: uuid.UUID, meetup_id: uuid.UUID) -> bool:
     """Whether meetup_id is a finalized meetup of the org (any date)."""
-    conditions = [*finalized_meetup_conditions(org_id, StatsPeriod(None, None)), Meetup.id == meetup_id]  # type: ignore[arg-type]
-    return session.exec(select(Meetup.id).where(*conditions)).first() is not None
+    return session.exec(select(Meetup.id).where(*single_meetup_conditions(org_id, meetup_id))).first() is not None

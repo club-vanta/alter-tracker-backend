@@ -36,6 +36,7 @@ from app.services.stats.scope import (
     finalized_meetup_conditions,
     floor_to_quarter_hour,
     ratio,
+    single_meetup_conditions,
 )
 
 BUCKET_MINUTES = QUARTER_HOUR_MINUTES
@@ -282,8 +283,7 @@ def arrival_stats(
     caller guarantees meetup_id is a finalized meetup of the org.
     """
     if meetup_id is not None:
-        all_time = finalized_meetup_conditions(org_id, StatsPeriod(None, None))
-        rows = _load_rows(session, *all_time, Meetup.id == meetup_id)  # type: ignore[arg-type]
+        rows = _load_rows(session, *single_meetup_conditions(org_id, meetup_id))
         comparison_rows = _load_rows(session, *finalized_meetup_conditions(org_id, period))
         kind = StatsComparisonKind.PERIOD_AVERAGE
     else:

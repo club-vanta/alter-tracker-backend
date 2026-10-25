@@ -15,7 +15,13 @@ from sqlmodel import Session, col
 
 from app.models.models import GuestAttendanceStatus, Meetup, MeetupRsvp, StatsComparisonKind
 from app.services.attendance import attendance_status_expr
-from app.services.stats.scope import AUDIENCE_GUEST_TYPES, StatsPeriod, finalized_meetup_conditions, ratio
+from app.services.stats.scope import (
+    AUDIENCE_GUEST_TYPES,
+    StatsPeriod,
+    finalized_meetup_conditions,
+    ratio,
+    single_meetup_conditions,
+)
 
 # -- Result shapes --
 
@@ -122,8 +128,7 @@ def meetup_attendance_rows(session: Session, org_id: uuid.UUID, period: StatsPer
 
 
 def _single_meetup_rows(session: Session, org_id: uuid.UUID, meetup_id: uuid.UUID) -> list[MeetupAttendanceRow]:
-    conditions = [*finalized_meetup_conditions(org_id, StatsPeriod(None, None)), Meetup.id == meetup_id]
-    return _run_rows(session, _attendance_rows_query(*conditions))
+    return _run_rows(session, _attendance_rows_query(*single_meetup_conditions(org_id, meetup_id)))
 
 
 # -- Totals --
