@@ -160,6 +160,24 @@ def test_set_location_on_a_ready_meetup_fetches_the_weather_inline(
     assert mock_get.await_args.kwargs["params"]["longitude"] == LON
 
 
+def test_set_location_holds_no_transaction_on_the_request_session_during_the_inline_fetch(
+    client: TestClient, admin_headers: dict, session: Session, org: Organization
+):
+    """WHY: The request session must not sit idle in a transaction through the up to 5 s provider call."""
+    meetup = unlocated(session, org, hours_ago=12)
+    in_transaction: list[bool] = []
+
+    async def fake_fetch(*args: object) -> None:
+        in_transaction.append(session.in_transaction())
+
+    with patch("app.routers.meetups._fetch_weather_after_location_change", fake_fetch):
+        resp = client.patch(location_url(meetup), json=LOCATION, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert in_transaction == [False]
+    assert resp.json()["latitude"] == LAT
+
+
 def test_set_location_on_a_meetup_that_is_not_ready_does_not_fetch(
     client: TestClient, admin_headers: dict, session: Session, org: Organization, mock_get: AsyncMock
 ):

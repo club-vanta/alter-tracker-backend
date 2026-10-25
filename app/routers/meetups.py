@@ -1224,6 +1224,8 @@ async def _fetch_weather_after_location_change(
     own short session, so a database error in it cannot poison the request
     session. That session holds one pooled connection during the call, bounded
     by the 5 s provider timeout; org admins only, and a location is saved rarely.
+    The caller has already committed, so its own session holds no connection
+    meanwhile.
     """
     log_context = {"meetup_id": str(meetup_id), "org_id": str(org_id)}
     try:
@@ -1276,16 +1278,19 @@ async def update_meetup_location(
     meetup.location_label = payload.location_label
     meetup.latitude = payload.latitude
     meetup.longitude = payload.longitude
+    # Decided before the commit, from the attributes just set, so the request
+    # session does not open a new transaction (and hold a connection) before the fetch.
+    fetch_weather = moved and is_weather_ready(meetup, datetime.now(UTC))
 
     session.add(meetup)
     if moved:
         # sqlmodel's exec() overloads only accept select statements, not Delete.
         session.exec(delete(MeetupWeather).where(col(MeetupWeather.meetup_id) == meetup_id))  # type: ignore[arg-type]
     session.commit()
-    session.refresh(meetup)
 
-    if moved and is_weather_ready(meetup, datetime.now(UTC)):
+    if fetch_weather:
         await _fetch_weather_after_location_change(session_factory, meetup_id, org_id, settings)
+    session.refresh(meetup)
 
     log.info(
         "Meetup location updated",
