@@ -23,8 +23,8 @@ from app.services.stats.operations import (
     BanRow,
     BusiestSlot,
     GuestTypeRow,
+    OperationsPaymentStats,
     OperationsSummary,
-    PaymentStats,
     StaffCheckins,
     operations_stats,
 )
@@ -170,7 +170,7 @@ def test_payments_count_paying_meetups_only(session: Session, org: Organization)
 
     stats = operations_stats(session, org.id, MARCH, None)
 
-    assert stats.payments == PaymentStats(
+    assert stats.payments == OperationsPaymentStats(
         paying_events=2, paid=2, pending=1, exempt=2, cancelled_but_paid=1, paid_share=0.6667
     )
     assert stats.summary.paid_share == 0.6667
@@ -198,14 +198,16 @@ def test_payments_match_the_door_card_for_one_meetup(client: TestClient, session
     _rsvp(session, meetup, minutes=3, guest_type=GuestType.VENDOR)
     _rsvp(session, meetup, minutes=4, guest_type=GuestType.INVITED, has_paid=True)
     _rsvp(session, meetup, has_paid=True, cancelled_rsvp=True)
+    _rsvp(session, meetup)  # NORMAL no-show: the door card counts it as pending, the tab does not
 
     card = client.get(f"/organizations/{org.id}/meetups/{meetup.id}/stats", headers=headers).json()
     payments = operations_stats(session, org.id, MARCH, meetup.id).payments
 
     assert payments is not None
+    # The door card splits every non-cancelled RSVP, so it also counts the no-show as pending.
     assert card["payment"] == {
         "paid_count": payments.paid,
-        "unpaid_count": payments.pending,
+        "unpaid_count": payments.pending + 1,
         "exempt_from_payment_count": payments.exempt,
     }
     assert card["cancellations"]["cancelled_but_paid_count"] == payments.cancelled_but_paid
@@ -291,6 +293,17 @@ def test_bans_in_period_newest_first(session: Session, org: Organization):
         ("No Reason", None, first, None),
     ]
     assert all(isinstance(row, BanRow) for row in stats.ban_list)
+
+
+def test_ban_period_upper_bound_is_local_midnight(session: Session, org: Organization):
+    # 23:30 local on the last day (March 31) is 02:30 UTC on April 1; 00:00 local April 1 is 03:00 UTC.
+    _ban(session, org, datetime(2026, 4, 1, 2, 30, tzinfo=UTC), displayname="Last Day")
+    _ban(session, org, datetime(2026, 4, 1, 3, 0, tzinfo=UTC), displayname="Next Day")
+
+    stats = operations_stats(session, org.id, MARCH, None)
+
+    assert stats.summary.bans == 1
+    assert [row.displayname for row in stats.ban_list] == ["Last Day"]
 
 
 def test_ban_list_keeps_the_newest_twenty(session: Session, org: Organization):

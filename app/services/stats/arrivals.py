@@ -29,14 +29,16 @@ from app.models.models import (
 from app.services.attendance import attendance_status_expr
 from app.services.stats.scope import (
     AUDIENCE_GUEST_TYPES,
+    QUARTER_HOUR_MINUTES,
     STATS_TZ,
     StatsPeriod,
     as_utc,
     finalized_meetup_conditions,
+    floor_to_quarter_hour,
     ratio,
 )
 
-BUCKET_MINUTES = 15
+BUCKET_MINUTES = QUARTER_HOUR_MINUTES
 FIRST_HOUR_MINUTES = 60
 # Arrivals outside this window of minutes from the start (late catch-up check-ins, clock errors) are excluded.
 MIN_OFFSET_MINUTES = -120
@@ -108,11 +110,6 @@ class ArrivalStats:
 
 def _clock(local_start: datetime, minutes: int) -> str:
     return (local_start + timedelta(minutes=minutes)).strftime("%H:%M")
-
-
-def floor_to_quarter_hour(moment: datetime) -> datetime:
-    """The start of the clock quarter hour that moment falls in, in moment's own time zone."""
-    return moment.replace(minute=moment.minute // BUCKET_MINUTES * BUCKET_MINUTES, second=0, microsecond=0)
 
 
 def _clock_bucket_start(local_start: datetime, offset: int) -> int:

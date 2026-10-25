@@ -38,8 +38,14 @@ from app.models.models import (
 )
 from app.services.attendance import attendance_status_expr
 from app.services.payment import PaymentStanding, payment_standing
-from app.services.stats.arrivals import floor_to_quarter_hour
-from app.services.stats.scope import STATS_TZ, StatsPeriod, as_utc, finalized_meetup_conditions, ratio
+from app.services.stats.scope import (
+    STATS_TZ,
+    StatsPeriod,
+    as_utc,
+    finalized_meetup_conditions,
+    floor_to_quarter_hour,
+    ratio,
+)
 
 BAN_WINDOW = timedelta(hours=12)
 BAN_LIST_LIMIT = 20
@@ -57,11 +63,17 @@ class GuestTypeRow:
 
 
 @dataclass(frozen=True)
-class PaymentStats:
+class OperationsPaymentStats:
     """
     Attended RSVPs of the paying meetups in scope, split by payment_standing.
     cancelled_but_paid counts cancelled RSVPs that had paid. paid_share is
     paid / (paid + pending).
+
+    Same rule as the door card (GET .../meetups/{id}/stats) but two known
+    differences for one meetup: the door card splits every non-cancelled RSVP,
+    no-shows included, while this counts attended RSVPs only; and the door
+    card reports cancelled_but_paid for any meetup, while this only covers
+    meetups that require payment.
     """
 
     paying_events: int
@@ -114,7 +126,7 @@ class OperationsSummary:
 class OperationsStats:
     summary: OperationsSummary
     guest_types: list[GuestTypeRow]
-    payments: PaymentStats | None
+    payments: OperationsPaymentStats | None
     staff: list[StaffCheckins]
     busiest: BusiestSlot | None
     ban_list: list[BanRow]
@@ -155,7 +167,7 @@ def _guest_types(session: Session, conditions: list[ColumnElement[bool]]) -> lis
     return [GuestTypeRow(t, counts.get(t, 0), ratio(counts.get(t, 0), total, 4)) for t in GUEST_TYPE_ORDER]
 
 
-def _payments(session: Session, conditions: list[ColumnElement[bool]]) -> PaymentStats | None:
+def _payments(session: Session, conditions: list[ColumnElement[bool]]) -> OperationsPaymentStats | None:
     """
     Payment split over the paying meetups in scope; None when there are none.
     Counts come grouped by (guest_type, has_paid) so payment_standing, not
@@ -182,7 +194,7 @@ def _payments(session: Session, conditions: list[ColumnElement[bool]]) -> Paymen
             cancelled_but_paid += row_cancelled
 
     paid, pending = attended[PaymentStanding.PAID], attended[PaymentStanding.PENDING]
-    return PaymentStats(
+    return OperationsPaymentStats(
         paying_events=paying_events,
         paid=paid,
         pending=pending,
@@ -287,12 +299,12 @@ def _ban_list(session: Session, org_id: uuid.UUID, window: _Window) -> list[BanR
 
 
 def _summary_of(
-    guest_types: list[GuestTypeRow], payments: PaymentStats | None, peaks: list[_MeetupPeak], bans: int
+    guest_types: list[GuestTypeRow], payments: OperationsPaymentStats | None, peaks: list[_MeetupPeak], bans: int
 ) -> OperationsSummary:
     return OperationsSummary(
         attended=sum(row.attended for row in guest_types),
         paid_share=payments.paid_share if payments is not None else None,
-        avg_peak_checkins=round(sum(p.checkins for p in peaks) / len(peaks), 1) if peaks else None,
+        avg_peak_checkins=ratio(sum(p.checkins for p in peaks), len(peaks), 1),
         bans=bans,
     )
 

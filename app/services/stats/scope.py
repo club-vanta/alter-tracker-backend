@@ -18,6 +18,7 @@ from sqlmodel import Session, select
 from app.models.models import GuestType, Meetup
 
 STATS_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+QUARTER_HOUR_MINUTES = 15
 
 # Staff and vendors work the event; only these guest types are the audience.
 AUDIENCE_GUEST_TYPES: tuple[str, ...] = (GuestType.NORMAL.value, GuestType.INVITED.value)
@@ -26,6 +27,11 @@ AUDIENCE_GUEST_TYPES: tuple[str, ...] = (GuestType.NORMAL.value, GuestType.INVIT
 def ratio(numerator: int, denominator: int, digits: int) -> float | None:
     """numerator / denominator rounded to digits decimals; None when the denominator is zero."""
     return round(numerator / denominator, digits) if denominator > 0 else None
+
+
+def floor_to_quarter_hour(moment: datetime) -> datetime:
+    """The start of the clock quarter hour that moment falls in, in moment's own time zone."""
+    return moment.replace(minute=moment.minute // QUARTER_HOUR_MINUTES * QUARTER_HOUR_MINUTES, second=0, microsecond=0)
 
 
 def as_utc(value: datetime) -> datetime:
