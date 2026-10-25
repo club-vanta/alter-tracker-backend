@@ -12,6 +12,7 @@ import httpx
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session
 
 from app.models.models import Meetup, MeetupWeather, Organization, OrgRole, User
@@ -200,25 +201,65 @@ def test_set_location_returns_200_when_the_inline_fetch_raises_unexpectedly(
 
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json()["latitude"] == LAT
+    assert row_of(session, meetup) is None
     session.expire_all()
     assert session.get(Meetup, meetup.id).latitude == LAT  # type: ignore[union-attr]
+
+
+def test_set_location_returns_200_with_the_saved_body_when_the_inline_fetch_hits_a_database_error(
+    client: TestClient, admin_headers: dict, session: Session, org: Organization
+):
+    """WHY: A database error in the inline fetch must stay in its own session, not break the request's one."""
+    meetup = unlocated(session, org, hours_ago=12)
+    fetch_sessions: list[Session] = []
+
+    async def failing_fetch(fetch_session: Session, *args: object) -> None:
+        fetch_sessions.append(fetch_session)
+        raise OperationalError("INSERT INTO meetup_weather", {}, Exception("connection lost"))
+
+    with patch("app.routers.meetups.fetch_and_store_weather", failing_fetch):
+        resp = client.patch(location_url(meetup), json=LOCATION, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json() == {
+        "id": str(meetup.id),
+        "name": "Test Meetup",
+        "mazmo_meetup_url": meetup.mazmo_meetup_url,
+        "date": meetup.date.isoformat(),
+        "is_finalized": False,
+        "finalized_at": None,
+        "requires_payment": False,
+        **LOCATION,
+    }
+    assert len(fetch_sessions) == 1
+    assert fetch_sessions[0] is not session
+    assert row_of(session, meetup) is None
 
 
 def test_moving_the_location_replaces_the_old_weather_with_the_new_place(
     client: TestClient, admin_headers: dict, session: Session, org: Organization, mock_get: AsyncMock
 ):
-    """WHY: Weather of the old address no longer describes the event; it is dropped and refetched."""
+    """WHY: Weather of the old address no longer describes the event; it is dropped, then refetched."""
     meetup = located(session, org, hours_ago=12)
     stored_row(session, meetup, avg_temperature=5.0)
-    serve(mock_get, meetup, temperature=25.0, precipitation=0.0)
+    rows_at_fetch: list[MeetupWeather | None] = []
+
+    def provider(*args: object, **kwargs: object) -> MagicMock:
+        rows_at_fetch.append(session.get(MeetupWeather, meetup.id, populate_existing=True))
+        return provider_response(hourly_for(meetup.date, 25.0, 0.0))
+
+    mock_get.side_effect = provider
 
     resp = client.patch(location_url(meetup), json=MOVED, headers=admin_headers)
 
     assert resp.status_code == status.HTTP_200_OK
+    assert rows_at_fetch == [None]  # the old row was already gone when the provider was asked
+    params = mock_get.await_args.kwargs["params"]
+    assert (params["latitude"], params["longitude"]) == (MOVED["latitude"], MOVED["longitude"])
     row = row_of(session, meetup)
     assert row is not None
     assert (row.avg_temperature, row.rained) == (25.0, False)
-    assert mock_get.await_args.kwargs["params"]["latitude"] == MOVED["latitude"]
+    assert row.fetched_at > datetime(2026, 1, 2, tzinfo=UTC)
 
 
 def test_moving_the_location_while_the_provider_is_down_leaves_no_stale_row(

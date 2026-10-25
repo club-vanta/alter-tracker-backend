@@ -25,7 +25,7 @@ from sqlalchemy import create_engine, text
 from sqlmodel import Session, SQLModel
 
 from app.core.config import get_settings
-from app.core.database import get_session
+from app.core.database import get_session, get_session_factory
 from app.core.security import get_password_hash
 from app.domain_types import MazmoUserId
 from app.main import app
@@ -172,7 +172,12 @@ def client(session: Session):
     def override_get_session():
         yield session
 
+    def override_session_factory():
+        # A second session on the same connection: separate state, same shared transaction.
+        return lambda: Session(bind=session.get_bind())
+
     app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_session_factory] = override_session_factory
     with TestClient(app, raise_server_exceptions=True) as c:
         yield c
     app.dependency_overrides.clear()

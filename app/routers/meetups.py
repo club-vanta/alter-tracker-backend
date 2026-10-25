@@ -22,6 +22,7 @@ PATCH /organizations/{org_id}/meetups/{meetup_id}/finalize       -> finalize (or
 PATCH /organizations/{org_id}/meetups/{meetup_id}/unfinalize     -> unfinalize (org admin)
 """
 
+import time
 import uuid
 from collections import Counter
 from datetime import UTC, datetime
@@ -36,7 +37,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import Session, col, delete, select
 
 from app.core.config import Settings, get_settings
-from app.core.database import get_session
+from app.core.database import SessionFactory, get_session, get_session_factory
 from app.core.deps import get_org_admin, get_org_member
 from app.models.models import (
     EventLog,
@@ -1211,17 +1212,24 @@ async def enable_payment_requirement(
 # -- Set or clear the meetup location -------------------------------------------
 
 
-async def _fetch_weather_after_location_change(session: Session, meetup: Meetup, settings: Settings) -> None:
+async def _fetch_weather_after_location_change(
+    session_factory: SessionFactory, meetup_id: uuid.UUID, org_id: uuid.UUID, settings: Settings
+) -> None:
     """Fetch the weather of a just-moved meetup; whatever goes wrong is logged and ignored.
 
-    Saving the venue must never fail because of weather. The session (one
-    pooled connection) stays checked out during the call, bounded by the 5 s
-    provider timeout; org admins only, and a location is saved rarely.
+    Saving the venue must never fail because of weather. The fetch runs in its
+    own short session, so a database error in it cannot poison the request
+    session. That session holds one pooled connection during the call, bounded
+    by the 5 s provider timeout; org admins only, and a location is saved rarely.
     """
-    log_context = {"meetup_id": str(meetup.id), "org_id": str(meetup.org_id)}
+    log_context = {"meetup_id": str(meetup_id), "org_id": str(org_id)}
     try:
-        async with OpenMeteoClient(settings) as client:
-            await fetch_and_store_weather(session, meetup, client)
+        with session_factory() as fetch_session:
+            meetup = fetch_session.get(Meetup, meetup_id)
+            if meetup is None:
+                return
+            async with OpenMeteoClient(settings) as client:
+                await fetch_and_store_weather(fetch_session, meetup, client)
     except (WeatherUnavailableError, MissingLocationError) as exc:
         log.warning("Inline weather fetch failed", error=type(exc).__name__, detail=str(exc), **log_context)
     except Exception:
@@ -1242,6 +1250,7 @@ async def update_meetup_location(
     session: Session = Depends(get_session),
     admin: User = Depends(get_org_admin),
     settings: Settings = Depends(get_settings),
+    session_factory: SessionFactory = Depends(get_session_factory),
 ) -> Meetup:
     """
     Set the venue of a meetup (label, latitude and longitude together) or
@@ -1267,12 +1276,13 @@ async def update_meetup_location(
 
     session.add(meetup)
     if moved:
+        # sqlmodel's exec() overloads only accept select statements, not Delete.
         session.exec(delete(MeetupWeather).where(col(MeetupWeather.meetup_id) == meetup_id))  # type: ignore[arg-type]
     session.commit()
     session.refresh(meetup)
 
     if moved and is_weather_ready(meetup, datetime.now(UTC)):
-        await _fetch_weather_after_location_change(session, meetup, settings)
+        await _fetch_weather_after_location_change(session_factory, meetup_id, org_id, settings)
 
     log.info(
         "Meetup location updated",
@@ -1516,13 +1526,24 @@ async def refresh_meetup_weather(
     if standing is WeatherStatus.PENDING:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=WEATHER_REFRESH_TOO_EARLY_DETAIL)
 
-    # The session stays checked out during the provider call, bounded by the 5 s timeout (org admins only).
+    # The session (one pooled connection) stays checked out during the provider
+    # call, bounded by the 5 s timeout. Acceptable: org admins only, and nothing
+    # is written before the call. Releasing it early would mean rollback/close
+    # on the request session, which the test fixtures' shared transaction does
+    # not tolerate cleanly.
+    started = time.monotonic()
     try:
         async with OpenMeteoClient(settings) as client:
             row = await fetch_and_store_weather(session, meetup, client)
     except NoWeatherDataError as exc:
+        log.warning(
+            "Weather refresh failed", cause="no_data", meetup_id=str(meetup_id), elapsed=time.monotonic() - started
+        )
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=WEATHER_NO_DATA_DETAIL) from exc
     except WeatherUnavailableError as exc:
+        log.warning(
+            "Weather refresh failed", cause="unavailable", meetup_id=str(meetup_id), elapsed=time.monotonic() - started
+        )
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=WEATHER_UNAVAILABLE_DETAIL) from exc
 
     log.info(
