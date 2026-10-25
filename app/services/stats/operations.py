@@ -46,6 +46,7 @@ from app.services.stats.scope import (
     floor_to_quarter_hour,
     ratio,
     single_meetup_conditions,
+    within,
 )
 
 BAN_WINDOW = timedelta(hours=12)
@@ -255,15 +256,11 @@ def _busiest(peaks: list[_MeetupPeak]) -> BusiestSlot | None:
 
 
 def _ban_select(org_id: uuid.UUID, window: _Window, *columns: _Column) -> Select:
-    start, end = window
     conditions: list[ColumnElement[bool]] = [
         EventLog.event_type == EventType.BAN.value,  # type: ignore[arg-type]
         EventLog.org_id == org_id,  # type: ignore[arg-type]
+        *within(col(EventLog.timestamp), window),
     ]
-    if start is not None:
-        conditions.append(EventLog.timestamp >= start)  # type: ignore[arg-type]
-    if end is not None:
-        conditions.append(EventLog.timestamp < end)  # type: ignore[arg-type]
     return (
         select(*columns)
         .select_from(EventLog)

@@ -35,6 +35,7 @@ from app.services.stats.scope import (
     as_utc,
     finalized_meetup_conditions,
     ratio,
+    within,
 )
 
 COHORT_MONTHS = 12
@@ -160,22 +161,11 @@ def _attendances(org_id: uuid.UUID) -> CTE:
     )
 
 
-def _in_period(column: ColumnElement[datetime], period: StatsPeriod) -> list[ColumnElement[bool]]:
-    """Conditions keeping column inside the period's local dates."""
-    start, end = period.utc_bounds()
-    conditions: list[ColumnElement[bool]] = []
-    if start is not None:
-        conditions.append(column >= start)
-    if end is not None:
-        conditions.append(column < end)
-    return conditions
-
-
 def _scope(att: CTE, period: StatsPeriod, meetup_id: uuid.UUID | None) -> list[ColumnElement[bool]]:
     """Attendances of the one meetup, or else of the period."""
     if meetup_id is not None:
         return [att.c.meetup_id == meetup_id]
-    return _in_period(att.c.date, period)
+    return within(att.c.date, period.utc_bounds())
 
 
 # -- Summary --
@@ -235,7 +225,7 @@ def _cohorts(session: Session, att: CTE, period: StatsPeriod, today: date) -> li
     whose first time is in the period.
     """
     rows = session.execute(
-        select(att.c.guest_id, att.c.first_date, att.c.date).where(*_in_period(att.c.first_date, period))
+        select(att.c.guest_id, att.c.first_date, att.c.date).where(*within(att.c.first_date, period.utc_bounds()))
     ).all()
     members: defaultdict[int, set[uuid.UUID]] = defaultdict(set)
     returned: defaultdict[tuple[int, int], set[uuid.UUID]] = defaultdict(set)
@@ -264,7 +254,7 @@ def _frequency(session: Session, att: CTE, period: StatsPeriod) -> list[Frequenc
     per_guest = (
         select(func.count().label("times"))
         .select_from(att)
-        .where(*_in_period(att.c.date, period))
+        .where(*within(att.c.date, period.utc_bounds()))
         .group_by(att.c.guest_id)
         .subquery()
     )
@@ -296,7 +286,10 @@ def _lapsed(session: Session, att: CTE, period: StatsPeriod) -> tuple[list[Lapse
         .select_from(att)
         .join(Guest, Guest.id == att.c.guest_id)  # type: ignore[arg-type]
         .group_by(att.c.guest_id, col(Guest.displayname))
-        .having(attended_before >= LAPSED_MIN_ATTENDANCES, func.count().filter(*_in_period(att.c.date, period)) == 0)
+        .having(
+            attended_before >= LAPSED_MIN_ATTENDANCES,
+            func.count().filter(*within(att.c.date, period.utc_bounds())) == 0,
+        )
         .order_by(attended_before.desc(), last_attended.desc(), att.c.guest_id)
         .limit(LAPSED_LIMIT)
     )

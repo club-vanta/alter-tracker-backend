@@ -13,7 +13,8 @@ from datetime import UTC, date, datetime, time
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import ColumnElement
-from sqlmodel import Session, select
+from sqlalchemy.orm import Mapped
+from sqlmodel import Session, col, select
 
 from app.models.models import GuestType, Meetup
 
@@ -78,18 +79,26 @@ class StatsPeriod:
         return StatsPeriod(self.start - (self.end - self.start), self.start)
 
 
+def within(
+    column: ColumnElement[datetime] | Mapped[datetime], bounds: tuple[datetime | None, datetime | None]
+) -> list[ColumnElement[bool]]:
+    """WHERE conditions keeping column in [start, end); a None side is left open."""
+    start, end = bounds
+    conditions: list[ColumnElement[bool]] = []
+    if start is not None:
+        conditions.append(column >= start)
+    if end is not None:
+        conditions.append(column < end)
+    return conditions
+
+
 def finalized_meetup_conditions(org_id: uuid.UUID, period: StatsPeriod) -> list[ColumnElement[bool]]:
     """WHERE conditions selecting the org's finalized meetups inside the period."""
-    start, end = period.utc_bounds()
-    conditions: list[ColumnElement[bool]] = [
+    return [
         Meetup.org_id == org_id,  # type: ignore[arg-type]
         Meetup.is_finalized.is_(True),  # type: ignore[attr-defined]
+        *within(col(Meetup.date), period.utc_bounds()),
     ]
-    if start is not None:
-        conditions.append(Meetup.date >= start)  # type: ignore[arg-type]
-    if end is not None:
-        conditions.append(Meetup.date < end)  # type: ignore[arg-type]
-    return conditions
 
 
 def single_meetup_conditions(org_id: uuid.UUID, meetup_id: uuid.UUID) -> list[ColumnElement[bool]]:
