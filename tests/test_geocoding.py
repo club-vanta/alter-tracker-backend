@@ -179,6 +179,34 @@ def test_geocode_caps_results_at_five(client: TestClient, admin_headers: dict, o
     assert [r["label"] for r in resp.json()] == [f"Place {n}" for n in range(5)]
 
 
+def test_geocode_drops_repeated_labels_keeping_the_first_before_the_cap(
+    client: TestClient, admin_headers: dict, org: Organization, mock_get: AsyncMock
+):
+    """WHY: Photon returned two features labeled "Corrientes, Olivos, Buenos Aires"; the user saw both.
+
+    Dedup runs before the cap so five distinct labels still come back.
+    """
+    mock_get.return_value = photon_response(
+        [
+            feature(lon=-58.1, lat=-34.1, name="Corrientes", district="Olivos", city="Buenos Aires"),
+            feature(lon=-58.2, lat=-34.2, name="Corrientes", district="Olivos", city="Buenos Aires"),
+            feature(name="Place 1"),
+            feature(name="Place 1"),
+            *[feature(name=f"Place {n}") for n in range(2, 7)],
+        ]
+    )
+
+    resp = client.get(_url(org), params={"q": "corrientes"}, headers=admin_headers)
+
+    assert resp.json() == [
+        {"label": "Corrientes, Olivos, Buenos Aires", "latitude": -34.1, "longitude": -58.1},
+        {"label": "Place 1", "latitude": -34.58, "longitude": -58.43},
+        {"label": "Place 2", "latitude": -34.58, "longitude": -58.43},
+        {"label": "Place 3", "latitude": -34.58, "longitude": -58.43},
+        {"label": "Place 4", "latitude": -34.58, "longitude": -58.43},
+    ]
+
+
 def test_geocode_caps_after_filtering_not_before(
     client: TestClient, admin_headers: dict, org: Organization, mock_get: AsyncMock
 ):

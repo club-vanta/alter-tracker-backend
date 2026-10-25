@@ -9,7 +9,8 @@ Request
 -------
   GET {photon_base_url}?q=...&limit=10&lat=-34.6037&lon=-58.3816
 The lat/lon pair biases results toward Buenos Aires. Photon returns GeoJSON;
-we keep features whose properties.countrycode is "AR" and return at most 5.
+we keep features whose properties.countrycode is "AR", drop repeated labels
+(the first feature with a label wins) and return at most 5.
 
 Label
 -----
@@ -165,4 +166,9 @@ class PhotonClient:
         except (ValueError, KeyError, TypeError) as exc:
             log.warning("Photon returned unreadable data", error=type(exc).__name__)
             raise GeocodingUnavailableError("Photon returned data in an unexpected format") from exc
-        return [r for r in results if r is not None][:_MAX_RESULTS]
+        # Photon can return different places that read the same; show each label once.
+        unique: dict[str, GeocodeResult] = {}
+        for result in results:
+            if result is not None:
+                unique.setdefault(result.label, result)
+        return list(unique.values())[:_MAX_RESULTS]
