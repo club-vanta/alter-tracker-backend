@@ -15,7 +15,7 @@ that crosses midnight asks for two days.
 
 Window
 ------
-[date, date + 6h). Hours used: every hourly timestamp t with
+[floor_hour(date), date + 6h). Hours used: every hourly timestamp t with
 floor_hour(date) <= t < date + 6h, so an event at 22:30 uses 22:00 through
 04:00 (the hour that contains the start counts).
 
@@ -49,18 +49,13 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import Session, col
 
 from app.core.config import Settings
+from app.core.outbound import OUTBOUND_HEADERS
 from app.models.models import Meetup, MeetupWeather, WeatherStatus
 from app.services.timeutil import as_utc
 
 log = structlog.get_logger(__name__)
 
 SOURCE = "open-meteo-historical-forecast"
-
-# The provider asks API users to identify the app.
-_HEADERS: dict[str, str] = {
-    "User-Agent": "alter-tracker/1.0 (club-vanta.com)",
-    "Accept": "application/json",
-}
 
 _HOURLY_VARIABLES = ("temperature_2m", "apparent_temperature", "precipitation", "wind_speed_10m")
 _WINDOW = timedelta(hours=6)
@@ -171,7 +166,7 @@ class OpenMeteoClient:
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._client = httpx.AsyncClient(headers=_HEADERS, timeout=settings.open_meteo_request_timeout)
+        self._client = httpx.AsyncClient(headers=OUTBOUND_HEADERS, timeout=settings.open_meteo_request_timeout)
 
     async def __aenter__(self) -> "OpenMeteoClient":
         return self
@@ -266,6 +261,4 @@ async def fetch_and_store_weather(session: Session, meetup: Meetup, client: Open
     session.exec(stmt)  # type: ignore[arg-type]
     session.commit()
     log.info("Weather stored", meetup_id=str(meetup.id), rained=summary.rained)
-    stored = session.get(MeetupWeather, meetup.id, populate_existing=True)
-    assert stored is not None  # just upserted in this transaction
-    return stored
+    return session.get_one(MeetupWeather, meetup.id, populate_existing=True)

@@ -202,7 +202,7 @@ class MeetupWeatherPublic(BaseModel):
     """
     Weather during the first 6 hours of a meetup, from Open-Meteo.
 
-    Each float summarizes the hours of the window [date, date + 6h). A null
+    Each float summarizes the hours of the window [floor_hour(date), date + 6h). A null
     means the provider had no value for that series anywhere in the window
     (shown as "no data"), never zero:
     - avg_temperature, avg_apparent_temperature: degrees Celsius, mean.

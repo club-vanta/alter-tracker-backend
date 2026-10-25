@@ -38,15 +38,10 @@ import httpx
 import structlog
 
 from app.core.config import Settings
+from app.core.outbound import OUTBOUND_HEADERS
 from app.schemas import GeocodeResult
 
 log = structlog.get_logger(__name__)
-
-# Photon's fair use policy asks for a User-Agent that identifies the app.
-_HEADERS: dict[str, str] = {
-    "User-Agent": "alter-tracker/1.0 (club-vanta.com)",
-    "Accept": "application/json",
-}
 
 # Buenos Aires, used to bias results toward the club's city.
 _BIAS_LAT = -34.6037
@@ -133,7 +128,7 @@ class PhotonClient:
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._client = httpx.AsyncClient(headers=_HEADERS, timeout=settings.photon_request_timeout)
+        self._client = httpx.AsyncClient(headers=OUTBOUND_HEADERS, timeout=settings.photon_request_timeout)
 
     async def __aenter__(self) -> "PhotonClient":
         return self
