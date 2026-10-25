@@ -15,6 +15,7 @@ PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/payment      -> ma
 PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/payment/undo -> undo payment mark (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/enable-payment  -> mark event as paid (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/disable-payment -> mark event as free (org admin)
+PATCH /organizations/{org_id}/meetups/{meetup_id}/location       -> set or clear the venue (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/finalize       -> finalize (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/unfinalize     -> unfinalize (org admin)
 """
@@ -57,6 +58,8 @@ from app.openapi_examples.meetups_examples import (
     UNFINALIZE_MEETUP_RESPONSES,
     UPDATE_GUEST_TYPE_REQUEST_EXAMPLES,
     UPDATE_GUEST_TYPE_RESPONSES,
+    UPDATE_LOCATION_REQUEST_EXAMPLES,
+    UPDATE_LOCATION_RESPONSES,
 )
 from app.schemas import (
     AttendanceStats,
@@ -72,6 +75,7 @@ from app.schemas import (
     MeetupGuestListResponse,
     MeetupGuestPublic,
     MeetupListResponse,
+    MeetupLocationUpdate,
     MeetupPublic,
     MeetupStatsPublic,
     PaymentResponse,
@@ -1168,6 +1172,51 @@ async def enable_payment_requirement(
         meetup_id=str(meetup_id),
         meetup_name=meetup.name,
         org_id=str(org_id),
+    )
+    return meetup
+
+
+# -- Set or clear the meetup location -------------------------------------------
+
+
+@router.patch(
+    "/organizations/{org_id}/meetups/{meetup_id}/location",
+    response_model=MeetupPublic,
+    summary="Set or clear the venue of a meetup (org admin only)",
+    responses=UPDATE_LOCATION_RESPONSES,
+)
+async def update_meetup_location(
+    org_id: uuid.UUID,
+    meetup_id: uuid.UUID,
+    payload: Annotated[MeetupLocationUpdate, Body(openapi_examples=UPDATE_LOCATION_REQUEST_EXAMPLES)],
+    session: Session = Depends(get_session),
+    admin: User = Depends(get_org_admin),
+) -> Meetup:
+    """
+    Set the venue of a meetup (label, latitude and longitude together) or
+    clear it by sending all three as null.
+
+    Allowed on finalized meetups: the venue is descriptive metadata and does
+    not affect check-ins or payments. Returns 422 if the fields are not set
+    or cleared together, or are out of range.
+    """
+    meetup = _get_meetup_or_404_in_org(session, meetup_id, org_id)
+
+    meetup.location_label = payload.location_label
+    meetup.latitude = payload.latitude
+    meetup.longitude = payload.longitude
+
+    session.add(meetup)
+    session.commit()
+    session.refresh(meetup)
+
+    log.info(
+        "Meetup location updated",
+        staff=admin.username,
+        meetup_id=str(meetup_id),
+        meetup_name=meetup.name,
+        org_id=str(org_id),
+        cleared=meetup.location_label is None,
     )
     return meetup
 

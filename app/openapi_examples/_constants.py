@@ -186,6 +186,9 @@ MEETUP_EXAMPLE = {
     "is_finalized": False,
     "finalized_at": None,
     "requires_payment": False,
+    "location_label": None,
+    "latitude": None,
+    "longitude": None,
 }
 
 MEETUP_EXAMPLE_2 = {
@@ -196,6 +199,9 @@ MEETUP_EXAMPLE_2 = {
     "is_finalized": False,
     "finalized_at": None,
     "requires_payment": False,
+    "location_label": None,
+    "latitude": None,
+    "longitude": None,
 }
 
 MEETUP_EXAMPLE_FINALIZED = {
@@ -206,6 +212,9 @@ MEETUP_EXAMPLE_FINALIZED = {
     "is_finalized": True,
     "finalized_at": "2024-03-23T23:59:00Z",
     "requires_payment": False,
+    "location_label": None,
+    "latitude": None,
+    "longitude": None,
 }
 
 MEETUP_EXAMPLE_PAID = {
@@ -216,6 +225,16 @@ MEETUP_EXAMPLE_PAID = {
     "is_finalized": False,
     "finalized_at": None,
     "requires_payment": True,
+    "location_label": None,
+    "latitude": None,
+    "longitude": None,
+}
+
+MEETUP_EXAMPLE_WITH_LOCATION = {
+    **MEETUP_EXAMPLE,
+    "location_label": "Club Vanta, Palermo, Buenos Aires",
+    "latitude": -34.5875,
+    "longitude": -58.4306,
 }
 
 # -- RSVP Data ----------------------------------------------------------------

@@ -10,6 +10,7 @@ Endpoints:
   POST  /organizations/{org_id}/meetups/{id}/guests/{guest_id}/add-walkin
   POST  /organizations/{org_id}/meetups/{id}/guests/{guest_id}/checkin
   PATCH /organizations/{org_id}/meetups/{id}/guests/{guest_id}/undo-checkin
+  PATCH /organizations/{org_id}/meetups/{id}/location
   PATCH /organizations/{org_id}/meetups/{id}/finalize
   PATCH /organizations/{org_id}/meetups/{id}/unfinalize
 """
@@ -25,6 +26,7 @@ from app.openapi_examples._constants import (
     MEETUP_EXAMPLE_2,
     MEETUP_EXAMPLE_FINALIZED,
     MEETUP_EXAMPLE_PAID,
+    MEETUP_EXAMPLE_WITH_LOCATION,
     MEETUP_GUEST_VENDOR_EXAMPLE,
     MEETUP_GUEST_WALKIN,
     MEETUP_STATS_EXAMPLE,
@@ -35,6 +37,7 @@ from app.openapi_examples._constants import (
 )
 from app.openapi_examples._error_responses import (
     error_401_invalid_credentials,
+    error_403_admin_required,
     error_403_not_approved,
     error_404_meetup,
     error_404_rsvp,
@@ -52,12 +55,14 @@ from app.openapi_examples._error_responses import (
     error_409_payment_not_required,
     error_409_walkin_already_rsvped,
     error_422_validation_guest_type,
+    error_422_validation_location,
     error_422_validation_reason,
     error_422_validation_url,
     error_502_mazmo_create_meetup,
     error_502_mazmo_sync,
     error_504_mazmo_create_meetup,
     error_504_mazmo_sync,
+    merge_error_responses,
 )
 
 # ── POST /meetups/ ────────────────────────────────────────────────────────────
@@ -426,6 +431,51 @@ DISABLE_PAYMENT_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_404_meetup(),
     **error_409_meetup_finalized(),
     **error_409_payment_already_disabled(),
+}
+
+# ── PATCH /meetups/{id}/location ──────────────────────────────────────────────
+
+UPDATE_LOCATION_REQUEST_EXAMPLES: dict[str, Any] = {
+    "set": {
+        "summary": "Set the venue",
+        "description": "Label, latitude and longitude are set together",
+        "value": {
+            "location_label": "Club Vanta, Palermo, Buenos Aires",
+            "latitude": -34.5875,
+            "longitude": -58.4306,
+        },
+    },
+    "clear": {
+        "summary": "Clear the venue",
+        "description": "All three fields null removes the location",
+        "value": {"location_label": None, "latitude": None, "longitude": None},
+    },
+}
+
+UPDATE_LOCATION_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Meetup location updated (also allowed on finalized meetups)",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "set": {
+                        "summary": "Location set",
+                        "value": MEETUP_EXAMPLE_WITH_LOCATION,
+                    },
+                    "cleared": {
+                        "summary": "Location cleared",
+                        "value": MEETUP_EXAMPLE,
+                    },
+                }
+            }
+        },
+    },
+    **merge_error_responses(
+        error_401_invalid_credentials(),
+        error_403_admin_required(),
+        error_404_meetup(),
+        error_422_validation_location(),
+    ),
 }
 
 # ── PATCH /meetups/{id}/finalize ──────────────────────────────────────────────

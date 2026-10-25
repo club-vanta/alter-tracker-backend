@@ -405,6 +405,11 @@ class Meetup(SQLModel, table=True):
 
     requires_payment: bool = Field(default=False)
 
+    # Venue, set or cleared together (see MeetupLocationUpdate).
+    location_label: str | None = Field(default=None, max_length=255)
+    latitude: float | None = Field(default=None)
+    longitude: float | None = Field(default=None)
+
     org: Organization = Relationship(back_populates="meetups")
 
     rsvps: list["MeetupRsvp"] = Relationship(

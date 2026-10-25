@@ -1023,6 +1023,54 @@ def error_422_validation_reason() -> ResponsesDict:
     }
 
 
+def error_422_validation_location() -> ResponsesDict:
+    """422 - Meetup location set partially or out of range. Only for PATCH .../location."""
+    return {
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "partial_location": {
+                            "summary": "Label without coordinates",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "type": "value_error",
+                                        "loc": ["body"],
+                                        "msg": (
+                                            "Value error, Cannot set location: location_label, latitude and "
+                                            "longitude must be set together. Send all three, or all null to "
+                                            "clear the location."
+                                        ),
+                                        "input": {"location_label": "Club Vanta", "latitude": None, "longitude": None},
+                                    }
+                                ]
+                            },
+                        },
+                        "latitude_out_of_range": {
+                            "summary": "Latitude outside [-90, 90]",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "type": "value_error",
+                                        "loc": ["body"],
+                                        "msg": (
+                                            "Value error, Cannot set location: latitude must be "
+                                            "between -90 and 90, got 91.0."
+                                        ),
+                                        "input": {"location_label": "Club Vanta", "latitude": 91, "longitude": -58.4},
+                                    }
+                                ]
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
 def error_422_validation_guest_type() -> ResponsesDict:
     """422 - guest_type is not one of NORMAL/INVITED/VENDOR/STAFF."""
     return {

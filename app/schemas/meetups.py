@@ -8,7 +8,7 @@ import re
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator, model_validator
 
 # Pattern for validating Mazmo frontend URLs.
 # Expected format: https://mazmo.net/{+community}/{thread-slug}-{id}
@@ -16,6 +16,8 @@ from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator
 # Examples:
 #   https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217
 #   https://mazmo.net/+eventos-reuniones-argentina/alter-tal-selmo-secret-face-opgnjcy4d0u
+MAX_LOCATION_LABEL_LENGTH = 255
+
 MAZMO_URL_PATTERN = re.compile(r"^https://mazmo\.net/\+?[\w-]+/[\w-]+$")
 
 
@@ -36,6 +38,46 @@ class MeetupPublic(BaseModel):
     is_finalized: bool
     finalized_at: datetime | None
     requires_payment: bool
+    location_label: str | None
+    latitude: float | None
+    longitude: float | None
+
+
+class MeetupLocationUpdate(BaseModel):
+    """
+    Request body for setting or clearing a meetup's location.
+
+    All three keys are required. Send them all null to clear the location,
+    or all set to store it: a label of 1..255 characters (trimmed), a latitude
+    in [-90, 90] and a longitude in [-180, 180].
+    """
+
+    location_label: str | None
+    latitude: float | None
+    longitude: float | None
+
+    @model_validator(mode="after")
+    def _validate_location(self) -> "MeetupLocationUpdate":
+        label, latitude, longitude = self.location_label, self.latitude, self.longitude
+        if label is None and latitude is None and longitude is None:
+            return self
+        if label is None or latitude is None or longitude is None:
+            raise ValueError(
+                "Cannot set location: location_label, latitude and longitude must be set together. "
+                "Send all three, or all null to clear the location."
+            )
+        label = label.strip()
+        if not 1 <= len(label) <= MAX_LOCATION_LABEL_LENGTH:
+            raise ValueError(
+                f"Cannot set location: location_label must have 1 to {MAX_LOCATION_LABEL_LENGTH} characters "
+                f"after trimming, got {len(label)}. Shorten the label or send all three fields as null to clear it."
+            )
+        if not -90 <= latitude <= 90:
+            raise ValueError(f"Cannot set location: latitude must be between -90 and 90, got {latitude}.")
+        if not -180 <= longitude <= 180:
+            raise ValueError(f"Cannot set location: longitude must be between -180 and 180, got {longitude}.")
+        self.location_label = label
+        return self
 
 
 class MeetupListResponse(BaseModel):

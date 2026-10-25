@@ -6525,6 +6525,204 @@
         }
       }
     },
+    "/organizations/{org_id}/meetups/{meetup_id}/location": {
+      "patch": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Set or clear the venue of a meetup (org admin only)",
+        "description": "Set the venue of a meetup (label, latitude and longitude together) or\nclear it by sending all three as null.\n\nAllowed on finalized meetups: the venue is descriptive metadata and does\nnot affect check-ins or payments. Returns 422 if the fields are not set\nor cleared together, or are out of range.",
+        "operationId": "update_meetup_location_organizations__org_id__meetups__meetup_id__location_patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetupLocationUpdate"
+              },
+              "examples": {
+                "set": {
+                  "summary": "Set the venue",
+                  "description": "Label, latitude and longitude are set together",
+                  "value": {
+                    "location_label": "Club Vanta, Palermo, Buenos Aires",
+                    "latitude": -34.5875,
+                    "longitude": -58.4306
+                  }
+                },
+                "clear": {
+                  "summary": "Clear the venue",
+                  "description": "All three fields null removes the location",
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Meetup location updated (also allowed on finalized meetups)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetupPublic"
+                },
+                "examples": {
+                  "set": {
+                    "summary": "Location set",
+                    "value": {
+                      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                      "name": "Alter C\u00f3rdoba - Marzo 2024",
+                      "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217",
+                      "date": "2024-03-23T19:00:00Z",
+                      "is_finalized": false,
+                      "requires_payment": false,
+                      "location_label": "Club Vanta, Palermo, Buenos Aires",
+                      "latitude": -34.5875,
+                      "longitude": -58.4306
+                    }
+                  },
+                  "cleared": {
+                    "summary": "Location cleared",
+                    "value": {
+                      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                      "name": "Alter C\u00f3rdoba - Marzo 2024",
+                      "mazmo_meetup_url": "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217",
+                      "date": "2024-03-23T19:00:00Z",
+                      "is_finalized": false,
+                      "requires_payment": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Org admin privileges needed",
+                    "value": {
+                      "detail": "Organization admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "partial_location": {
+                    "summary": "Label without coordinates",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "value_error",
+                          "loc": [
+                            "body"
+                          ],
+                          "msg": "Value error, Cannot set location: location_label, latitude and longitude must be set together. Send all three, or all null to clear the location.",
+                          "input": {
+                            "location_label": "Club Vanta"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "latitude_out_of_range": {
+                    "summary": "Latitude outside [-90, 90]",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "value_error",
+                          "loc": [
+                            "body"
+                          ],
+                          "msg": "Value error, Cannot set location: latitude must be between -90 and 90, got 91.0.",
+                          "input": {
+                            "location_label": "Club Vanta",
+                            "latitude": 91,
+                            "longitude": -58.4
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/organizations/{org_id}/meetups/{meetup_id}/disable-payment": {
       "patch": {
         "tags": [
@@ -11691,6 +11889,51 @@
         "title": "MeetupListResponse",
         "description": "Response for listing all meetups.\n\nReturns meetups ordered by date descending (most recent first)."
       },
+      "MeetupLocationUpdate": {
+        "properties": {
+          "location_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Label"
+          },
+          "latitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latitude"
+          },
+          "longitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longitude"
+          }
+        },
+        "type": "object",
+        "required": [
+          "location_label",
+          "latitude",
+          "longitude"
+        ],
+        "title": "MeetupLocationUpdate",
+        "description": "Request body for setting or clearing a meetup's location.\n\nAll three keys are required. Send them all null to clear the location,\nor all set to store it: a label of 1..255 characters (trimmed), a latitude\nin [-90, 90] and a longitude in [-180, 180]."
+      },
       "MeetupNewReturningPublic": {
         "properties": {
           "meetup_id": {
@@ -11766,6 +12009,39 @@
           "requires_payment": {
             "type": "boolean",
             "title": "Requires Payment"
+          },
+          "location_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Label"
+          },
+          "latitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latitude"
+          },
+          "longitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longitude"
           }
         },
         "type": "object",
@@ -11776,7 +12052,10 @@
           "date",
           "is_finalized",
           "finalized_at",
-          "requires_payment"
+          "requires_payment",
+          "location_label",
+          "latitude",
+          "longitude"
         ],
         "title": "MeetupPublic",
         "description": "Public representation of a meetup.\n\nReturned when fetching meetup details. The mazmo_meetup_url is the\nsource URL used for syncing RSVPs from the Mazmo platform."
