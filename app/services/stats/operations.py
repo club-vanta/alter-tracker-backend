@@ -45,6 +45,7 @@ from app.services.stats.scope import (
     finalized_meetup_conditions,
     floor_to_quarter_hour,
     ratio,
+    single_meetup_conditions,
 )
 
 BAN_WINDOW = timedelta(hours=12)
@@ -69,11 +70,13 @@ class OperationsPaymentStats:
     cancelled_but_paid counts cancelled RSVPs that had paid. paid_share is
     paid / (paid + pending).
 
-    Same rule as the door card (GET .../meetups/{id}/stats) but two known
+    Same rule as the door card (GET .../meetups/{id}/stats) but three known
     differences for one meetup: the door card splits every non-cancelled RSVP,
-    no-shows included, while this counts attended RSVPs only; and the door
-    card reports cancelled_but_paid for any meetup, while this only covers
-    meetups that require payment.
+    no-shows included, while this counts attended RSVPs only; the door card
+    reports cancelled_but_paid for any meetup, while this only covers meetups
+    that require payment; and a checked-in cancellation counts as attended
+    (and so as paid) here, by status, while the door card goes by the raw
+    cancelled flag.
     """
 
     paying_events: int
@@ -337,7 +340,7 @@ def operations_stats(
     period_conditions = finalized_meetup_conditions(org_id, period)
 
     if meetup_id is not None:
-        conditions = [*finalized_meetup_conditions(org_id, StatsPeriod(None, None)), Meetup.id == meetup_id]  # type: ignore[arg-type]
+        conditions = single_meetup_conditions(org_id, meetup_id)
         start = as_utc(session.execute(select(col(Meetup.date)).where(col(Meetup.id) == meetup_id)).scalar_one())
         ban_window: _Window = (start, start + BAN_WINDOW)
         comparison_kind = StatsComparisonKind.PERIOD_AVERAGE

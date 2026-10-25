@@ -612,7 +612,7 @@ def test_retention_stats_returns_422_when_from_not_before_to(
 def test_retention_stats_returns_empty_body_for_empty_period(
     client: TestClient, org: Organization, admin_headers: dict
 ):
-    resp = client.get(_retention_url(org), headers=admin_headers)
+    resp = client.get(_retention_url(org), params={"from": "2026-04-01", "to": "2026-05-01"}, headers=admin_headers)
 
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json() == {
@@ -627,7 +627,35 @@ def test_retention_stats_returns_empty_body_for_empty_period(
         "cohorts": [],
         "frequency": _empty_frequency(),
         "lapsed": [],
-        "lapsed_total": None,
-        "comparison_kind": None,
-        "comparison": None,
+        "lapsed_total": 0,
+        "comparison_kind": "PREVIOUS_PERIOD",
+        "comparison": {
+            "attendees": 0,
+            "new_guests": 0,
+            "returning": 0,
+            "new_share": None,
+            "first_timer_return_rate": None,
+        },
     }
+
+
+def test_retention_stats_serializes_a_lapsed_regular(
+    client: TestClient, session: Session, org: Organization, admin_headers: dict
+):
+    before = [_meetup(session, org, month) for month in (1, 2, 3)]
+    _meetup(session, org, 4)
+    lapsed = _guest(session)
+    _attend(session, lapsed, *before)
+
+    resp = client.get(_retention_url(org), params={"from": "2026-04-01", "to": "2026-05-01"}, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["lapsed_total"] == 1
+    assert resp.json()["lapsed"] == [
+        {
+            "guest_id": str(lapsed.id),
+            "displayname": lapsed.displayname,
+            "attended_before": 3,
+            "last_attended": before[-1].date.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+    ]

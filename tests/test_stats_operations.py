@@ -178,6 +178,18 @@ def test_payments_count_paying_meetups_only(session: Session, org: Organization)
     assert stats.summary.attended == 6
 
 
+def test_cancelled_but_paid_ignores_free_meetups(session: Session, org: Organization):
+    paying = _meetup(session, org, MARCH_6, requires_payment=True)
+    _rsvp(session, paying, minutes=0, has_paid=True)
+    free = _meetup(session, org, MARCH_13)
+    _rsvp(session, free, has_paid=True, cancelled_rsvp=True)
+
+    stats = operations_stats(session, org.id, MARCH, None)
+
+    assert stats.payments is not None
+    assert stats.payments.cancelled_but_paid == 0
+
+
 def test_payments_none_without_a_paying_meetup(session: Session, org: Organization):
     free = _meetup(session, org, MARCH_6)
     _rsvp(session, free, minutes=0, has_paid=True)
