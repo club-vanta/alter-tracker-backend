@@ -32,11 +32,11 @@ from app.services.stats.scope import (
     AUDIENCE_GUEST_TYPES,
     STATS_TZ,
     StatsPeriod,
-    as_utc,
     finalized_meetup_conditions,
     ratio,
     within,
 )
+from app.services.timeutil import as_utc
 
 COHORT_MONTHS = 12
 LAPSED_MIN_ATTENDANCES = 3

@@ -41,13 +41,13 @@ from app.services.payment import PaymentStanding, payment_standing
 from app.services.stats.scope import (
     STATS_TZ,
     StatsPeriod,
-    as_utc,
     finalized_meetup_conditions,
     floor_to_quarter_hour,
     ratio,
     single_meetup_conditions,
     within,
 )
+from app.services.timeutil import as_utc
 
 BAN_WINDOW = timedelta(hours=12)
 BAN_LIST_LIMIT = 20

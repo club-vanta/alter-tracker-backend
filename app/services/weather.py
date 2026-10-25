@@ -39,7 +39,7 @@ An answer with no usable value in the window raises its subclass NoWeatherDataEr
 
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -50,6 +50,7 @@ from sqlmodel import Session, col
 
 from app.core.config import Settings
 from app.models.models import Meetup, MeetupWeather, WeatherStatus
+from app.services.timeutil import as_utc
 
 log = structlog.get_logger(__name__)
 
@@ -100,13 +101,8 @@ class WeatherSummary:
     hourly: HourlyData
 
 
-def _as_utc(moment: datetime) -> datetime:
-    """Naive datetimes are taken as UTC, aware ones converted to it."""
-    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)
-
-
 def _window_end(start: datetime) -> datetime:
-    return _as_utc(start) + _WINDOW
+    return as_utc(start) + _WINDOW
 
 
 def _mean(values: list[float]) -> float | None:
@@ -115,10 +111,10 @@ def _mean(values: list[float]) -> float | None:
 
 def summarize_weather(hourly: HourlyData, start: datetime) -> WeatherSummary | None:
     """Summarize the hourly arrays over [floor_hour(start), start + 6h), or None without any value."""
-    window_start = _as_utc(start).replace(minute=0, second=0, microsecond=0)
+    window_start = as_utc(start).replace(minute=0, second=0, microsecond=0)
     window_end = _window_end(start)
     times = hourly["time"]
-    indexes = [i for i, t in enumerate(times) if window_start <= _as_utc(datetime.fromisoformat(str(t))) < window_end]
+    indexes = [i for i, t in enumerate(times) if window_start <= as_utc(datetime.fromisoformat(str(t))) < window_end]
     used: HourlyData = {"time": [times[i] for i in indexes]}
     present: dict[str, list[float]] = {}
     for name in _HOURLY_VARIABLES:
@@ -146,7 +142,7 @@ def is_weather_ready(meetup: Meetup, now: datetime) -> bool:
     """True when the meetup has coordinates and its window ended at least 2 hours ago."""
     if meetup.latitude is None or meetup.longitude is None:
         return False
-    return _as_utc(meetup.date) + _READY_AFTER <= _as_utc(now)
+    return as_utc(meetup.date) + _READY_AFTER <= as_utc(now)
 
 
 def weather_status(meetup: Meetup, has_row: bool, now: datetime) -> WeatherStatus:
@@ -163,7 +159,7 @@ def weather_ready_clause(now: datetime) -> ColumnElement[bool]:
     return and_(
         col(Meetup.latitude).is_not(None),
         col(Meetup.longitude).is_not(None),
-        col(Meetup.date) <= _as_utc(now) - _READY_AFTER,
+        col(Meetup.date) <= as_utc(now) - _READY_AFTER,
     )
 
 
@@ -185,7 +181,7 @@ class OpenMeteoClient:
 
     async def fetch_hourly(self, latitude: float, longitude: float, start: datetime) -> HourlyData:
         """Fetch the hourly arrays of the UTC days covering the window of a meetup starting at `start`."""
-        first_day = _as_utc(start).date()
+        first_day = as_utc(start).date()
         # The window is half open, so one microsecond back keeps a midnight end on the same day.
         last_day = (_window_end(start) - timedelta(microseconds=1)).date()
         params: dict[str, str | float] = {

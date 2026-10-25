@@ -35,11 +35,6 @@ def floor_to_quarter_hour(moment: datetime) -> datetime:
     return moment.replace(minute=moment.minute // QUARTER_HOUR_MINUTES * QUARTER_HOUR_MINUTES, second=0, microsecond=0)
 
 
-def as_utc(value: datetime) -> datetime:
-    """The test database returns naive datetimes, production timestamptz; both mean UTC."""
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-
-
 class InvalidStatsPeriodError(ValueError):
     """Raised when a period's start is not strictly before its end."""
 

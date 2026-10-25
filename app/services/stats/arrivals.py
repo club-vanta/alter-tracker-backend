@@ -32,12 +32,12 @@ from app.services.stats.scope import (
     QUARTER_HOUR_MINUTES,
     STATS_TZ,
     StatsPeriod,
-    as_utc,
     finalized_meetup_conditions,
     floor_to_quarter_hour,
     ratio,
     single_meetup_conditions,
 )
+from app.services.timeutil import as_utc
 
 BUCKET_MINUTES = QUARTER_HOUR_MINUTES
 FIRST_HOUR_MINUTES = 60
