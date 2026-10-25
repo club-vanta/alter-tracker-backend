@@ -21,7 +21,7 @@ import argparse
 import asyncio
 import signal
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -49,6 +49,7 @@ BATCH_SIZE = 50
 _MIN_INTERVAL_SECONDS = 1.0
 _PASS_INTERVAL_SECONDS = 30 * 60
 _STOP_POLL_SECONDS = 1.0
+_RETRY_COOLDOWN_SECONDS = 6 * 60 * 60
 
 # Seams for tests: pacing reads the clock and sleeps only through these.
 _sleep = asyncio.sleep
@@ -91,15 +92,13 @@ def wait_for_next_run() -> None:
 # -- One pass -----------------------------------------------------------------
 
 
-def _select_pending(session_factory: SessionFactory, now: datetime) -> list[UUID]:
-    """Ids of ready meetups without a weather row, oldest first, capped at BATCH_SIZE."""
+def _select_pending(session_factory: SessionFactory, now: datetime, cooling: Collection[UUID]) -> list[UUID]:
+    """Ids of ready meetups without a weather row, oldest first, capped at BATCH_SIZE, minus those cooling down."""
     has_row = select(MeetupWeather.meetup_id).where(col(MeetupWeather.meetup_id) == col(Meetup.id)).exists()
-    statement = (
-        select(Meetup.id)
-        .where(weather_ready_clause(now), ~has_row)
-        .order_by(col(Meetup.date), col(Meetup.id))
-        .limit(BATCH_SIZE)
-    )
+    statement = select(Meetup.id).where(weather_ready_clause(now), ~has_row)
+    if cooling:
+        statement = statement.where(col(Meetup.id).not_in(cooling))
+    statement = statement.order_by(col(Meetup.date), col(Meetup.id)).limit(BATCH_SIZE)
     with session_factory() as session:
         return list(session.exec(statement).all())
 
@@ -112,24 +111,41 @@ async def _wait_for_turn(last_call: float | None) -> None:
             await _sleep(wait)
 
 
-async def run_once(session_factory: SessionFactory, client: OpenMeteoClient, now: datetime) -> RunSummary:
-    """Fetch and store the weather of every pending ready meetup, one session each."""
-    pending = _select_pending(session_factory, now)
+async def run_once(
+    session_factory: SessionFactory,
+    client: OpenMeteoClient,
+    now: datetime,
+    *,
+    cooldown: dict[UUID, float] | None = None,
+) -> RunSummary:
+    """Fetch and store the weather of every pending ready meetup, one session each.
+
+    `cooldown` maps a meetup id to the _monotonic time before which it is not retried. Every failure
+    is recorded in it, so meetups the provider can never answer (dates it does not cover) cannot fill
+    the oldest-first batch and starve newer ones. Pass the same dict on every pass; it lives in memory,
+    so a restart retries everything once.
+    """
+    cooldown = {} if cooldown is None else cooldown
+    for meetup_id in [m for m, retry_after in cooldown.items() if retry_after <= _monotonic()]:
+        del cooldown[meetup_id]
+    pending = _select_pending(session_factory, now, cooldown.keys())
     fetched = failed = 0
     last_call: float | None = None
     for meetup_id in pending:
         if stop_requested():
             break
+        # Pace before opening the session so no transaction idles during the sleep.
+        await _wait_for_turn(last_call)
+        last_call = _monotonic()
         with session_factory() as session:
             meetup = session.get(Meetup, meetup_id)
             if meetup is None:
                 continue  # deleted since the selection, counted as skipped
-            await _wait_for_turn(last_call)
-            last_call = _monotonic()
             try:
                 await fetch_and_store_weather(session, meetup, client)
             except WeatherUnavailableError as exc:
                 failed += 1
+                cooldown[meetup_id] = _monotonic() + _RETRY_COOLDOWN_SECONDS
                 log.warning(
                     "Weather fetch failed",
                     meetup_id=str(meetup_id),
@@ -138,15 +154,16 @@ async def run_once(session_factory: SessionFactory, client: OpenMeteoClient, now
                 )
             except Exception:
                 failed += 1
+                cooldown[meetup_id] = _monotonic() + _RETRY_COOLDOWN_SECONDS
                 log.exception("Unexpected error fetching weather", meetup_id=str(meetup_id))
             else:
                 fetched += 1
     return RunSummary(fetched, failed, skipped=len(pending) - fetched - failed)
 
 
-async def _run_pass(engine: Engine) -> RunSummary:
+async def _run_pass(engine: Engine, cooldown: dict[UUID, float]) -> RunSummary:
     async with OpenMeteoClient(get_settings()) as client:
-        return await run_once(lambda: Session(engine), client, datetime.now(UTC))
+        return await run_once(lambda: Session(engine), client, datetime.now(UTC), cooldown=cooldown)
 
 
 # -- Entry point --------------------------------------------------------------
@@ -162,10 +179,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
     engine = create_engine(settings.database_url)
+    cooldown: dict[UUID, float] = {}
     try:
         while not stop_requested():
-            summary = asyncio.run(_run_pass(engine))
-            log.info("Weather pass finished", fetched=summary.fetched, failed=summary.failed, skipped=summary.skipped)
+            try:
+                summary = asyncio.run(_run_pass(engine, cooldown))
+            except Exception:
+                log.exception("Weather pass crashed")  # e.g. database down: wait and try again
+            else:
+                log.info(
+                    "Weather pass finished", fetched=summary.fetched, failed=summary.failed, skipped=summary.skipped
+                )
             if args.once:
                 break
             wait_for_next_run()

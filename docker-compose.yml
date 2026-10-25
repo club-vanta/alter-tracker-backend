@@ -84,6 +84,7 @@ services:
     pull_policy: always
     restart: always
     command: python -m app.jobs.weather_worker
+    stop_grace_period: 20s
     environment:
       DATABASE_URL: postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/alter_event_tracker
       JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}

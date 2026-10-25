@@ -10,6 +10,7 @@ from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime, timedelta
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import UUID
 
 import pytest
 from sqlmodel import Session, select
@@ -61,6 +62,9 @@ class FakeClient:
         }
 
 
+# Test limits: the factory hands out the one test session (a nullcontext, so run_once cannot close it),
+# hence per-meetup session isolation and real concurrent writers are not exercised here; the overlap
+# test inserts the competing row through that same session. The upsert's ON CONFLICT is what is proven.
 def factory(session: Session):
     def open_session() -> AbstractContextManager[Session]:
         return nullcontext(session)
@@ -68,8 +72,10 @@ def factory(session: Session):
     return open_session
 
 
-def run(session: Session, client: FakeClient, now: datetime = NOW) -> RunSummary:
-    return asyncio.run(run_once(factory(session), cast(OpenMeteoClient, client), now))
+def run(
+    session: Session, client: FakeClient, now: datetime = NOW, cooldown: dict[UUID, float] | None = None
+) -> RunSummary:
+    return asyncio.run(run_once(factory(session), cast(OpenMeteoClient, client), now, cooldown=cooldown))
 
 
 def located(session: Session, org: Organization, date: datetime, *, name: str | None = None, located: bool = True):
@@ -270,6 +276,47 @@ def test_run_once_survives_a_row_inserted_between_selection_and_fetch(session: S
     assert [(row.meetup_id, row.avg_temperature) for row in rows] == [(meetup.id, 15.0)]
 
 
+# -- cooldown -----------------------------------------------------------------
+
+
+def test_failing_old_meetups_do_not_starve_a_newer_ready_one(session: Session, org: Organization, instant_clock):
+    """WHY: Meetups the provider never answers (dates it does not cover) must not fill the batch forever."""
+    client = FakeClient()
+    for i in range(50):
+        old = located(session, org, NOW - timedelta(days=4000 + i))
+        client.failures[old.date] = WeatherUnavailableError("HTTP 400")
+    newer = located(session, org, NOW - timedelta(days=2))
+    cooldown: dict[UUID, float] = {}
+
+    first = run(session, client, cooldown=cooldown)
+    second = run(session, client, cooldown=cooldown)
+
+    assert first == RunSummary(fetched=0, failed=50, skipped=0)
+    assert second == RunSummary(fetched=1, failed=0, skipped=0)
+    assert stored_ids(session) == [newer.id]
+
+
+def test_a_failed_meetup_is_retried_once_its_cooldown_expires(session: Session, org: Organization):
+    """WHY: A transient outage must not blacklist a meetup for good."""
+    meetup = located(session, org, NOW - timedelta(days=2))
+    client = FakeClient()
+    client.failures[meetup.date] = WeatherUnavailableError("down")
+    cooldown: dict[UUID, float] = {}
+    clock = {"now": 1000.0}
+
+    with patch.object(weather_worker, "_monotonic", lambda: clock["now"]):
+        run(session, client, cooldown=cooldown)
+        assert cooldown == {meetup.id: 1000.0 + weather_worker._RETRY_COOLDOWN_SECONDS}  # pyright: ignore[reportPrivateUsage]
+        client.failures.clear()
+
+        clock["now"] += weather_worker._RETRY_COOLDOWN_SECONDS - 1  # pyright: ignore[reportPrivateUsage]
+        assert run(session, client, cooldown=cooldown).fetched == 0
+
+        clock["now"] += 1
+        assert run(session, client, cooldown=cooldown).fetched == 1
+    assert cooldown == {}
+
+
 # -- pacing -------------------------------------------------------------------
 
 
@@ -370,3 +417,19 @@ def test_main_installs_stop_handlers_and_loops_until_stopped(main_patches: Magic
     assert main_patches.await_count == 2
     installed = {call.args[0] for call in main_patches.install.call_args_list}  # type: ignore[attr-defined]
     assert installed == {weather_worker.signal.SIGTERM, weather_worker.signal.SIGINT}
+
+
+def test_main_keeps_looping_when_a_pass_crashes(main_patches: MagicMock):
+    """WHY: A database blip must not kill the worker; it logs and waits for the next pass."""
+    main_patches.side_effect = [RuntimeError("db down"), RunSummary(fetched=0, failed=0, skipped=0)]
+    waits: list[int] = []
+
+    def stop_after_two_waits() -> None:
+        waits.append(1)
+        if len(waits) == 2:
+            weather_worker.request_stop(15, None)
+
+    with patch.object(weather_worker, "wait_for_next_run", stop_after_two_waits):
+        assert weather_worker.main([]) == 0
+
+    assert main_patches.await_count == 2

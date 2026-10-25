@@ -239,7 +239,6 @@ async def fetch_and_store_weather(session: Session, meetup: Meetup, client: Open
     hourly = await client.fetch_hourly(meetup.latitude, meetup.longitude, meetup.date)
     summary = summarize_weather(hourly, meetup.date)
     if summary is None:
-        log.warning("Weather skipped: no data in the window", meetup_id=str(meetup.id))
         raise NoWeatherDataError("Open-Meteo has no data for the window of this meetup")
 
     # Building the model applies its defaults (fetched_at), the single source of truth.
