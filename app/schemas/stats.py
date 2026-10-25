@@ -10,7 +10,15 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.models import GuestType, StatsAgeBucket, StatsComparisonKind, StatsFrequencyBucket, StatsLeadTimeBucket
+from app.models.models import (
+    GuestType,
+    StatsAgeBucket,
+    StatsComparisonKind,
+    StatsFrequencyBucket,
+    StatsLeadTimeBucket,
+    StatsTemperatureBand,
+)
+from app.schemas.meetups import MeetupWeatherStatusPublic
 
 # -- Attendance --
 
@@ -348,5 +356,92 @@ class OperationsStatsPublic(BaseModel):
     ban_list: list[BanRowPublic]
     comparison_kind: StatsComparisonKind | None
     comparison: OperationsSummaryPublic | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# -- Weather --
+
+
+class WeatherMeetupRowPublic(BaseModel):
+    """
+    One finalized meetup with its attendance and weather. The weather fields are
+    null without a value: all three when the meetup has no weather row, and
+    rained and total_precipitation_mm when the provider had no precipitation data.
+    """
+
+    meetup_id: uuid.UUID
+    name: str
+    date: datetime
+    attended: int
+    no_show_rate: float | None
+    avg_temperature: float | None
+    rained: bool | None
+    total_precipitation_mm: float | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WeatherGroupPublic(BaseModel):
+    """
+    Meetups that share a weather condition. avg_attended is the mean attended per
+    event; no_show_rate is pooled over the group (all no-shows over all expected
+    guests, not an average of rates). Both are null for a group with no events.
+    """
+
+    events: int
+    avg_attended: float | None
+    no_show_rate: float | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TemperatureBandRowPublic(BaseModel):
+    """Meetups whose average temperature falls in one band; figures as in WeatherGroupPublic."""
+
+    band: StatsTemperatureBand
+    events: int
+    avg_attended: float | None
+    no_show_rate: float | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WeatherEventPublic(MeetupWeatherStatusPublic):
+    """The weather standing of one meetup (as GET .../meetups/{id}/weather) plus its attendance."""
+
+    attended: int
+    no_show_rate: float | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WeatherStatsPublic(BaseModel):
+    """
+    How weather relates to attendance, over finalized meetups.
+
+    Aggregate mode (no meetup_id): event is null. meetups lists every meetup in
+    the period by date ascending. rainy is rained true and dry is rained false;
+    a meetup whose weather row has no precipitation data (rained null) joins
+    neither. temperature_bands always has all five bands in order, lower bound
+    inclusive, over avg_temperature; a meetup whose row has no temperature joins
+    none. without_weather counts only the meetups with no weather row at all;
+    a row with a null value is not counted there.
+
+    One-event mode (meetup_id): event is set; meetups, temperature_bands are
+    empty, rainy and dry are null and without_weather is 0.
+
+    The tab compares groups of events against each other instead of against
+    another period, so comparison_kind and comparison are always null.
+    """
+
+    event: WeatherEventPublic | None
+    meetups: list[WeatherMeetupRowPublic]
+    rainy: WeatherGroupPublic | None
+    dry: WeatherGroupPublic | None
+    temperature_bands: list[TemperatureBandRowPublic]
+    without_weather: int
+    comparison_kind: StatsComparisonKind | None
+    comparison: None
 
     model_config = ConfigDict(from_attributes=True)

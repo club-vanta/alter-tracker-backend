@@ -142,6 +142,16 @@ class StatsLeadTimeBucket(StrEnum):
     FIFTEEN_PLUS = "FIFTEEN_PLUS"
 
 
+class StatsTemperatureBand(StrEnum):
+    """Average temperature of a meetup's first 6 hours, in degrees Celsius. The lower bound is inclusive."""
+
+    BELOW_10 = "BELOW_10"
+    FROM_10_TO_15 = "FROM_10_TO_15"
+    FROM_15_TO_20 = "FROM_15_TO_20"
+    FROM_20_TO_25 = "FROM_20_TO_25"
+    FROM_25 = "FROM_25"
+
+
 class StatsAgeBucket(StrEnum):
     """Age range of an attendee, from the Mazmo profile. UNKNOWN covers missing and implausible ages."""
 

@@ -107,6 +107,11 @@ from app.schemas.stats import (
     RetentionStatsPublic,
     RetentionSummaryPublic,
     StaffCheckinsPublic,
+    TemperatureBandRowPublic,
+    WeatherEventPublic,
+    WeatherGroupPublic,
+    WeatherMeetupRowPublic,
+    WeatherStatsPublic,
 )
 from app.schemas.users import UserSearchResult
 
@@ -197,9 +202,14 @@ __all__ = [
     "StaffCheckinsPublic",
     "StaffRegisterRequest",
     "SyncResponse",
+    "TemperatureBandRowPublic",
     "TokenResponse",
     "UpdateGuestRequest",
     "UserPublic",
     "UserSearchResult",
     "VerifyRecoveryCodeRequest",
+    "WeatherEventPublic",
+    "WeatherGroupPublic",
+    "WeatherMeetupRowPublic",
+    "WeatherStatsPublic",
 ]

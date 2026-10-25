@@ -10275,6 +10275,272 @@
         }
       }
     },
+    "/organizations/{org_id}/stats/weather": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Rain and temperature against the attendance of finalized meetups",
+        "operationId": "get_weather_stats_organizations__org_id__stats_weather_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "First local date to include. Omit for no lower bound.",
+              "title": "From"
+            },
+            "description": "First local date to include. Omit for no lower bound."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Local date the period ends before. Omit for no upper bound.",
+              "title": "To"
+            },
+            "description": "Local date the period ends before. Omit for no upper bound."
+          },
+          {
+            "name": "meetup_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Focus on one finalized meetup instead of the whole period.",
+              "title": "Meetup Id"
+            },
+            "description": "Focus on one finalized meetup instead of the whole period."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Weather against the attendance of finalized meetups",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeatherStatsPublic"
+                },
+                "examples": {
+                  "aggregate": {
+                    "summary": "A period: rainy and dry groups, temperature bands, meetups without weather",
+                    "value": {
+                      "meetups": [
+                        {
+                          "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                          "name": "Alter Abril",
+                          "date": "2026-04-05T22:00:00Z",
+                          "attended": 30,
+                          "no_show_rate": 0.2368,
+                          "avg_temperature": 11.4,
+                          "rained": true,
+                          "total_precipitation_mm": 3.2
+                        },
+                        {
+                          "meetup_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+                          "name": "Alter Abril II",
+                          "date": "2026-04-19T22:00:00Z",
+                          "attended": 31,
+                          "no_show_rate": 0.1143,
+                          "avg_temperature": 18.0,
+                          "rained": false,
+                          "total_precipitation_mm": 0.0
+                        },
+                        {
+                          "meetup_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+                          "name": "Alter Mayo",
+                          "date": "2026-05-03T22:00:00Z",
+                          "attended": 28
+                        }
+                      ],
+                      "rainy": {
+                        "events": 1,
+                        "avg_attended": 30.0,
+                        "no_show_rate": 0.2368
+                      },
+                      "dry": {
+                        "events": 1,
+                        "avg_attended": 31.0,
+                        "no_show_rate": 0.1143
+                      },
+                      "temperature_bands": [
+                        {
+                          "band": "BELOW_10",
+                          "events": 0
+                        },
+                        {
+                          "band": "FROM_10_TO_15",
+                          "events": 1,
+                          "avg_attended": 30.0,
+                          "no_show_rate": 0.2368
+                        },
+                        {
+                          "band": "FROM_15_TO_20",
+                          "events": 1,
+                          "avg_attended": 31.0,
+                          "no_show_rate": 0.1143
+                        },
+                        {
+                          "band": "FROM_20_TO_25",
+                          "events": 0
+                        },
+                        {
+                          "band": "FROM_25",
+                          "events": 0
+                        }
+                      ],
+                      "without_weather": 1
+                    }
+                  },
+                  "event": {
+                    "summary": "One meetup (meetup_id): its weather and attendance",
+                    "value": {
+                      "event": {
+                        "status": "OK",
+                        "weather": {
+                          "avg_temperature": 11.4,
+                          "avg_apparent_temperature": 9.8,
+                          "total_precipitation_mm": 3.2,
+                          "max_wind_kmh": 21.5,
+                          "rained": true,
+                          "fetched_at": "2026-04-06T09:00:00Z",
+                          "source": "open-meteo-historical-forecast"
+                        },
+                        "ready": true,
+                        "attended": 30,
+                        "no_show_rate": 0.2368
+                      },
+                      "meetups": [],
+                      "temperature_bands": [],
+                      "without_weather": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Org admin privileges needed",
+                    "value": {
+                      "detail": "Organization admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_required_field": {
+                    "summary": "Missing required field",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "missing",
+                          "loc": [
+                            "body",
+                            "field_name"
+                          ],
+                          "msg": "Field required",
+                          "input": {}
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/users/": {
       "get": {
         "tags": [
@@ -13568,6 +13834,18 @@
         "title": "StatsLeadTimeBucket",
         "description": "How many whole local days before the meetup an RSVP was made."
       },
+      "StatsTemperatureBand": {
+        "type": "string",
+        "enum": [
+          "BELOW_10",
+          "FROM_10_TO_15",
+          "FROM_15_TO_20",
+          "FROM_20_TO_25",
+          "FROM_25"
+        ],
+        "title": "StatsTemperatureBand",
+        "description": "Average temperature of a meetup's first 6 hours, in degrees Celsius. The lower bound is inclusive."
+      },
       "SyncResponse": {
         "properties": {
           "inserted": {
@@ -13591,6 +13869,48 @@
         ],
         "title": "SyncResponse",
         "description": "Response after syncing guests from Mazmo.\n\nReports how many new guests/RSVPs were inserted vs already existed.\nThe sync is idempotent - running it multiple times is safe."
+      },
+      "TemperatureBandRowPublic": {
+        "properties": {
+          "band": {
+            "$ref": "#/components/schemas/StatsTemperatureBand"
+          },
+          "events": {
+            "type": "integer",
+            "title": "Events"
+          },
+          "avg_attended": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Attended"
+          },
+          "no_show_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Show Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "band",
+          "events",
+          "avg_attended",
+          "no_show_rate"
+        ],
+        "title": "TemperatureBandRowPublic",
+        "description": "Meetups whose average temperature falls in one band; figures as in WeatherGroupPublic."
       },
       "TokenResponse": {
         "properties": {
@@ -13821,6 +14141,248 @@
           "code"
         ],
         "title": "VerifyRecoveryCodeRequest"
+      },
+      "WeatherEventPublic": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/WeatherStatus"
+          },
+          "weather": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MeetupWeatherPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          },
+          "attended": {
+            "type": "integer",
+            "title": "Attended"
+          },
+          "no_show_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Show Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "weather",
+          "ready",
+          "attended",
+          "no_show_rate"
+        ],
+        "title": "WeatherEventPublic",
+        "description": "The weather standing of one meetup (as GET .../meetups/{id}/weather) plus its attendance."
+      },
+      "WeatherGroupPublic": {
+        "properties": {
+          "events": {
+            "type": "integer",
+            "title": "Events"
+          },
+          "avg_attended": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Attended"
+          },
+          "no_show_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Show Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events",
+          "avg_attended",
+          "no_show_rate"
+        ],
+        "title": "WeatherGroupPublic",
+        "description": "Meetups that share a weather condition. avg_attended is the mean attended per\nevent; no_show_rate is pooled over the group (all no-shows over all expected\nguests, not an average of rates). Both are null for a group with no events."
+      },
+      "WeatherMeetupRowPublic": {
+        "properties": {
+          "meetup_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Meetup Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date"
+          },
+          "attended": {
+            "type": "integer",
+            "title": "Attended"
+          },
+          "no_show_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Show Rate"
+          },
+          "avg_temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Temperature"
+          },
+          "rained": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rained"
+          },
+          "total_precipitation_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Precipitation Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "meetup_id",
+          "name",
+          "date",
+          "attended",
+          "no_show_rate",
+          "avg_temperature",
+          "rained",
+          "total_precipitation_mm"
+        ],
+        "title": "WeatherMeetupRowPublic",
+        "description": "One finalized meetup with its attendance and weather. The weather fields are\nnull without a value: all three when the meetup has no weather row, and\nrained and total_precipitation_mm when the provider had no precipitation data."
+      },
+      "WeatherStatsPublic": {
+        "properties": {
+          "event": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WeatherEventPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meetups": {
+            "items": {
+              "$ref": "#/components/schemas/WeatherMeetupRowPublic"
+            },
+            "type": "array",
+            "title": "Meetups"
+          },
+          "rainy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WeatherGroupPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WeatherGroupPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "temperature_bands": {
+            "items": {
+              "$ref": "#/components/schemas/TemperatureBandRowPublic"
+            },
+            "type": "array",
+            "title": "Temperature Bands"
+          },
+          "without_weather": {
+            "type": "integer",
+            "title": "Without Weather"
+          },
+          "comparison_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatsComparisonKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comparison": {
+            "type": "null",
+            "title": "Comparison"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event",
+          "meetups",
+          "rainy",
+          "dry",
+          "temperature_bands",
+          "without_weather",
+          "comparison_kind",
+          "comparison"
+        ],
+        "title": "WeatherStatsPublic",
+        "description": "How weather relates to attendance, over finalized meetups.\n\nAggregate mode (no meetup_id): event is null. meetups lists every meetup in\nthe period by date ascending. rainy is rained true and dry is rained false;\na meetup whose weather row has no precipitation data (rained null) joins\nneither. temperature_bands always has all five bands in order, lower bound\ninclusive, over avg_temperature; a meetup whose row has no temperature joins\nnone. without_weather counts only the meetups with no weather row at all;\na row with a null value is not counted there.\n\nOne-event mode (meetup_id): event is set; meetups, temperature_bands are\nempty, rainy and dry are null and without_weather is 0.\n\nThe tab compares groups of events against each other instead of against\nanother period, so comparison_kind and comparison are always null."
       },
       "WeatherStatus": {
         "type": "string",

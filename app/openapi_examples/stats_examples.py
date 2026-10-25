@@ -7,6 +7,7 @@ Endpoints:
   GET /organizations/{org_id}/stats/demographics
   GET /organizations/{org_id}/stats/retention
   GET /organizations/{org_id}/stats/operations
+  GET /organizations/{org_id}/stats/weather
 """
 
 from typing import Any
@@ -482,6 +483,108 @@ OPERATIONS_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_respon
                         "operations": {
                             "summary": "A period compared with the previous period",
                             "value": OPERATIONS_STATS_EXAMPLE,
+                        },
+                    }
+                }
+            },
+        }
+    },
+    error_401_invalid_credentials(),
+    error_403_admin_required(),
+    error_404_meetup(),
+    error_422_validation(),
+)
+
+
+# -- GET /organizations/{org_id}/stats/weather --
+
+WEATHER_STATS_EXAMPLE = {
+    "event": None,
+    "meetups": [
+        {
+            "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "name": "Alter Abril",
+            "date": "2026-04-05T22:00:00Z",
+            "attended": 30,
+            "no_show_rate": 0.2368,
+            "avg_temperature": 11.4,
+            "rained": True,
+            "total_precipitation_mm": 3.2,
+        },
+        {
+            "meetup_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+            "name": "Alter Abril II",
+            "date": "2026-04-19T22:00:00Z",
+            "attended": 31,
+            "no_show_rate": 0.1143,
+            "avg_temperature": 18.0,
+            "rained": False,
+            "total_precipitation_mm": 0.0,
+        },
+        {
+            "meetup_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+            "name": "Alter Mayo",
+            "date": "2026-05-03T22:00:00Z",
+            "attended": 28,
+            "no_show_rate": None,
+            "avg_temperature": None,
+            "rained": None,
+            "total_precipitation_mm": None,
+        },
+    ],
+    "rainy": {"events": 1, "avg_attended": 30.0, "no_show_rate": 0.2368},
+    "dry": {"events": 1, "avg_attended": 31.0, "no_show_rate": 0.1143},
+    "temperature_bands": [
+        {"band": "BELOW_10", "events": 0, "avg_attended": None, "no_show_rate": None},
+        {"band": "FROM_10_TO_15", "events": 1, "avg_attended": 30.0, "no_show_rate": 0.2368},
+        {"band": "FROM_15_TO_20", "events": 1, "avg_attended": 31.0, "no_show_rate": 0.1143},
+        {"band": "FROM_20_TO_25", "events": 0, "avg_attended": None, "no_show_rate": None},
+        {"band": "FROM_25", "events": 0, "avg_attended": None, "no_show_rate": None},
+    ],
+    "without_weather": 1,
+    "comparison_kind": None,
+    "comparison": None,
+}
+
+WEATHER_STATS_EVENT_EXAMPLE = {
+    "event": {
+        "status": "OK",
+        "weather": {
+            "avg_temperature": 11.4,
+            "avg_apparent_temperature": 9.8,
+            "total_precipitation_mm": 3.2,
+            "max_wind_kmh": 21.5,
+            "rained": True,
+            "fetched_at": "2026-04-06T09:00:00Z",
+            "source": "open-meteo-historical-forecast",
+        },
+        "ready": True,
+        "attended": 30,
+        "no_show_rate": 0.2368,
+    },
+    "meetups": [],
+    "rainy": None,
+    "dry": None,
+    "temperature_bands": [],
+    "without_weather": 0,
+    "comparison_kind": None,
+    "comparison": None,
+}
+
+WEATHER_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_responses(
+    {
+        200: {
+            "description": "Weather against the attendance of finalized meetups",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "aggregate": {
+                            "summary": "A period: rainy and dry groups, temperature bands, meetups without weather",
+                            "value": WEATHER_STATS_EXAMPLE,
+                        },
+                        "event": {
+                            "summary": "One meetup (meetup_id): its weather and attendance",
+                            "value": WEATHER_STATS_EVENT_EXAMPLE,
                         },
                     }
                 }

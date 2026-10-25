@@ -9,6 +9,8 @@ from app.openapi_examples.stats_examples import (
     DEMOGRAPHIC_STATS_EXAMPLE,
     OPERATIONS_STATS_EXAMPLE,
     RETENTION_STATS_EXAMPLE,
+    WEATHER_STATS_EVENT_EXAMPLE,
+    WEATHER_STATS_EXAMPLE,
 )
 from app.schemas.stats import (
     ArrivalStatsPublic,
@@ -16,6 +18,7 @@ from app.schemas.stats import (
     DemographicStatsPublic,
     OperationsStatsPublic,
     RetentionStatsPublic,
+    WeatherStatsPublic,
 )
 
 
@@ -27,8 +30,10 @@ from app.schemas.stats import (
         (DemographicStatsPublic, DEMOGRAPHIC_STATS_EXAMPLE),
         (RetentionStatsPublic, RETENTION_STATS_EXAMPLE),
         (OperationsStatsPublic, OPERATIONS_STATS_EXAMPLE),
+        (WeatherStatsPublic, WEATHER_STATS_EXAMPLE),
+        (WeatherStatsPublic, WEATHER_STATS_EVENT_EXAMPLE),
     ],
-    ids=["attendance", "arrivals", "demographics", "retention", "operations"],
+    ids=["attendance", "arrivals", "demographics", "retention", "operations", "weather", "weather-event"],
 )
 def test_stats_example_matches_its_response_model(model: type[BaseModel], example: dict):
     model.model_validate(example)
@@ -71,3 +76,23 @@ def test_operations_example_is_consistent():
     assert sum(row["checkins"] for row in example["staff"]) == attended
     assert example["busiest"]["checkins"] >= summary["avg_peak_checkins"]
     assert len(example["ban_list"]) == summary["bans"]
+
+
+def test_weather_example_is_consistent():
+    example = WEATHER_STATS_EXAMPLE
+    meetups = example["meetups"]
+    grouped = example["rainy"]["events"] + example["dry"]["events"]
+
+    assert [row["band"] for row in example["temperature_bands"]] == [
+        "BELOW_10",
+        "FROM_10_TO_15",
+        "FROM_15_TO_20",
+        "FROM_20_TO_25",
+        "FROM_25",
+    ]
+    assert grouped == sum(1 for m in meetups if m["rained"] is not None)
+    assert sum(row["events"] for row in example["temperature_bands"]) == sum(
+        1 for m in meetups if m["avg_temperature"] is not None
+    )
+    assert example["without_weather"] == sum(1 for m in meetups if m["avg_temperature"] is None and m["rained"] is None)
+    assert [m["date"] for m in meetups] == sorted(m["date"] for m in meetups)

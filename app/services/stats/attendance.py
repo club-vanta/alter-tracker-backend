@@ -127,7 +127,10 @@ def meetup_attendance_rows(session: Session, org_id: uuid.UUID, period: StatsPer
     return _run_rows(session, _attendance_rows_query(*finalized_meetup_conditions(org_id, period)))
 
 
-def _single_meetup_rows(session: Session, org_id: uuid.UUID, meetup_id: uuid.UUID) -> list[MeetupAttendanceRow]:
+def single_meetup_attendance_rows(
+    session: Session, org_id: uuid.UUID, meetup_id: uuid.UUID
+) -> list[MeetupAttendanceRow]:
+    """Audience attendance of one finalized meetup of the org, whatever its date."""
     return _run_rows(session, _attendance_rows_query(*single_meetup_conditions(org_id, meetup_id)))
 
 
@@ -167,7 +170,7 @@ def attendance_stats(
     is a finalized meetup of the org.
     """
     if meetup_id is not None:
-        rows = _single_meetup_rows(session, org_id, meetup_id)
+        rows = single_meetup_attendance_rows(session, org_id, meetup_id)
         period_rows = meetup_attendance_rows(session, org_id, period)
         return AttendanceStats(
             meetups=rows,
