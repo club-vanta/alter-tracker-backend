@@ -610,38 +610,6 @@ async def unban_guest(
     return GuestPublic.model_validate(guest)
 
 
-# ── Helper ────────────────────────────────────────────────────────────────────
-
-
-def _to_banned_guest_public(guest: Guest, ban: OrganizationBan) -> BannedGuestPublic:
-    """Combine a guest's identity (incl. Mazmo profile snapshot) with its ban row."""
-    return BannedGuestPublic(
-        id=guest.id,
-        mazmo_user_id=guest.mazmo_user_id,
-        mazmo_handle=guest.mazmo_handle,
-        displayname=guest.displayname,
-        instagram_username=guest.instagram_username,
-        mazmo_profile=GuestMazmoProfilePublic.model_validate(guest.mazmo_profile) if guest.mazmo_profile else None,
-        banned_at=ban.banned_at,
-        banned_reason=ban.reason,
-        banned_by_id=ban.banned_by_id,
-    )
-
-
-def _get_org_or_404(session: Session, org_id: uuid.UUID) -> Organization:
-    org = session.get(Organization, org_id)
-    if not org:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Organization {org_id} not found.",
-        )
-    return org
-
-
-# Re-export for use in other routers
-__all__ = ["OrgRole", "_get_org_or_404"]
-
-
 # -- Address search -----------------------------------------------------------
 
 
@@ -673,8 +641,45 @@ async def geocode_address(
     setting a location by hand is unaffected.
     """
     _get_org_or_404(session, org_id)
+    # The session (one pooled connection) stays checked out during the limiter
+    # wait and the Photon call. Acceptable: org admins only, the UI debounces
+    # searches, and the call is bounded by the 5 s timeout. Releasing it early
+    # would mean rollback/close on the request session, which the test
+    # fixtures' shared transaction does not tolerate cleanly.
     try:
         async with PhotonClient(settings) as client:
             return await client.search(q)
     except GeocodingUnavailableError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=GEOCODING_UNAVAILABLE_DETAIL) from exc
+
+
+# ── Helper ────────────────────────────────────────────────────────────────────
+
+
+def _to_banned_guest_public(guest: Guest, ban: OrganizationBan) -> BannedGuestPublic:
+    """Combine a guest's identity (incl. Mazmo profile snapshot) with its ban row."""
+    return BannedGuestPublic(
+        id=guest.id,
+        mazmo_user_id=guest.mazmo_user_id,
+        mazmo_handle=guest.mazmo_handle,
+        displayname=guest.displayname,
+        instagram_username=guest.instagram_username,
+        mazmo_profile=GuestMazmoProfilePublic.model_validate(guest.mazmo_profile) if guest.mazmo_profile else None,
+        banned_at=ban.banned_at,
+        banned_reason=ban.reason,
+        banned_by_id=ban.banned_by_id,
+    )
+
+
+def _get_org_or_404(session: Session, org_id: uuid.UUID) -> Organization:
+    org = session.get(Organization, org_id)
+    if not org:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Organization {org_id} not found.",
+        )
+    return org
+
+
+# Re-export for use in other routers
+__all__ = ["OrgRole", "_get_org_or_404"]

@@ -58,6 +58,10 @@ _MIN_INTERVAL_SECONDS = 1.0
 
 # -- Rate limiter -------------------------------------------------------------
 
+# Seams for tests: the limiter reads the clock and sleeps only through these.
+_sleep = asyncio.sleep
+_monotonic = time.monotonic
+
 _rate_lock = asyncio.Lock()
 _last_call: float | None = None
 
@@ -67,10 +71,10 @@ async def _wait_for_turn() -> None:
     global _last_call
     async with _rate_lock:
         if _last_call is not None:
-            wait = _MIN_INTERVAL_SECONDS - (time.monotonic() - _last_call)
+            wait = _MIN_INTERVAL_SECONDS - (_monotonic() - _last_call)
             if wait > 0:
-                await asyncio.sleep(wait)
-        _last_call = time.monotonic()
+                await _sleep(wait)
+        _last_call = _monotonic()
 
 
 # -- Errors -------------------------------------------------------------------
@@ -85,7 +89,8 @@ class GeocodingUnavailableError(Exception):
 
 def build_label(properties: dict[str, Any]) -> str:
     """Join the non-empty address parts of a Photon feature, dropping consecutive duplicates."""
-    street = " ".join(str(p) for p in (properties.get("street"), properties.get("housenumber")) if p)
+    # A housenumber means nothing without its street, so it is dropped alone.
+    street = f"{properties['street']} {properties.get('housenumber') or ''}".strip() if properties.get("street") else ""
     parts = [
         properties.get("name"),
         street,
@@ -101,16 +106,22 @@ def build_label(properties: dict[str, Any]) -> str:
     return ", ".join(label)
 
 
-def _parse_feature(feature: dict[str, Any]) -> GeocodeResult | None:
-    """Return a result for an Argentine feature with a label and coordinates, else None."""
-    properties = feature["properties"]
-    if properties.get("countrycode") != _COUNTRY_CODE:
+def _parse_feature(feature: Any) -> GeocodeResult | None:
+    """Return a result for an Argentine feature with a label and coordinates, else None.
+
+    A malformed feature is skipped rather than failing the whole search.
+    """
+    try:
+        properties = feature["properties"]
+        if properties.get("countrycode") != _COUNTRY_CODE:
+            return None
+        label = build_label(properties)
+        longitude, latitude = feature["geometry"]["coordinates"][:2]
+        if not label:
+            return None
+        return GeocodeResult(label=label, latitude=latitude, longitude=longitude)
+    except (KeyError, TypeError, ValueError, AttributeError):
         return None
-    label = build_label(properties)
-    longitude, latitude = feature["geometry"]["coordinates"][:2]
-    if not label:
-        return None
-    return GeocodeResult(label=label, latitude=latitude, longitude=longitude)
 
 
 # -- Client -------------------------------------------------------------------
@@ -149,9 +160,9 @@ class PhotonClient:
             raise GeocodingUnavailableError(f"Photon returned HTTP {response.status_code}")
 
         try:
-            features: list[dict[str, Any]] = response.json()["features"]
-            results = (_parse_feature(feature) for feature in features)
-            return [r for r in results if r is not None][:_MAX_RESULTS]
+            features: list[Any] = response.json()["features"]
+            results = [_parse_feature(feature) for feature in features]
         except (ValueError, KeyError, TypeError) as exc:
             log.warning("Photon returned unreadable data", error=type(exc).__name__)
             raise GeocodingUnavailableError("Photon returned data in an unexpected format") from exc
+        return [r for r in results if r is not None][:_MAX_RESULTS]
