@@ -2040,7 +2040,7 @@
           "organizations"
         ],
         "summary": "Search addresses in Argentina to set a meetup's location",
-        "description": "Proxies the query to Photon (OpenStreetMap data), biased toward Buenos\nAires, and returns at most 5 matches in Argentina, best first. Results\nin other countries are dropped. The query is trimmed before the length\ncheck, so 3 to 200 characters of real text are required.\n\nPhoton is called at most once per second per process; concurrent\nsearches wait their turn. Returns 502 if Photon times out or fails;\nsetting a location by hand is unaffected.",
+        "description": "Proxies the query to Photon (OpenStreetMap data), biased toward Buenos\nAires, and returns at most 5 matches in Argentina, best first. Results\nin other countries are dropped. The query is trimmed before the length\ncheck, so 3 to 200 characters of real text are required.\n\nPhoton is called at most once per second per process; concurrent\nsearches wait their turn. Returns 504 if Photon does not respond in\ntime and 502 if it fails or answers with something unreadable; setting\na location by hand is unaffected.",
         "operationId": "geocode_address_organizations__org_id__geocode_get",
         "security": [
           {
@@ -2190,9 +2190,24 @@
               "application/json": {
                 "examples": {
                   "geocoding_unavailable": {
-                    "summary": "Photon timed out or failed",
+                    "summary": "Photon returned an error or unreadable data",
                     "value": {
                       "detail": "Cannot search addresses: the address search is unavailable right now. Try again in a moment, or enter the address later."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Address search timed out",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "geocoding_timeout": {
+                    "summary": "Photon did not respond in time",
+                    "value": {
+                      "detail": "Cannot search addresses: the address search did not respond in time. Try again in a moment, or enter the address later."
                     }
                   }
                 }
@@ -7502,7 +7517,7 @@
           "meetups"
         ],
         "summary": "Fetch the weather of a meetup again (org admin only)",
-        "description": "Fetch the weather from Open-Meteo and overwrite the stored snapshot.\n\nReturns 409 when the meetup has no location, or when its window ended\nless than 2 hours ago (the provider has not published the hours yet).\nReturns 502 when the provider has no data for that place and time, or is\nunavailable; the stored snapshot, if any, is left untouched.",
+        "description": "Fetch the weather from Open-Meteo and overwrite the stored snapshot.\n\nReturns 409 when the meetup has no location, or before the weather is\navailable (8 hours after the event starts; the message gives the time).\nReturns 504 when the provider does not respond in time, and 502 when it\nhas no data for that place and time or is otherwise unavailable; the\nstored snapshot, if any, is left untouched.",
         "operationId": "refresh_meetup_weather_organizations__org_id__meetups__meetup_id__weather_refresh_post",
         "security": [
           {
@@ -7619,9 +7634,9 @@
                     }
                   },
                   "too_early": {
-                    "summary": "The provider has not published the hours yet",
+                    "summary": "The event has not finished or the provider has not published the hours yet",
                     "value": {
-                      "detail": "Cannot refresh weather: the event ended less than 2 hours ago. Try again later."
+                      "detail": "Cannot refresh weather: it is available 8 hours after the event starts (from 2026-03-07T07:00:00Z). Try again then."
                     }
                   }
                 }
@@ -7640,9 +7655,24 @@
                     }
                   },
                   "unavailable": {
-                    "summary": "The provider timed out or failed",
+                    "summary": "The provider returned an error or unreadable data",
                     "value": {
                       "detail": "Cannot refresh weather: the weather provider is unavailable right now. Try again in a moment."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Weather provider timed out",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "timeout": {
+                    "summary": "The provider did not respond in time",
+                    "value": {
+                      "detail": "Cannot refresh weather: the weather provider did not respond in time. Try again in a moment."
                     }
                   }
                 }
@@ -12956,7 +12986,7 @@
           "source"
         ],
         "title": "MeetupWeatherPublic",
-        "description": "Weather during the first 6 hours of a meetup, from Open-Meteo.\n\nEach float summarizes the hours of the window [date, date + 6h). A null\nmeans the provider had no value for that series anywhere in the window\n(shown as \"no data\"), never zero:\n- avg_temperature, avg_apparent_temperature: degrees Celsius, mean.\n- total_precipitation_mm: millimetres, sum. Null when unknown.\n- max_wind_kmh: km/h, highest hour.\n- rained: total_precipitation_mm >= 0.2. Null exactly when\n  total_precipitation_mm is null: unknown is not the same as dry.\n\nfetched_at is when the snapshot was taken; source names the provider\ndataset. The raw hourly arrays are stored but not returned."
+        "description": "Weather during the first 6 hours of a meetup, from Open-Meteo.\n\nEach float summarizes the hours of the window [floor_hour(date), date + 6h). A null\nmeans the provider had no value for that series anywhere in the window\n(shown as \"no data\"), never zero:\n- avg_temperature, avg_apparent_temperature: degrees Celsius, mean.\n- total_precipitation_mm: millimetres, sum. Null when unknown.\n- max_wind_kmh: km/h, highest hour.\n- rained: total_precipitation_mm >= 0.2. Null exactly when\n  total_precipitation_mm is null: unknown is not the same as dry.\n\nfetched_at is when the snapshot was taken; source names the provider\ndataset. The raw hourly arrays are stored but not returned."
       },
       "MeetupWeatherStatusPublic": {
         "properties": {
