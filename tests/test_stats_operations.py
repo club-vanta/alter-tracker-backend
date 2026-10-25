@@ -332,6 +332,55 @@ def test_ban_list_keeps_the_newest_twenty(session: Session, org: Organization):
     assert stats.ban_list[-1].displayname == "Banned 1"
 
 
+# -- Scoping --
+
+
+def test_operations_ignore_other_orgs_and_open_meetups(session: Session, org: Organization):
+    other_org = make_org(session, name="Other Org", slug="other-org")
+    door = make_user(session, username="door_staff")
+    own = _meetup(session, org, MARCH_6, requires_payment=True)
+    _rsvp(session, own, minutes=5, has_paid=True, checked_in_by=door)
+    _rsvp(session, own, minutes=10)
+    _rsvp(session, own, minutes=20, guest_type=GuestType.STAFF)
+    own_ban = _ban(session, org, MARCH_6, displayname="Own Ban")
+    foreign = _meetup(session, other_org, MARCH_13, requires_payment=True)
+    open_meetup = make_meetup(
+        session,
+        org=org,
+        name="Open",
+        mazmo_meetup_url="https://mazmo.net/test/open",
+        date=MARCH_13,
+        requires_payment=True,
+        is_finalized=False,
+    )
+    for leaky in (foreign, open_meetup):
+        for minutes in (31, 32, 33, 34):  # 20:30 x4, a bigger peak than the own meetup's
+            _rsvp(session, leaky, minutes=minutes, has_paid=True, checked_in_by=door)
+        _rsvp(session, leaky, minutes=40, guest_type=GuestType.STAFF)
+        _rsvp(session, leaky, minutes=41)
+        _rsvp(session, leaky, has_paid=True, cancelled_rsvp=True)
+    _ban(session, other_org, MARCH_13, displayname="Foreign Ban")
+
+    stats = operations_stats(session, org.id, MARCH, None)
+
+    assert stats.summary == OperationsSummary(attended=3, paid_share=0.5, avg_peak_checkins=2.0, bans=1)
+    assert stats.guest_types == [
+        GuestTypeRow(GuestType.NORMAL, 2, 0.6667),
+        GuestTypeRow(GuestType.INVITED, 0, 0.0),
+        GuestTypeRow(GuestType.STAFF, 1, 0.3333),
+        GuestTypeRow(GuestType.VENDOR, 0, 0.0),
+    ]
+    assert stats.payments == OperationsPaymentStats(
+        paying_events=1, paid=1, pending=1, exempt=1, cancelled_but_paid=0, paid_share=0.5
+    )
+    assert stats.staff == [
+        StaffCheckins(user_id=door.id, username="door_staff", checkins=1),
+        StaffCheckins(user_id=None, username=None, checkins=2),
+    ]
+    assert stats.busiest == BusiestSlot(meetup_id=own.id, meetup_name=own.name, local_time="20:00", checkins=2)
+    assert [ban.guest_id for ban in stats.ban_list] == [own_ban.guest_id]
+
+
 # -- One event and comparisons --
 
 
@@ -421,6 +470,17 @@ def test_operations_stats_returns_403_before_checking_the_meetup_for_staff(
     meetup = make_meetup(session, org=org, is_finalized=False)
 
     resp = client.get(_operations_url(org), params={"meetup_id": str(meetup.id)}, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_operations_stats_returns_403_for_admin_of_other_org(client: TestClient, session: Session, org: Organization):
+    other_org = make_org(session, name="Other Org", slug="other-org")
+    other_admin = make_user(session, username="other_admin")
+    make_org_member(session, org=other_org, user=other_admin, role=OrgRole.ADMIN)
+    headers = get_auth_headers(client, "other_admin", "a-very-secure-passphrase")
+
+    resp = client.get(_operations_url(org), headers=headers)
 
     assert resp.status_code == status.HTTP_403_FORBIDDEN
 
@@ -526,6 +586,17 @@ def test_operations_stats_returns_404_for_unfinalized_meetup(
     meetup = make_meetup(session, org=org, is_finalized=False)
 
     resp = client.get(_operations_url(org), params={"meetup_id": str(meetup.id)}, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_operations_stats_returns_404_for_meetup_of_other_org(
+    client: TestClient, session: Session, org: Organization, admin_headers: dict
+):
+    other_org = make_org(session, name="Other Org", slug="other-org")
+    foreign = _meetup(session, other_org, MARCH_6)
+
+    resp = client.get(_operations_url(org), params={"meetup_id": str(foreign.id)}, headers=admin_headers)
 
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 

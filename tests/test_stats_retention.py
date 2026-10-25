@@ -185,6 +185,30 @@ def test_retention_meetups_in_date_order(session: Session):
     assert stats.meetups[0].date.tzinfo is not None
 
 
+def test_retention_first_time_ignores_other_orgs_and_open_meetups(session: Session):
+    org = make_org(session)
+    other_org = make_org(session, name="Other Org", slug="other-org")
+    foreign_january = _meetup(session, other_org, 1)
+    open_february = make_meetup(
+        session,
+        org=org,
+        name="Open",
+        mazmo_meetup_url="https://mazmo.net/test/open",
+        date=datetime(2026, 2, 5, 22, tzinfo=UTC),
+        is_finalized=False,
+    )
+    march = _meetup(session, org, 3)
+    guest = _guest(session)
+    _attend(session, guest, foreign_january, open_february, march)
+
+    stats = _stats(session, org, MARCH)
+
+    assert stats.summary == RetentionSummary(
+        attendees=1, new_guests=1, returning=0, new_share=1.0, first_timer_return_rate=0.0
+    )
+    assert stats.meetups == [MeetupNewReturning(march.id, march.name, MARCH_DATE, new=1, returning=0)]
+
+
 def test_retention_same_start_time_counts_the_guest_once_as_new(session: Session):
     org = make_org(session)
     first, second = _meetup(session, org, 3), _meetup(session, org, 3)
@@ -487,6 +511,17 @@ def test_retention_stats_returns_403_before_checking_the_meetup_for_staff(
     assert resp.status_code == status.HTTP_403_FORBIDDEN
 
 
+def test_retention_stats_returns_403_for_admin_of_other_org(client: TestClient, session: Session, org: Organization):
+    other_org = make_org(session, name="Other Org", slug="other-org")
+    other_admin = make_user(session, username="other_admin")
+    make_org_member(session, org=other_org, user=other_admin, role=OrgRole.ADMIN)
+    headers = get_auth_headers(client, "other_admin", "a-very-secure-passphrase")
+
+    resp = client.get(_retention_url(org), headers=headers)
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
 def test_retention_stats_returns_200_for_org_admin(client: TestClient, session: Session, org: Organization):
     _attend(session, _guest(session), _meetup(session, org, 3))
     org_admin = make_user(session, username="org_admin")
@@ -597,6 +632,17 @@ def test_retention_stats_returns_404_for_unfinalized_meetup(
     meetup = make_meetup(session, org=org, is_finalized=False)
 
     resp = client.get(_retention_url(org), params={"meetup_id": str(meetup.id)}, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_retention_stats_returns_404_for_meetup_of_other_org(
+    client: TestClient, session: Session, org: Organization, admin_headers: dict
+):
+    other_org = make_org(session, name="Other Org", slug="other-org")
+    foreign = _meetup(session, other_org, 3)
+
+    resp = client.get(_retention_url(org), params={"meetup_id": str(foreign.id)}, headers=admin_headers)
 
     assert resp.status_code == status.HTTP_404_NOT_FOUND
 
