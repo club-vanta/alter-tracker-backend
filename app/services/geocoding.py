@@ -26,8 +26,10 @@ rejected. The limit is per process, not per deployment.
 
 Errors
 ------
-Timeouts, transport errors, non-2xx statuses and malformed JSON all raise
-GeocodingUnavailableError; the router maps it to 502.
+Transport errors, non-2xx statuses and malformed JSON raise GeocodingUnavailableError
+(the router maps it to 502). A timeout raises its subclass GeocodingTimeoutError
+(504). The client does not log: the message carries the HTTP status or the
+failure type, and the router logs it once.
 """
 
 import asyncio
@@ -35,13 +37,10 @@ import time
 from typing import Any
 
 import httpx
-import structlog
 
 from app.core.config import Settings
 from app.core.outbound import OUTBOUND_HEADERS
 from app.schemas import GeocodeResult
-
-log = structlog.get_logger(__name__)
 
 # Buenos Aires, used to bias results toward the club's city.
 _BIAS_LAT = -34.6037
@@ -77,7 +76,11 @@ async def _wait_for_turn() -> None:
 
 
 class GeocodingUnavailableError(Exception):
-    """Photon timed out, failed, or returned something we cannot read."""
+    """Photon failed, or returned something we cannot read."""
+
+
+class GeocodingTimeoutError(GeocodingUnavailableError):
+    """Photon did not answer within the request timeout."""
 
 
 # -- Parsing ------------------------------------------------------------------
@@ -145,22 +148,22 @@ class PhotonClient:
             "lon": _BIAS_LON,
         }
         await _wait_for_turn()
-        started = time.monotonic()
         try:
             response = await self._client.get(self._settings.photon_base_url, params=params)
+        except httpx.TimeoutException as exc:
+            raise GeocodingTimeoutError(f"Photon request timed out: {type(exc).__name__}") from exc
         except httpx.HTTPError as exc:
-            log.warning("Photon request failed", error=type(exc).__name__, elapsed=time.monotonic() - started)
             raise GeocodingUnavailableError(f"Photon request failed: {type(exc).__name__}") from exc
         if response.is_error:
-            log.warning("Photon returned an error", status=response.status_code, elapsed=time.monotonic() - started)
             raise GeocodingUnavailableError(f"Photon returned HTTP {response.status_code}")
 
         try:
             features: list[Any] = response.json()["features"]
             results = [_parse_feature(feature) for feature in features]
         except (ValueError, KeyError, TypeError) as exc:
-            log.warning("Photon returned unreadable data", error=type(exc).__name__)
-            raise GeocodingUnavailableError("Photon returned data in an unexpected format") from exc
+            raise GeocodingUnavailableError(
+                f"Photon returned data in an unexpected format: {type(exc).__name__}"
+            ) from exc
         # Photon can return different places that read the same; show each label once.
         unique: dict[str, GeocodeResult] = {}
         for result in results:

@@ -40,7 +40,7 @@ from app.models.models import (
     User,
     UserOrganization,
 )
-from app.openapi_examples._error_responses import GEOCODING_UNAVAILABLE_DETAIL
+from app.openapi_examples._error_responses import GEOCODING_TIMEOUT_DETAIL, GEOCODING_UNAVAILABLE_DETAIL
 from app.openapi_examples.organizations_examples import (
     ADD_MEMBER_REQUEST_EXAMPLES,
     ADD_MEMBER_RESPONSES,
@@ -80,7 +80,7 @@ from app.schemas import (
     OrgUpdate,
 )
 from app.services.attendance import list_guest_attendance, summarize_attendance
-from app.services.geocoding import GeocodingUnavailableError, PhotonClient
+from app.services.geocoding import GeocodingTimeoutError, GeocodingUnavailableError, PhotonClient
 
 log = structlog.get_logger(__name__)
 router = APIRouter(tags=["organizations"])
@@ -637,8 +637,9 @@ async def geocode_address(
     check, so 3 to 200 characters of real text are required.
 
     Photon is called at most once per second per process; concurrent
-    searches wait their turn. Returns 502 if Photon times out or fails;
-    setting a location by hand is unaffected.
+    searches wait their turn. Returns 504 if Photon does not respond in
+    time and 502 if it fails or answers with something unreadable; setting
+    a location by hand is unaffected.
     """
     _get_org_or_404(session, org_id)
     # The session (one pooled connection) stays checked out during the limiter
@@ -649,7 +650,11 @@ async def geocode_address(
     try:
         async with PhotonClient(settings) as client:
             return await client.search(q)
+    except GeocodingTimeoutError as exc:
+        log.warning("Address search timed out", org_id=str(org_id), detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=GEOCODING_TIMEOUT_DETAIL) from exc
     except GeocodingUnavailableError as exc:
+        log.warning("Address search failed", org_id=str(org_id), detail=str(exc))
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=GEOCODING_UNAVAILABLE_DETAIL) from exc
 
 

@@ -66,6 +66,7 @@ from app.openapi_examples._error_responses import (
     error_502_weather_provider,
     error_504_mazmo_create_meetup,
     error_504_mazmo_sync,
+    error_504_weather_timeout,
     merge_error_responses,
 )
 
@@ -546,6 +547,7 @@ REFRESH_WEATHER_RESPONSES: dict[int | str, dict[str, Any]] = {
         error_404_meetup(),
         error_409_weather_not_ready(),
         error_502_weather_provider(),
+        error_504_weather_timeout(),
     ),
 }
 

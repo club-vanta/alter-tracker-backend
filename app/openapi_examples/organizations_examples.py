@@ -41,6 +41,7 @@ from app.openapi_examples._error_responses import (
     error_422_validation,
     error_422_validation_reason,
     error_502_geocoding_unavailable,
+    error_504_geocoding_timeout,
     merge_error_responses,
 )
 
@@ -561,4 +562,5 @@ GEOCODE_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_404_org(),
     **error_422_validation(),
     **error_502_geocoding_unavailable(),
+    **error_504_geocoding_timeout(),
 }

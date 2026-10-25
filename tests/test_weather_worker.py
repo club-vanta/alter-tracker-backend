@@ -207,6 +207,7 @@ def test_run_once_logs_failures_and_still_fetches_the_others(session: Session, o
     assert set(warnings) == {str(outage.id), str(no_data.id)}
     assert warnings[str(outage.id)]["error"] == "WeatherUnavailableError"
     assert warnings[str(no_data.id)]["error"] == "NoWeatherDataError"
+    assert (warnings[str(outage.id)]["detail"], warnings[str(no_data.id)]["detail"]) == ("down", "empty")
     assert all(isinstance(kwargs["elapsed"], float) for kwargs in warnings.values())
     log.exception.assert_called_once()
     assert log.exception.call_args.kwargs["meetup_id"] == str(bug.id)

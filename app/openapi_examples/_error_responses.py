@@ -8,17 +8,21 @@ Usage:
     @router.post("/ban", responses={**error_404_guest(), **error_409_already_banned()})
 """
 
+from datetime import UTC, datetime
 from typing import Any
 
-# Shared with the geocode route so the documented message is the real one.
+# Shared with the geocode route so the documented messages are the real ones.
 GEOCODING_UNAVAILABLE_DETAIL = (
     "Cannot search addresses: the address search is unavailable right now. "
+    "Try again in a moment, or enter the address later."
+)
+GEOCODING_TIMEOUT_DETAIL = (
+    "Cannot search addresses: the address search did not respond in time. "
     "Try again in a moment, or enter the address later."
 )
 
 # Shared with the weather refresh route so the documented messages are the real ones.
 WEATHER_REFRESH_NO_LOCATION_DETAIL = "Cannot refresh weather: the meetup has no location. Set a location first."
-WEATHER_REFRESH_TOO_EARLY_DETAIL = "Cannot refresh weather: the event ended less than 2 hours ago. Try again later."
 WEATHER_NO_DATA_DETAIL = (
     "Cannot refresh weather: the weather provider has no data for this place and time. "
     "Check the meetup location, or try again later."
@@ -26,6 +30,17 @@ WEATHER_NO_DATA_DETAIL = (
 WEATHER_UNAVAILABLE_DETAIL = (
     "Cannot refresh weather: the weather provider is unavailable right now. Try again in a moment."
 )
+WEATHER_TIMEOUT_DETAIL = "Cannot refresh weather: the weather provider did not respond in time. Try again in a moment."
+WEATHER_TOO_EARLY_EXAMPLE_READY_AT = datetime(2026, 3, 7, 7, 0, tzinfo=UTC)
+
+
+def weather_too_early_detail(ready_at: datetime) -> str:
+    """The 409 message when the weather is not available yet, naming when it will be (UTC)."""
+    return (
+        "Cannot refresh weather: it is available 8 hours after the event starts "
+        f"(from {ready_at.astimezone(UTC):%Y-%m-%dT%H:%M:%SZ}). Try again then."
+    )
+
 
 # Type alias for FastAPI responses dict
 ResponsesDict = dict[int | str, dict[str, Any]]
@@ -1149,7 +1164,7 @@ def error_422_validation_username() -> ResponsesDict:
 
 
 def error_502_geocoding_unavailable() -> ResponsesDict:
-    """502 - The address search provider (Photon) failed or timed out. Only for GET /geocode."""
+    """502 - The address search provider (Photon) failed. Only for GET /geocode."""
     return {
         502: {
             "description": "Address search unavailable",
@@ -1157,8 +1172,27 @@ def error_502_geocoding_unavailable() -> ResponsesDict:
                 "application/json": {
                     "examples": {
                         "geocoding_unavailable": {
-                            "summary": "Photon timed out or failed",
+                            "summary": "Photon returned an error or unreadable data",
                             "value": {"detail": GEOCODING_UNAVAILABLE_DETAIL},
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_504_geocoding_timeout() -> ResponsesDict:
+    """504 - The address search provider (Photon) did not respond in time. Only for GET /geocode."""
+    return {
+        504: {
+            "description": "Address search timed out",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "geocoding_timeout": {
+                            "summary": "Photon did not respond in time",
+                            "value": {"detail": GEOCODING_TIMEOUT_DETAIL},
                         },
                     }
                 }
@@ -1315,8 +1349,8 @@ def error_409_weather_not_ready() -> ResponsesDict:
                             "value": {"detail": WEATHER_REFRESH_NO_LOCATION_DETAIL},
                         },
                         "too_early": {
-                            "summary": "The provider has not published the hours yet",
-                            "value": {"detail": WEATHER_REFRESH_TOO_EARLY_DETAIL},
+                            "summary": "The event has not finished or the provider has not published the hours yet",
+                            "value": {"detail": weather_too_early_detail(WEATHER_TOO_EARLY_EXAMPLE_READY_AT)},
                         },
                     }
                 }
@@ -1338,8 +1372,27 @@ def error_502_weather_provider() -> ResponsesDict:
                             "value": {"detail": WEATHER_NO_DATA_DETAIL},
                         },
                         "unavailable": {
-                            "summary": "The provider timed out or failed",
+                            "summary": "The provider returned an error or unreadable data",
                             "value": {"detail": WEATHER_UNAVAILABLE_DETAIL},
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_504_weather_timeout() -> ResponsesDict:
+    """504 - Open-Meteo did not respond in time. Only for POST /meetups/{id}/weather/refresh."""
+    return {
+        504: {
+            "description": "Weather provider timed out",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "timeout": {
+                            "summary": "The provider did not respond in time",
+                            "value": {"detail": WEATHER_TIMEOUT_DETAIL},
                         },
                     }
                 }

@@ -14,6 +14,7 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 from sqlmodel import Session
+from structlog.testing import capture_logs
 
 from app.models.models import Meetup, MeetupWeather, Organization, OrgRole, User
 from app.services.weather import SOURCE
@@ -26,12 +27,21 @@ MOVED = {"location_label": "Teatro Colon, Buenos Aires", "latitude": -34.6010, "
 CLEARED = {"location_label": None, "latitude": None, "longitude": None}
 
 NO_LOCATION_DETAIL = "Cannot refresh weather: the meetup has no location. Set a location first."
-TOO_EARLY_DETAIL = "Cannot refresh weather: the event ended less than 2 hours ago. Try again later."
 NO_DATA_DETAIL = (
     "Cannot refresh weather: the weather provider has no data for this place and time. "
     "Check the meetup location, or try again later."
 )
 UNAVAILABLE_DETAIL = "Cannot refresh weather: the weather provider is unavailable right now. Try again in a moment."
+TIMEOUT_DETAIL = "Cannot refresh weather: the weather provider did not respond in time. Try again in a moment."
+
+
+def too_early_detail(meetup: Meetup) -> str:
+    """The message names the start plus 8 hours, in UTC (the test database returns naive UTC datetimes)."""
+    ready_at = meetup.date.replace(tzinfo=UTC) + timedelta(hours=8)
+    return (
+        "Cannot refresh weather: it is available 8 hours after the event starts "
+        f"(from {ready_at:%Y-%m-%dT%H:%M:%SZ}). Try again then."
+    )
 
 
 def hourly_for(date: datetime, temperature: float | None, precipitation: float | None) -> dict[str, list[Any]]:
@@ -360,16 +370,22 @@ def test_refresh_returns_409_without_a_location(
     assert mock_get.await_count == 0
 
 
-def test_refresh_returns_409_when_the_event_ended_less_than_two_hours_ago(
-    client: TestClient, admin_headers: dict, session: Session, org: Organization, mock_get: AsyncMock
+@pytest.mark.parametrize("hours_ago", [-2, 3, 7], ids=["upcoming", "in-progress", "window-over-provider-delay"])
+def test_refresh_returns_409_before_the_weather_is_available(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    org: Organization,
+    mock_get: AsyncMock,
+    hours_ago: float,
 ):
-    """WHY: The provider has not published the hours yet; the message differs from the no-location one."""
-    meetup = located(session, org, hours_ago=3)
+    """WHY: PENDING covers upcoming, running and just-finished meetups; the message names when it opens up."""
+    meetup = located(session, org, hours_ago=hours_ago)
 
     resp = client.post(refresh_url(meetup), headers=admin_headers)
 
     assert resp.status_code == status.HTTP_409_CONFLICT
-    assert resp.json()["detail"] == TOO_EARLY_DETAIL
+    assert resp.json()["detail"] == too_early_detail(meetup)
     assert mock_get.await_count == 0
 
 
@@ -393,10 +409,10 @@ def test_refresh_returns_502_when_the_provider_has_no_data(
 def test_refresh_returns_502_when_the_provider_is_unavailable(
     client: TestClient, admin_headers: dict, session: Session, org: Organization, mock_get: AsyncMock
 ):
-    """WHY: A timeout or HTTP error is retryable; the message says so and differs from the no-data one."""
+    """WHY: An error answer or a dropped connection is retryable; the message says so and differs from the others."""
     meetup = located(session, org, hours_ago=12)
     stored_row(session, meetup, avg_temperature=5.0)
-    mock_get.side_effect = httpx.ConnectTimeout("slow")
+    mock_get.side_effect = httpx.ConnectError("down")
 
     resp = client.post(refresh_url(meetup), headers=admin_headers)
 
@@ -405,6 +421,43 @@ def test_refresh_returns_502_when_the_provider_is_unavailable(
     row = row_of(session, meetup)
     assert row is not None
     assert row.avg_temperature == 5.0
+
+
+def test_refresh_returns_504_when_the_provider_does_not_respond(
+    client: TestClient, admin_headers: dict, session: Session, org: Organization, mock_get: AsyncMock
+):
+    """WHY: CLAUDE.md maps a provider that does not respond to 504; the stored snapshot stays untouched."""
+    meetup = located(session, org, hours_ago=12)
+    stored_row(session, meetup, avg_temperature=5.0)
+    mock_get.side_effect = httpx.ConnectTimeout("slow")
+
+    resp = client.post(refresh_url(meetup), headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_504_GATEWAY_TIMEOUT
+    assert resp.json()["detail"] == TIMEOUT_DETAIL
+    row = row_of(session, meetup)
+    assert row is not None
+    assert row.avg_temperature == 5.0
+
+
+def test_refresh_logs_a_provider_failure_once_with_the_meetup_and_detail(
+    client: TestClient, admin_headers: dict, session: Session, org: Organization, mock_get: AsyncMock
+):
+    """WHY: The client no longer logs, so the one warning is the caller's and carries the meetup id."""
+    meetup = located(session, org, hours_ago=12)
+    failed = MagicMock()
+    failed.is_error = True
+    failed.status_code = 503
+    mock_get.return_value = failed
+
+    with capture_logs() as logs:
+        client.post(refresh_url(meetup), headers=admin_headers)
+
+    warnings = [entry for entry in logs if entry["log_level"] == "warning"]
+    assert len(warnings) == 1
+    assert warnings[0]["event"] == "Weather refresh failed"
+    assert warnings[0]["meetup_id"] == str(meetup.id)
+    assert warnings[0]["detail"] == "Open-Meteo returned HTTP 503"
 
 
 def test_refresh_returns_403_for_org_staff(

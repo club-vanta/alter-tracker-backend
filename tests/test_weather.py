@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from sqlmodel import Session, select
+from structlog.testing import capture_logs
 
 from app.core.config import get_settings
 from app.models.models import MeetupWeather, Organization
@@ -20,10 +21,12 @@ from app.services.weather import (
     MissingLocationError,
     NoWeatherDataError,
     OpenMeteoClient,
+    WeatherTimeoutError,
     WeatherUnavailableError,
     fetch_and_store_weather,
     is_weather_ready,
     summarize_weather,
+    weather_ready_at,
 )
 from tests.conftest import make_meetup
 
@@ -332,17 +335,45 @@ def test_client_sends_an_identifying_user_agent_and_a_5_second_timeout():
     assert init.call_args.kwargs["timeout"] == 5.0
 
 
-@pytest.mark.parametrize("error", [httpx.ReadTimeout("slow"), httpx.ConnectError("down")])
-def test_client_maps_transport_errors_to_weather_unavailable(mock_get: AsyncMock, error: httpx.HTTPError):
+def test_client_maps_a_connection_error_to_weather_unavailable(mock_get: AsyncMock):
     """WHY: Callers handle one error type whatever went wrong on the wire."""
+    mock_get.side_effect = httpx.ConnectError("down")
+
+    async def run() -> None:
+        async with OpenMeteoClient(get_settings()) as client:
+            await client.fetch_hourly(LAT, LON, START)
+
+    with pytest.raises(WeatherUnavailableError, match="Open-Meteo request failed: ConnectError") as raised:
+        asyncio.run(run())
+
+    assert not isinstance(raised.value, WeatherTimeoutError)
+
+
+@pytest.mark.parametrize("error", [httpx.ReadTimeout("slow"), httpx.ConnectTimeout("slow")])
+def test_client_maps_a_timeout_to_weather_timeout(mock_get: AsyncMock, error: httpx.TimeoutException):
+    """WHY: A provider that does not answer is a 504 for the refresh route, not a 502."""
     mock_get.side_effect = error
 
     async def run() -> None:
         async with OpenMeteoClient(get_settings()) as client:
             await client.fetch_hourly(LAT, LON, START)
 
-    with pytest.raises(WeatherUnavailableError):
+    with pytest.raises(WeatherTimeoutError, match="Open-Meteo request timed out"):
         asyncio.run(run())
+
+
+def test_client_does_not_log_provider_failures(mock_get: AsyncMock):
+    """WHY: The caller logs each failure once, with the meetup id; the client only raises."""
+    mock_get.side_effect = httpx.ReadTimeout("slow")
+
+    async def run() -> None:
+        async with OpenMeteoClient(get_settings()) as client:
+            await client.fetch_hourly(LAT, LON, START)
+
+    with capture_logs() as logs, pytest.raises(WeatherUnavailableError):
+        asyncio.run(run())
+
+    assert logs == []
 
 
 def test_client_maps_a_5xx_to_weather_unavailable(mock_get: AsyncMock):
@@ -534,3 +565,10 @@ def test_fetch_and_store_weather_propagates_provider_failures_and_writes_nothing
         _fetch(session, meetup)
 
     assert session.exec(select(MeetupWeather)).all() == []
+
+
+def test_weather_ready_at_is_eight_hours_after_the_start(session: Session, org: Organization):
+    """WHY: The refresh message tells the admin this exact time; the 6h window plus 2h provider delay."""
+    meetup = make_meetup(session, org=org, date=datetime(2026, 10, 24, 22, 30, tzinfo=UTC))
+
+    assert weather_ready_at(meetup) == datetime(2026, 10, 25, 6, 30, tzinfo=UTC)

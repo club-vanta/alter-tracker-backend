@@ -32,12 +32,13 @@ None here: the worker owns the 1 request per second pace.
 
 Errors
 ------
-Timeouts, transport errors, non-2xx statuses and malformed JSON all raise
-WeatherUnavailableError; callers decide whether that is a 502 or a log line.
-An answer with no usable value in the window raises its subclass NoWeatherDataError.
+Transport errors, non-2xx statuses and malformed JSON raise WeatherUnavailableError
+(a timeout raises its subclass WeatherTimeoutError, which the refresh route maps
+to 504 instead of 502). An answer with no usable value in the window raises its
+subclass NoWeatherDataError. The client does not log: the message carries the
+HTTP status or the failure type, and the caller logs it once with the meetup id.
 """
 
-import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -71,6 +72,10 @@ type HourlyData = dict[str, list[str | float | None]]
 
 class WeatherUnavailableError(Exception):
     """Open-Meteo timed out, failed, or returned something we cannot read."""
+
+
+class WeatherTimeoutError(WeatherUnavailableError):
+    """Open-Meteo did not answer within the request timeout."""
 
 
 class NoWeatherDataError(WeatherUnavailableError):
@@ -133,11 +138,16 @@ def summarize_weather(hourly: HourlyData, start: datetime) -> WeatherSummary | N
     )
 
 
+def weather_ready_at(meetup: Meetup) -> datetime:
+    """When the weather of the meetup becomes available: its window plus the provider delay after the start."""
+    return as_utc(meetup.date) + _READY_AFTER
+
+
 def is_weather_ready(meetup: Meetup, now: datetime) -> bool:
     """True when the meetup has coordinates and its window ended at least 2 hours ago."""
     if meetup.latitude is None or meetup.longitude is None:
         return False
-    return as_utc(meetup.date) + _READY_AFTER <= as_utc(now)
+    return weather_ready_at(meetup) <= as_utc(now)
 
 
 def weather_status(meetup: Meetup, has_row: bool, now: datetime) -> WeatherStatus:
@@ -188,14 +198,13 @@ class OpenMeteoClient:
             "timezone": "UTC",
             "wind_speed_unit": "kmh",
         }
-        started = time.monotonic()
         try:
             response = await self._client.get(self._settings.open_meteo_base_url, params=params)
+        except httpx.TimeoutException as exc:
+            raise WeatherTimeoutError(f"Open-Meteo request timed out: {type(exc).__name__}") from exc
         except httpx.HTTPError as exc:
-            log.warning("Open-Meteo request failed", error=type(exc).__name__, elapsed=time.monotonic() - started)
             raise WeatherUnavailableError(f"Open-Meteo request failed: {type(exc).__name__}") from exc
         if response.is_error:
-            log.warning("Open-Meteo returned an error", status=response.status_code, elapsed=time.monotonic() - started)
             raise WeatherUnavailableError(f"Open-Meteo returned HTTP {response.status_code}")
         return self._parse(response)
 
@@ -213,8 +222,9 @@ class OpenMeteoClient:
                 if not all(v is None or (isinstance(v, int | float) and not isinstance(v, bool)) for v in hourly[name]):
                     raise ValueError(f"non-numeric value in {name}")
         except (ValueError, KeyError, TypeError) as exc:
-            log.warning("Open-Meteo returned unreadable data", error=type(exc).__name__)
-            raise WeatherUnavailableError("Open-Meteo returned data in an unexpected format") from exc
+            raise WeatherUnavailableError(
+                f"Open-Meteo returned data in an unexpected format: {type(exc).__name__}"
+            ) from exc
         return hourly
 
 

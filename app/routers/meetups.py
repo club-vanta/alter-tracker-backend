@@ -54,8 +54,9 @@ from app.models.models import (
 from app.openapi_examples._error_responses import (
     WEATHER_NO_DATA_DETAIL,
     WEATHER_REFRESH_NO_LOCATION_DETAIL,
-    WEATHER_REFRESH_TOO_EARLY_DETAIL,
+    WEATHER_TIMEOUT_DETAIL,
     WEATHER_UNAVAILABLE_DETAIL,
+    weather_too_early_detail,
 )
 from app.openapi_examples.meetups_examples import (
     ADD_WALKIN_RESPONSES,
@@ -114,9 +115,11 @@ from app.services.weather import (
     MissingLocationError,
     NoWeatherDataError,
     OpenMeteoClient,
+    WeatherTimeoutError,
     WeatherUnavailableError,
     fetch_and_store_weather,
     is_weather_ready,
+    weather_ready_at,
     weather_status,
 )
 
@@ -1497,6 +1500,28 @@ async def get_meetup_weather(
     )
 
 
+_WEATHER_REFRESH_FAILURES: dict[str, tuple[int, str]] = {
+    "no_data": (status.HTTP_502_BAD_GATEWAY, WEATHER_NO_DATA_DETAIL),
+    "timeout": (status.HTTP_504_GATEWAY_TIMEOUT, WEATHER_TIMEOUT_DETAIL),
+    "unavailable": (status.HTTP_502_BAD_GATEWAY, WEATHER_UNAVAILABLE_DETAIL),
+}
+
+
+def _weather_refresh_failure(
+    cause: str, exc: WeatherUnavailableError, meetup_id: uuid.UUID, started: float
+) -> HTTPException:
+    """Log a failed provider call once, with the meetup, and return the matching HTTP error."""
+    log.warning(
+        "Weather refresh failed",
+        cause=cause,
+        meetup_id=str(meetup_id),
+        detail=str(exc),
+        elapsed=time.monotonic() - started,
+    )
+    http_status, detail = _WEATHER_REFRESH_FAILURES[cause]
+    return HTTPException(status_code=http_status, detail=detail)
+
+
 @router.post(
     "/organizations/{org_id}/meetups/{meetup_id}/weather/refresh",
     response_model=MeetupWeatherPublic,
@@ -1513,10 +1538,11 @@ async def refresh_meetup_weather(
     """
     Fetch the weather from Open-Meteo and overwrite the stored snapshot.
 
-    Returns 409 when the meetup has no location, or when its window ended
-    less than 2 hours ago (the provider has not published the hours yet).
-    Returns 502 when the provider has no data for that place and time, or is
-    unavailable; the stored snapshot, if any, is left untouched.
+    Returns 409 when the meetup has no location, or before the weather is
+    available (8 hours after the event starts; the message gives the time).
+    Returns 504 when the provider does not respond in time, and 502 when it
+    has no data for that place and time or is otherwise unavailable; the
+    stored snapshot, if any, is left untouched.
     """
     meetup = _get_meetup_or_404_in_org(session, meetup_id, org_id)
 
@@ -1524,7 +1550,9 @@ async def refresh_meetup_weather(
     if standing is WeatherStatus.NO_LOCATION:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=WEATHER_REFRESH_NO_LOCATION_DETAIL)
     if standing is WeatherStatus.PENDING:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=WEATHER_REFRESH_TOO_EARLY_DETAIL)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=weather_too_early_detail(weather_ready_at(meetup))
+        )
 
     # The session (one pooled connection) stays checked out during the provider
     # call, bounded by the 5 s timeout. Acceptable: org admins only, and nothing
@@ -1536,15 +1564,11 @@ async def refresh_meetup_weather(
         async with OpenMeteoClient(settings) as client:
             row = await fetch_and_store_weather(session, meetup, client)
     except NoWeatherDataError as exc:
-        log.warning(
-            "Weather refresh failed", cause="no_data", meetup_id=str(meetup_id), elapsed=time.monotonic() - started
-        )
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=WEATHER_NO_DATA_DETAIL) from exc
+        raise _weather_refresh_failure("no_data", exc, meetup_id, started) from exc
+    except WeatherTimeoutError as exc:
+        raise _weather_refresh_failure("timeout", exc, meetup_id, started) from exc
     except WeatherUnavailableError as exc:
-        log.warning(
-            "Weather refresh failed", cause="unavailable", meetup_id=str(meetup_id), elapsed=time.monotonic() - started
-        )
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=WEATHER_UNAVAILABLE_DETAIL) from exc
+        raise _weather_refresh_failure("unavailable", exc, meetup_id, started) from exc
 
     log.info(
         "Meetup weather refreshed",

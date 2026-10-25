@@ -13,15 +13,20 @@ import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 from sqlmodel import Session
+from structlog.testing import capture_logs
 
 from app.core.config import get_settings
 from app.models.models import Organization, OrgRole, User
 from app.services import geocoding
-from app.services.geocoding import GeocodingUnavailableError, PhotonClient, build_label
+from app.services.geocoding import GeocodingTimeoutError, PhotonClient, build_label
 from tests.conftest import make_org_member
 
 UNAVAILABLE = (
     "Cannot search addresses: the address search is unavailable right now. "
+    "Try again in a moment, or enter the address later."
+)
+TIMEOUT = (
+    "Cannot search addresses: the address search did not respond in time. "
     "Try again in a moment, or enter the address later."
 )
 
@@ -266,24 +271,48 @@ def test_geocode_skips_features_without_a_label(
     assert [r["label"] for r in resp.json()] == ["Plaza"]
 
 
-@pytest.mark.parametrize(
-    "failure",
-    [
-        httpx.ReadTimeout("slow"),
-        httpx.ConnectError("down"),
-    ],
-    ids=["timeout", "connect-error"],
-)
 def test_geocode_returns_502_when_photon_cannot_be_reached(
-    client: TestClient, admin_headers: dict, org: Organization, mock_get: AsyncMock, failure: Exception
+    client: TestClient, admin_headers: dict, org: Organization, mock_get: AsyncMock
 ):
-    """WHY: Photon down or slow must not hang or 500 the form; the UI shows a retry message."""
-    mock_get.side_effect = failure
+    """WHY: Photon down must not hang or 500 the form; the UI shows a retry message."""
+    mock_get.side_effect = httpx.ConnectError("down")
 
     resp = client.get(_url(org), params={"q": "thames"}, headers=admin_headers)
 
     assert resp.status_code == status.HTTP_502_BAD_GATEWAY
     assert resp.json() == {"detail": UNAVAILABLE}
+
+
+@pytest.mark.parametrize("failure", [httpx.ReadTimeout("slow"), httpx.ConnectTimeout("slow")])
+def test_geocode_returns_504_when_photon_does_not_respond(
+    client: TestClient, admin_headers: dict, org: Organization, mock_get: AsyncMock, failure: Exception
+):
+    """WHY: A provider that does not respond is a 504 (CLAUDE.md), with its own message, not an error answer."""
+    mock_get.side_effect = failure
+
+    resp = client.get(_url(org), params={"q": "thames"}, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_504_GATEWAY_TIMEOUT
+    assert resp.json() == {"detail": TIMEOUT}
+
+
+def test_geocode_logs_a_failure_once_with_the_http_status(
+    client: TestClient, admin_headers: dict, org: Organization, mock_get: AsyncMock
+):
+    """WHY: One warning per failure, from the router, carrying what the client knew (the HTTP status)."""
+    failed = MagicMock()
+    failed.is_error = True
+    failed.status_code = 429
+    mock_get.return_value = failed
+
+    with capture_logs() as logs:
+        client.get(_url(org), params={"q": "thames"}, headers=admin_headers)
+
+    warnings = [entry for entry in logs if entry["log_level"] == "warning"]
+    assert len(warnings) == 1
+    assert warnings[0]["event"] == "Address search failed"
+    assert warnings[0]["org_id"] == str(org.id)
+    assert warnings[0]["detail"] == "Photon returned HTTP 429"
 
 
 def test_geocode_returns_502_when_photon_answers_with_an_error_status(
@@ -446,9 +475,9 @@ async def test_failed_calls_still_count_toward_the_rate_limit(clock: FakeClock, 
     mock_get.side_effect = httpx.ReadTimeout("slow")
 
     async with PhotonClient(get_settings()) as photon:
-        with pytest.raises(GeocodingUnavailableError):
+        with pytest.raises(GeocodingTimeoutError):
             await photon.search("first")
-        with pytest.raises(GeocodingUnavailableError):
+        with pytest.raises(GeocodingTimeoutError):
             await photon.search("second")
 
     assert clock.sleeps == [1.0]

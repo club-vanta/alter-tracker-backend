@@ -148,6 +148,7 @@ async def run_once(
                     "Weather fetch failed",
                     meetup_id=str(meetup_id),
                     error=type(exc).__name__,
+                    detail=str(exc),
                     elapsed=_monotonic() - last_call,
                 )
             except Exception:
