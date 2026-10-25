@@ -21,8 +21,7 @@ import argparse
 import asyncio
 import signal
 import time
-from collections.abc import Callable, Collection, Sequence
-from contextlib import AbstractContextManager
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Event
@@ -34,6 +33,7 @@ from sqlalchemy import Engine
 from sqlmodel import Session, col, create_engine, select
 
 from app.core.config import get_settings
+from app.core.database import SessionFactory
 from app.core.logging import setup_logging
 from app.models.models import Meetup, MeetupWeather
 from app.services.weather import (
@@ -57,8 +57,6 @@ _monotonic = time.monotonic
 
 # Set by the signal handler, polled between meetups and while idle.
 STOP = Event()
-
-type SessionFactory = Callable[[], AbstractContextManager[Session]]
 
 
 @dataclass(frozen=True)
@@ -178,7 +176,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     setup_logging(json_logs=settings.json_logs, log_level=settings.log_level)
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
-    engine = create_engine(settings.database_url)
+    engine = create_engine(settings.database_url, pool_pre_ping=True)
     cooldown: dict[UUID, float] = {}
     try:
         while not stop_requested():

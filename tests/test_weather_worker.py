@@ -402,6 +402,14 @@ def test_main_once_runs_a_single_pass_and_returns_zero(main_patches: MagicMock):
     assert main_patches.await_count == 1
 
 
+def test_main_creates_an_engine_that_pings_pooled_connections(main_patches: MagicMock):
+    """WHY: After a Postgres restart a stale pooled connection must be replaced, not crash the next pass."""
+    with patch.object(weather_worker, "create_engine") as create_engine:
+        assert weather_worker.main(["--once"]) == 0
+
+    assert create_engine.call_args.kwargs == {"pool_pre_ping": True}
+
+
 def test_main_installs_stop_handlers_and_loops_until_stopped(main_patches: MagicMock):
     """WHY: Without --once the worker keeps passing every 30 minutes until SIGTERM, then exits 0."""
     waits: list[int] = []
