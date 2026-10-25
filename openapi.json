@@ -14356,14 +14356,8 @@
             "title": "Without Weather"
           },
           "comparison_kind": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/StatsComparisonKind"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "type": "null",
+            "title": "Comparison Kind"
           },
           "comparison": {
             "type": "null",

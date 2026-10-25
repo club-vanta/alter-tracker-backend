@@ -441,7 +441,7 @@ class WeatherStatsPublic(BaseModel):
     dry: WeatherGroupPublic | None
     temperature_bands: list[TemperatureBandRowPublic]
     without_weather: int
-    comparison_kind: StatsComparisonKind | None
+    comparison_kind: None
     comparison: None
 
     model_config = ConfigDict(from_attributes=True)
