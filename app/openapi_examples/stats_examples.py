@@ -270,42 +270,12 @@ DEMOGRAPHIC_STATS_EXAMPLE = {
         "attended": 80,
         "median_age": 28.5,
         "known_age_share": 0.875,
-        "gender_shares": [
-            {"key": "MALE", "attended_share": 0.45},
-            {"key": "WOMAN_CIS", "attended_share": 0.35},
-            {"key": "UNDEFINED", "attended_share": 0.075},
-            {"key": None, "attended_share": 0.125},
-        ],
-        "age_shares": [
-            {"key": "AGE_18_24", "attended_share": 0.2},
-            {"key": "AGE_25_29", "attended_share": 0.25},
-            {"key": "AGE_30_34", "attended_share": 0.175},
-            {"key": "AGE_35_39", "attended_share": 0.1},
-            {"key": "AGE_40_49", "attended_share": 0.1},
-            {"key": "AGE_50_PLUS", "attended_share": 0.05},
-            {"key": "UNKNOWN", "attended_share": 0.125},
-        ],
     },
     "comparison_kind": "PREVIOUS_PERIOD",
     "comparison": {
         "attended": 72,
         "median_age": 29.0,
         "known_age_share": 0.8611,
-        "gender_shares": [
-            {"key": "MALE", "attended_share": 0.4722},
-            {"key": "WOMAN_CIS", "attended_share": 0.3333},
-            {"key": "UNDEFINED", "attended_share": 0.0556},
-            {"key": None, "attended_share": 0.1389},
-        ],
-        "age_shares": [
-            {"key": "AGE_18_24", "attended_share": 0.1944},
-            {"key": "AGE_25_29", "attended_share": 0.25},
-            {"key": "AGE_30_34", "attended_share": 0.1667},
-            {"key": "AGE_35_39", "attended_share": 0.1111},
-            {"key": "AGE_40_49", "attended_share": 0.0833},
-            {"key": "AGE_50_PLUS", "attended_share": 0.0556},
-            {"key": "UNKNOWN", "attended_share": 0.1389},
-        ],
     },
 }
 
@@ -453,7 +423,7 @@ RETENTION_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_respons
 
 # -- GET /organizations/{org_id}/stats/operations --
 
-# Two meetups, one of them paying. 60 people came in (the guest type counts); the
+# Two meetups, one of them paying. 60 people came in, counting every guest type; the
 # paying meetup had 30 attended, of whom 20 paid, 6 owe and 4 are exempt.
 OPERATIONS_STATS_EXAMPLE = {
     "summary": {"attended": 60, "paid_share": 0.7692, "avg_peak_checkins": 14.5, "bans": 2},

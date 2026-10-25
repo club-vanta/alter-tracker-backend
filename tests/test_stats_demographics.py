@@ -17,6 +17,7 @@ from app.models.models import (
     StatsAgeBucket,
     StatsComparisonKind,
 )
+from app.services.stats.attendance import attendance_stats
 from app.services.stats.demographics import age_bucket, age_bucket_expr, demographic_stats
 from app.services.stats.scope import StatsPeriod
 from tests.conftest import get_auth_headers, make_guest, make_meetup, make_org, make_org_member, make_rsvp, make_user
@@ -118,11 +119,6 @@ def test_demographics_groups_by_gender_with_unknown_last(session: Session):
     assert [g.attended_share for g in stats.gender] == [0.4286, 0.2857, 0.2857]
     assert [g.expected_share for g in stats.gender] == [0.375, 0.375, 0.25]
     assert stats.summary.attended == 7
-    assert [(s.key, s.attended_share) for s in stats.summary.gender_shares] == [
-        ("MALE", 0.4286),
-        ("FEMALE", 0.2857),
-        (None, 0.2857),
-    ]
     assert {g.key: g.attended for g in stats.age}[StatsAgeBucket.UNKNOWN.value] == 7
 
 
@@ -161,7 +157,7 @@ def test_demographics_age_buckets_and_median(session: Session):
     assert [g.attended for g in stats.age] == [1, 1, 2, 0, 1, 0, 3]
     assert stats.summary.median_age == 31.0
     assert stats.summary.known_age_share == 0.625
-    assert [s.attended_share for s in stats.summary.age_shares] == [0.125, 0.125, 0.25, 0.0, 0.125, 0.0, 0.375]
+    assert [g.attended_share for g in stats.age] == [0.125, 0.125, 0.25, 0.0, 0.125, 0.0, 0.375]
 
 
 def test_demographics_median_rounds_to_one_decimal(session: Session):
@@ -205,7 +201,6 @@ def test_demographics_only_staff_is_empty(session: Session):
     assert stats.summary.attended == 0
     assert stats.summary.median_age is None
     assert stats.summary.known_age_share is None
-    assert all(s.attended_share is None for s in stats.summary.age_shares)
 
 
 def test_demographics_walkin_counts_attended_but_not_expected(session: Session):
@@ -239,7 +234,28 @@ def test_demographics_aggregate_compares_with_previous_period(session: Session):
     assert stats.comparison_kind == StatsComparisonKind.PREVIOUS_PERIOD
     assert stats.comparison is not None
     assert (stats.comparison.attended, stats.comparison.median_age) == (1, 40.0)
-    assert [(s.key, s.attended_share) for s in stats.comparison.gender_shares] == [("MALE", 1.0)]
+
+
+def test_demographics_totals_match_attendance_stats(session: Session):
+    org = make_org(session)
+    meetup = _finalized_meetup(session, org, APRIL)
+    _rsvp(session, meetup, profile=True, gender="MALE", age=25, has_arrived=True)
+    _rsvp(session, meetup, profile=True, gender="FEMALE", age=31, has_arrived=True, is_walkin=True)
+    _rsvp(session, meetup, has_arrived=True, guest_type=GuestType.INVITED)
+    _rsvp(session, meetup, profile=True, gender="MALE", age=40, cancelled_rsvp=True, has_arrived=True)
+    _rsvp(session, meetup, profile=True, gender="FEMALE", age=22)
+    _rsvp(session, meetup, cancelled_rsvp=True)
+    _rsvp(session, meetup, has_arrived=True, guest_type=GuestType.STAFF)
+    _rsvp(session, meetup)  # no-show without a profile
+
+    demographics = demographic_stats(session, org.id, ALL_TIME, None)
+    attendance = attendance_stats(session, org.id, ALL_TIME, None).totals
+
+    for groups in (demographics.gender, demographics.age):
+        assert sum(g.attended for g in groups) == attendance.attended == 4
+        assert sum(g.expected for g in groups) == attendance.signed_up - attendance.cancelled == 5
+        assert sum(g.no_show for g in groups) == attendance.no_show == 2
+    assert demographics.summary.attended == attendance.attended
 
 
 def test_demographics_all_time_has_no_comparison(session: Session):
@@ -293,8 +309,6 @@ def _empty_summary() -> dict:
         "attended": 0,
         "median_age": None,
         "known_age_share": None,
-        "gender_shares": [],
-        "age_shares": [{"key": bucket.value, "attended_share": None} for bucket in StatsAgeBucket],
     }
 
 
@@ -404,11 +418,6 @@ def test_demographic_stats_returns_200_with_exact_aggregate_body(
             "attended": 2,
             "median_age": 22.0,
             "known_age_share": 0.5,
-            "gender_shares": [{"key": "MALE", "attended_share": 0.5}, {"key": None, "attended_share": 0.5}],
-            "age_shares": [
-                {"key": bucket.value, "attended_share": share}
-                for bucket, share in zip(StatsAgeBucket, [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5], strict=True)
-            ],
         },
         "comparison_kind": None,
         "comparison": None,
@@ -436,10 +445,6 @@ def test_demographic_stats_returns_200_for_one_meetup(
     assert body["comparison_kind"] == "PERIOD_AVERAGE"
     assert body["comparison"]["attended"] == 2
     assert body["comparison"]["median_age"] == 30.0
-    assert body["comparison"]["gender_shares"] == [
-        {"key": "FEMALE", "attended_share": 0.5},
-        {"key": "MALE", "attended_share": 0.5},
-    ]
 
 
 def test_demographic_stats_returns_404_for_unfinalized_meetup(

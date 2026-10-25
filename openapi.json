@@ -8896,107 +8896,13 @@
                       "summary": {
                         "attended": 80,
                         "median_age": 28.5,
-                        "known_age_share": 0.875,
-                        "gender_shares": [
-                          {
-                            "key": "MALE",
-                            "attended_share": 0.45
-                          },
-                          {
-                            "key": "WOMAN_CIS",
-                            "attended_share": 0.35
-                          },
-                          {
-                            "key": "UNDEFINED",
-                            "attended_share": 0.075
-                          },
-                          {
-                            "attended_share": 0.125
-                          }
-                        ],
-                        "age_shares": [
-                          {
-                            "key": "AGE_18_24",
-                            "attended_share": 0.2
-                          },
-                          {
-                            "key": "AGE_25_29",
-                            "attended_share": 0.25
-                          },
-                          {
-                            "key": "AGE_30_34",
-                            "attended_share": 0.175
-                          },
-                          {
-                            "key": "AGE_35_39",
-                            "attended_share": 0.1
-                          },
-                          {
-                            "key": "AGE_40_49",
-                            "attended_share": 0.1
-                          },
-                          {
-                            "key": "AGE_50_PLUS",
-                            "attended_share": 0.05
-                          },
-                          {
-                            "key": "UNKNOWN",
-                            "attended_share": 0.125
-                          }
-                        ]
+                        "known_age_share": 0.875
                       },
                       "comparison_kind": "PREVIOUS_PERIOD",
                       "comparison": {
                         "attended": 72,
                         "median_age": 29.0,
-                        "known_age_share": 0.8611,
-                        "gender_shares": [
-                          {
-                            "key": "MALE",
-                            "attended_share": 0.4722
-                          },
-                          {
-                            "key": "WOMAN_CIS",
-                            "attended_share": 0.3333
-                          },
-                          {
-                            "key": "UNDEFINED",
-                            "attended_share": 0.0556
-                          },
-                          {
-                            "attended_share": 0.1389
-                          }
-                        ],
-                        "age_shares": [
-                          {
-                            "key": "AGE_18_24",
-                            "attended_share": 0.1944
-                          },
-                          {
-                            "key": "AGE_25_29",
-                            "attended_share": 0.25
-                          },
-                          {
-                            "key": "AGE_30_34",
-                            "attended_share": 0.1667
-                          },
-                          {
-                            "key": "AGE_35_39",
-                            "attended_share": 0.1111
-                          },
-                          {
-                            "key": "AGE_40_49",
-                            "attended_share": 0.0833
-                          },
-                          {
-                            "key": "AGE_50_PLUS",
-                            "attended_share": 0.0556
-                          },
-                          {
-                            "key": "UNKNOWN",
-                            "attended_share": 0.1389
-                          }
-                        ]
+                        "known_age_share": 0.8611
                       }
                     }
                   }
@@ -9810,6 +9716,70 @@
         "title": "AddOrgMemberRequest",
         "description": "Request body to add a user to an organization."
       },
+      "AgeGroupPublic": {
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/StatsAgeBucket"
+          },
+          "attended": {
+            "type": "integer",
+            "title": "Attended"
+          },
+          "expected": {
+            "type": "integer",
+            "title": "Expected"
+          },
+          "no_show": {
+            "type": "integer",
+            "title": "No Show"
+          },
+          "no_show_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Show Rate"
+          },
+          "attended_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attended Share"
+          },
+          "expected_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Share"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "attended",
+          "expected",
+          "no_show",
+          "no_show_rate",
+          "attended_share",
+          "expected_share"
+        ],
+        "title": "AgeGroupPublic",
+        "description": "One age group of audience RSVPs, keyed by a StatsAgeBucket. Rates and\nshares are null with nothing to divide by."
+      },
       "ApproveUserRequest": {
         "properties": {
           "is_approved": {
@@ -10571,90 +10541,18 @@
         "title": "CreateManualGuestRequest",
         "description": "Request body for creating a guest without a Mazmo account (POST /guests/manual)."
       },
-      "DemographicGroupPublic": {
-        "properties": {
-          "key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Key"
-          },
-          "attended": {
-            "type": "integer",
-            "title": "Attended"
-          },
-          "expected": {
-            "type": "integer",
-            "title": "Expected"
-          },
-          "no_show": {
-            "type": "integer",
-            "title": "No Show"
-          },
-          "no_show_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "No Show Rate"
-          },
-          "attended_share": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Attended Share"
-          },
-          "expected_share": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Share"
-          }
-        },
-        "type": "object",
-        "required": [
-          "key",
-          "attended",
-          "expected",
-          "no_show",
-          "no_show_rate",
-          "attended_share",
-          "expected_share"
-        ],
-        "title": "DemographicGroupPublic",
-        "description": "One gender or age group of audience RSVPs. key is a Mazmo gender code (null:\nunknown) or a StatsAgeBucket value. Rates and shares are null with nothing to divide by."
-      },
       "DemographicStatsPublic": {
         "properties": {
           "gender": {
             "items": {
-              "$ref": "#/components/schemas/DemographicGroupPublic"
+              "$ref": "#/components/schemas/GenderGroupPublic"
             },
             "type": "array",
             "title": "Gender"
           },
           "age": {
             "items": {
-              "$ref": "#/components/schemas/DemographicGroupPublic"
+              "$ref": "#/components/schemas/AgeGroupPublic"
             },
             "type": "array",
             "title": "Age"
@@ -10721,29 +10619,13 @@
               }
             ],
             "title": "Known Age Share"
-          },
-          "gender_shares": {
-            "items": {
-              "$ref": "#/components/schemas/GroupSharePublic"
-            },
-            "type": "array",
-            "title": "Gender Shares"
-          },
-          "age_shares": {
-            "items": {
-              "$ref": "#/components/schemas/GroupSharePublic"
-            },
-            "type": "array",
-            "title": "Age Shares"
           }
         },
         "type": "object",
         "required": [
           "attended",
           "median_age",
-          "known_age_share",
-          "gender_shares",
-          "age_shares"
+          "known_age_share"
         ],
         "title": "DemographicSummaryPublic",
         "description": "The figures compared between two scopes. median_age and known_age_share are null when nobody attended."
@@ -10944,7 +10826,7 @@
         "title": "FrequencyRowPublic",
         "description": "Unique guests with a number of attendances in the period, in one StatsFrequencyBucket."
       },
-      "GroupSharePublic": {
+      "GenderGroupPublic": {
         "properties": {
           "key": {
             "anyOf": [
@@ -10957,6 +10839,29 @@
             ],
             "title": "Key"
           },
+          "attended": {
+            "type": "integer",
+            "title": "Attended"
+          },
+          "expected": {
+            "type": "integer",
+            "title": "Expected"
+          },
+          "no_show": {
+            "type": "integer",
+            "title": "No Show"
+          },
+          "no_show_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Show Rate"
+          },
           "attended_share": {
             "anyOf": [
               {
@@ -10967,15 +10872,31 @@
               }
             ],
             "title": "Attended Share"
+          },
+          "expected_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Share"
           }
         },
         "type": "object",
         "required": [
           "key",
-          "attended_share"
+          "attended",
+          "expected",
+          "no_show",
+          "no_show_rate",
+          "attended_share",
+          "expected_share"
         ],
-        "title": "GroupSharePublic",
-        "description": "Share of the attended RSVPs that fall in one group (null when nobody attended)."
+        "title": "GenderGroupPublic",
+        "description": "One gender group of audience RSVPs. key is a Mazmo gender code (null:\nunknown). Rates and shares are null with nothing to divide by."
       },
       "GuestAttendanceStatus": {
         "type": "string",
@@ -12684,6 +12605,20 @@
         ],
         "title": "StaffRegisterRequest",
         "description": "Request body for staff registration.\n\nStrict mode ensures exact type matching - no coercion from strings to ints, etc.\nPassword has a minimum length of 15 characters for security."
+      },
+      "StatsAgeBucket": {
+        "type": "string",
+        "enum": [
+          "AGE_18_24",
+          "AGE_25_29",
+          "AGE_30_34",
+          "AGE_35_39",
+          "AGE_40_49",
+          "AGE_50_PLUS",
+          "UNKNOWN"
+        ],
+        "title": "StatsAgeBucket",
+        "description": "Age range of an attendee, from the Mazmo profile. UNKNOWN covers missing and implausible ages."
       },
       "StatsComparisonKind": {
         "type": "string",

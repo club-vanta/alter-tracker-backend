@@ -10,7 +10,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.models import GuestType, StatsComparisonKind, StatsFrequencyBucket, StatsLeadTimeBucket
+from app.models.models import GuestType, StatsAgeBucket, StatsComparisonKind, StatsFrequencyBucket, StatsLeadTimeBucket
 
 # -- Attendance --
 
@@ -122,10 +122,10 @@ class ArrivalStatsPublic(BaseModel):
 # -- Demographics --
 
 
-class DemographicGroupPublic(BaseModel):
+class GenderGroupPublic(BaseModel):
     """
-    One gender or age group of audience RSVPs. key is a Mazmo gender code (null:
-    unknown) or a StatsAgeBucket value. Rates and shares are null with nothing to divide by.
+    One gender group of audience RSVPs. key is a Mazmo gender code (null:
+    unknown). Rates and shares are null with nothing to divide by.
     """
 
     key: str | None
@@ -139,11 +139,19 @@ class DemographicGroupPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class GroupSharePublic(BaseModel):
-    """Share of the attended RSVPs that fall in one group (null when nobody attended)."""
+class AgeGroupPublic(BaseModel):
+    """
+    One age group of audience RSVPs, keyed by a StatsAgeBucket. Rates and
+    shares are null with nothing to divide by.
+    """
 
-    key: str | None
+    key: StatsAgeBucket
+    attended: int
+    expected: int
+    no_show: int
+    no_show_rate: float | None
     attended_share: float | None
+    expected_share: float | None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -154,8 +162,6 @@ class DemographicSummaryPublic(BaseModel):
     attended: int
     median_age: float | None
     known_age_share: float | None
-    gender_shares: list[GroupSharePublic]
-    age_shares: list[GroupSharePublic]
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -163,8 +169,8 @@ class DemographicSummaryPublic(BaseModel):
 class DemographicStatsPublic(BaseModel):
     """Gender and age of the people who attend, with the figures to compare against. One RSVP counts once."""
 
-    gender: list[DemographicGroupPublic]
-    age: list[DemographicGroupPublic]
+    gender: list[GenderGroupPublic]
+    age: list[AgeGroupPublic]
     summary: DemographicSummaryPublic
     comparison_kind: StatsComparisonKind | None
     comparison: DemographicSummaryPublic | None
