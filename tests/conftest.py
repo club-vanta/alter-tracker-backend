@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
@@ -72,6 +73,17 @@ def _ensure_test_database_exists() -> None:
 
 
 # -- Session-scoped: create DB schema once ------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def block_unmocked_http():
+    """Fail loudly when a test reaches a real provider; tests mock httpx.AsyncClient.get on top of this."""
+
+    async def refuse(self: httpx.AsyncClient, url: object, *args: object, **kwargs: object) -> httpx.Response:
+        raise AssertionError(f"Unmocked network call: GET {url}. Patch httpx.AsyncClient.get in this test.")
+
+    with patch.object(httpx.AsyncClient, "get", refuse):
+        yield
 
 
 @pytest.fixture(scope="session", autouse=False)
