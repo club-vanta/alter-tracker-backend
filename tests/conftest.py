@@ -77,12 +77,22 @@ def _ensure_test_database_exists() -> None:
 
 @pytest.fixture(autouse=True)
 def block_unmocked_http():
-    """Fail loudly when a test reaches a real provider; tests mock httpx.AsyncClient.get on top of this."""
+    """
+    Fail loudly when a test reaches a real provider.
 
-    async def refuse(self: httpx.AsyncClient, url: object, *args: object, **kwargs: object) -> httpx.Response:
-        raise AssertionError(f"Unmocked network call: GET {url}. Patch httpx.AsyncClient.get in this test.")
+    Every httpx request method (get, post, stream) ends in AsyncClient.send, so
+    patching it covers them all. Tests that patch AsyncClient.get on top of this
+    never reach send.
+    """
 
-    with patch.object(httpx.AsyncClient, "get", refuse):
+    async def refuse(
+        self: httpx.AsyncClient, request: httpx.Request, *args: object, **kwargs: object
+    ) -> httpx.Response:
+        raise AssertionError(
+            f"Unmocked network call: {request.method} {request.url}. Patch httpx.AsyncClient.get in this test."
+        )
+
+    with patch.object(httpx.AsyncClient, "send", refuse):
         yield
 
 

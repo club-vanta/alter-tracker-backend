@@ -187,8 +187,10 @@ def test_health_endpoint_supports_head(client):
     WHY: UptimeRobot sends HEAD requests. A 405 Method Not Allowed would
     cause false downtime alerts.
     """
-    assert client.get("/health").status_code == 200
-    assert client.head("/health").status_code == 200
+    with patch("app.services.health.httpx.AsyncClient.head", new_callable=AsyncMock) as mock_head:
+        mock_head.return_value = MagicMock(status_code=200)
+        assert client.get("/health").status_code == 200
+        assert client.head("/health").status_code == 200
 
 
 # ── Aggregated health status ──────────────────────────────────────────────────
