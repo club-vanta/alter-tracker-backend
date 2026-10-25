@@ -14,6 +14,7 @@ Endpoints:
   GET    /organizations/{org_id}/guests/{id}/meetups  - A guest's meetups and attendance (org member)
   PATCH  /organizations/{org_id}/guests/{id}/ban      - Ban a guest (org admin)
   PATCH  /organizations/{org_id}/guests/{id}/unban    - Unban a guest (org admin)
+  GET    /organizations/{org_id}/geocode              - Address search over Photon (org admin)
 """
 
 from typing import Any
@@ -37,7 +38,9 @@ from app.openapi_examples._error_responses import (
     error_404_org,
     error_409_already_banned,
     error_409_not_banned,
+    error_422_validation,
     error_422_validation_reason,
+    error_502_geocoding_unavailable,
     merge_error_responses,
 )
 
@@ -523,4 +526,39 @@ UNBAN_GUEST_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_404_guest(),
     **error_404_org(),
     **error_409_not_banned(),
+}
+
+# -- GET /organizations/{org_id}/geocode --------------------------------------
+
+GEOCODE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Up to 5 matching addresses in Argentina, best match first",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "matches": {
+                        "summary": "Two matches",
+                        "value": [
+                            {
+                                "label": "Club Vanta, Thames 1500, Palermo, Buenos Aires, Buenos Aires",
+                                "latitude": -34.5875,
+                                "longitude": -58.4306,
+                            },
+                            {
+                                "label": "Thames 1520, Palermo, Buenos Aires, Buenos Aires",
+                                "latitude": -34.5871,
+                                "longitude": -58.4311,
+                            },
+                        ],
+                    },
+                    "no_matches": {"summary": "Nothing found in Argentina", "value": []},
+                }
+            }
+        },
+    },
+    **error_401_invalid_credentials(),
+    **error_403_admin_required(),
+    **error_404_org(),
+    **error_422_validation(),
+    **error_502_geocoding_unavailable(),
 }

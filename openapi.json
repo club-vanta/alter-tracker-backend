@@ -2034,6 +2034,174 @@
         }
       }
     },
+    "/organizations/{org_id}/geocode": {
+      "get": {
+        "tags": [
+          "organizations"
+        ],
+        "summary": "Search addresses in Argentina to set a meetup's location",
+        "description": "Proxies the query to Photon (OpenStreetMap data), biased toward Buenos\nAires, and returns at most 5 matches in Argentina, best first. Results\nin other countries are dropped. The query is trimmed before the length\ncheck, so 3 to 200 characters of real text are required.\n\nPhoton is called at most once per second per process; concurrent\nsearches wait their turn. Returns 502 if Photon times out or fails;\nsetting a location by hand is unaffected.",
+        "operationId": "geocode_address_organizations__org_id__geocode_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 200,
+              "description": "Address text to search for",
+              "title": "Q"
+            },
+            "description": "Address text to search for"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to 5 matching addresses in Argentina, best match first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GeocodeResult"
+                  },
+                  "title": "Response Geocode Address Organizations  Org Id  Geocode Get"
+                },
+                "examples": {
+                  "matches": {
+                    "summary": "Two matches",
+                    "value": [
+                      {
+                        "label": "Club Vanta, Thames 1500, Palermo, Buenos Aires, Buenos Aires",
+                        "latitude": -34.5875,
+                        "longitude": -58.4306
+                      },
+                      {
+                        "label": "Thames 1520, Palermo, Buenos Aires, Buenos Aires",
+                        "latitude": -34.5871,
+                        "longitude": -58.4311
+                      }
+                    ]
+                  },
+                  "no_matches": {
+                    "summary": "Nothing found in Argentina",
+                    "value": []
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Org admin privileges needed",
+                    "value": {
+                      "detail": "Organization admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "org_not_found": {
+                    "summary": "Organization UUID does not exist",
+                    "value": {
+                      "detail": "Organization c3d4e5f6-a7b8-9012-cdef-123456789012 not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_required_field": {
+                    "summary": "Missing required field",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "missing",
+                          "loc": [
+                            "body",
+                            "field_name"
+                          ],
+                          "msg": "Field required",
+                          "input": {}
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Address search unavailable",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "geocoding_unavailable": {
+                    "summary": "Photon timed out or failed",
+                    "value": {
+                      "detail": "Cannot search addresses: the address search is unavailable right now. Try again in a moment, or enter the address later."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/staff/": {
       "get": {
         "tags": [
@@ -11095,6 +11263,30 @@
         ],
         "title": "GenderGroupPublic",
         "description": "One gender group of audience RSVPs. key is a Mazmo gender code (null:\nunknown). Rates and shares are null with nothing to divide by."
+      },
+      "GeocodeResult": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "latitude": {
+            "type": "number",
+            "title": "Latitude"
+          },
+          "longitude": {
+            "type": "number",
+            "title": "Longitude"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "latitude",
+          "longitude"
+        ],
+        "title": "GeocodeResult",
+        "description": "One address match from the geocoding search."
       },
       "GuestAttendanceStatus": {
         "type": "string",

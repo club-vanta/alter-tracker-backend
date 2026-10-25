@@ -72,6 +72,7 @@ from app.schemas.meetups import (
 )
 from app.schemas.organizations import (
     AddOrgMemberRequest,
+    GeocodeResult,
     OrgCreate,
     OrgListResponse,
     OrgMemberListResponse,
@@ -140,6 +141,7 @@ __all__ = [
     "EventTypeFilter",
     "FrequencyRowPublic",
     "GenderGroupPublic",
+    "GeocodeResult",
     "GuestAttendanceSummary",
     "GuestDisplaynameHistoryListResponse",
     "GuestDisplaynameHistoryPublic",

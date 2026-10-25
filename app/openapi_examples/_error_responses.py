@@ -10,6 +10,12 @@ Usage:
 
 from typing import Any
 
+# Shared with the geocode route so the documented message is the real one.
+GEOCODING_UNAVAILABLE_DETAIL = (
+    "Cannot search addresses: the address search is unavailable right now. "
+    "Try again in a moment, or enter the address later."
+)
+
 # Type alias for FastAPI responses dict
 ResponsesDict = dict[int | str, dict[str, Any]]
 
@@ -1129,6 +1135,25 @@ def error_422_validation_username() -> ResponsesDict:
 
 
 # ── 502/504 Gateway Errors ────────────────────────────────────────────────────
+
+
+def error_502_geocoding_unavailable() -> ResponsesDict:
+    """502 - The address search provider (Photon) failed or timed out. Only for GET /geocode."""
+    return {
+        502: {
+            "description": "Address search unavailable",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "geocoding_unavailable": {
+                            "summary": "Photon timed out or failed",
+                            "value": {"detail": GEOCODING_UNAVAILABLE_DETAIL},
+                        },
+                    }
+                }
+            },
+        }
+    }
 
 
 def error_502_mazmo_create_meetup() -> ResponsesDict:

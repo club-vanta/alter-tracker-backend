@@ -13,6 +13,7 @@ GET    /organizations/{org_id}/guests/banned             -> list banned guests i
 GET    /organizations/{org_id}/guests/{id}/meetups       -> a guest's meetups in org with attendance (org member)
 PATCH  /organizations/{org_id}/guests/{id}/ban           -> ban a guest in org (org admin)
 PATCH  /organizations/{org_id}/guests/{id}/unban         -> unban a guest in org (org admin)
+GET    /organizations/{org_id}/geocode                   -> address search over Photon (org admin)
 """
 
 import uuid
@@ -20,10 +21,12 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from pydantic import StringConstraints
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
+from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.deps import get_org_admin, get_org_member, get_site_admin
 from app.models.models import (
@@ -37,6 +40,7 @@ from app.models.models import (
     User,
     UserOrganization,
 )
+from app.openapi_examples._error_responses import GEOCODING_UNAVAILABLE_DETAIL
 from app.openapi_examples.organizations_examples import (
     ADD_MEMBER_REQUEST_EXAMPLES,
     ADD_MEMBER_RESPONSES,
@@ -44,6 +48,7 @@ from app.openapi_examples.organizations_examples import (
     BAN_GUEST_RESPONSES,
     CREATE_ORG_REQUEST_EXAMPLES,
     CREATE_ORG_RESPONSES,
+    GEOCODE_RESPONSES,
     GET_GUEST_MEETUPS_IN_ORG_RESPONSES,
     GET_ORG_RESPONSES,
     LIST_BANNED_IN_ORG_RESPONSES,
@@ -61,6 +66,7 @@ from app.schemas import (
     BanGuestRequest,
     BannedGuestListResponse,
     BannedGuestPublic,
+    GeocodeResult,
     GuestAttendanceSummary,
     GuestMazmoProfilePublic,
     GuestMeetupAttendanceListResponse,
@@ -74,6 +80,7 @@ from app.schemas import (
     OrgUpdate,
 )
 from app.services.attendance import list_guest_attendance, summarize_attendance
+from app.services.geocoding import GeocodingUnavailableError, PhotonClient
 
 log = structlog.get_logger(__name__)
 router = APIRouter(tags=["organizations"])
@@ -633,3 +640,41 @@ def _get_org_or_404(session: Session, org_id: uuid.UUID) -> Organization:
 
 # Re-export for use in other routers
 __all__ = ["OrgRole", "_get_org_or_404"]
+
+
+# -- Address search -----------------------------------------------------------
+
+
+@router.get(
+    "/organizations/{org_id}/geocode",
+    response_model=list[GeocodeResult],
+    summary="Search addresses in Argentina to set a meetup's location",
+    responses=GEOCODE_RESPONSES,
+)
+async def geocode_address(
+    org_id: uuid.UUID,
+    q: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=3, max_length=200),
+        Query(description="Address text to search for"),
+    ],
+    session: Session = Depends(get_session),
+    _admin: User = Depends(get_org_admin),
+    settings: Settings = Depends(get_settings),
+) -> list[GeocodeResult]:
+    """
+    Proxies the query to Photon (OpenStreetMap data), biased toward Buenos
+    Aires, and returns at most 5 matches in Argentina, best first. Results
+    in other countries are dropped. The query is trimmed before the length
+    check, so 3 to 200 characters of real text are required.
+
+    Photon is called at most once per second per process; concurrent
+    searches wait their turn. Returns 502 if Photon times out or fails;
+    setting a location by hand is unaffected.
+    """
+    _get_org_or_404(session, org_id)
+    try:
+        async with PhotonClient(settings) as client:
+            return await client.search(q)
+    except GeocodingUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=GEOCODING_UNAVAILABLE_DETAIL) from exc
