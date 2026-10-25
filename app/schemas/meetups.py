@@ -16,9 +16,9 @@ from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator, model_vali
 # Examples:
 #   https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217
 #   https://mazmo.net/+eventos-reuniones-argentina/alter-tal-selmo-secret-face-opgnjcy4d0u
-MAX_LOCATION_LABEL_LENGTH = 255
-
 MAZMO_URL_PATTERN = re.compile(r"^https://mazmo\.net/\+?[\w-]+/[\w-]+$")
+
+MAX_LOCATION_LABEL_LENGTH = 255
 
 
 class MeetupPublic(BaseModel):

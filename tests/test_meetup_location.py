@@ -111,6 +111,19 @@ def test_set_location_422_message_names_the_problem(client: TestClient, admin_he
     assert msg.startswith("Value error, Cannot set location: latitude must be between -90 and 90")
 
 
+def test_set_location_422_message_for_a_partial_location(client: TestClient, admin_headers: dict, meetup):
+    """WHY: A half-set location must say what to send instead (repo style: what failed, what to do)."""
+    resp = client.patch(
+        _url(meetup), json={"location_label": "Club Vanta", "latitude": None, "longitude": None}, headers=admin_headers
+    )
+
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert resp.json()["detail"][0]["msg"] == (
+        "Value error, Cannot set location: location_label, latitude and longitude must be set together. "
+        "Send all three, or all null to clear the location."
+    )
+
+
 def test_set_location_returns_422_when_a_key_is_missing(client: TestClient, admin_headers: dict, meetup):
     """WHY: All three keys are required (null clears), so an empty body is not a silent clear."""
     resp = client.patch(_url(meetup), json={}, headers=admin_headers)
