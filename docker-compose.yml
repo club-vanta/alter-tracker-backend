@@ -79,6 +79,25 @@ services:
         awslogs-group: /alter-tracker-backend
         awslogs-stream: app
 
+  weather-worker:
+    image: ghcr.io/club-vanta/alter-tracker-backend:latest
+    pull_policy: always
+    restart: always
+    command: python -m app.jobs.weather_worker
+    environment:
+      DATABASE_URL: postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/alter_event_tracker
+      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
+      JSON_LOGS: "true"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-east-1
+        awslogs-group: /alter-tracker-backend
+        awslogs-stream: weather-worker
+
   backup:
     image: ghcr.io/club-vanta/alter-tracker-backend-backup:latest
     pull_policy: always

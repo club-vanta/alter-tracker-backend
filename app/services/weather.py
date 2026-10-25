@@ -44,8 +44,9 @@ from typing import Any
 
 import httpx
 import structlog
+from sqlalchemy import ColumnElement, and_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import Session
+from sqlmodel import Session, col
 
 from app.core.config import Settings
 from app.models.models import Meetup, MeetupWeather
@@ -64,6 +65,7 @@ _HOURLY_VARIABLES = ("temperature_2m", "apparent_temperature", "precipitation", 
 _WINDOW = timedelta(hours=6)
 # The provider publishes a finished hour with some delay, so wait before the first fetch.
 _PROVIDER_DELAY = timedelta(hours=2)
+_READY_AFTER = _WINDOW + _PROVIDER_DELAY
 _RAIN_THRESHOLD_MM = 0.2
 
 type HourlyData = dict[str, list[str | float | None]]
@@ -144,7 +146,16 @@ def is_weather_ready(meetup: Meetup, now: datetime) -> bool:
     """True when the meetup has coordinates and its window ended at least 2 hours ago."""
     if meetup.latitude is None or meetup.longitude is None:
         return False
-    return _window_end(meetup.date) + _PROVIDER_DELAY <= _as_utc(now)
+    return _as_utc(meetup.date) + _READY_AFTER <= _as_utc(now)
+
+
+def weather_ready_clause(now: datetime) -> ColumnElement[bool]:
+    """SQL twin of is_weather_ready, for queries that select ready meetups (keep the two in step)."""
+    return and_(
+        col(Meetup.latitude).is_not(None),
+        col(Meetup.longitude).is_not(None),
+        col(Meetup.date) <= _as_utc(now) - _READY_AFTER,
+    )
 
 
 # -- Client -------------------------------------------------------------------
