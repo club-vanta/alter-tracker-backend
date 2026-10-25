@@ -34,6 +34,7 @@ Errors
 ------
 Timeouts, transport errors, non-2xx statuses and malformed JSON all raise
 WeatherUnavailableError; callers decide whether that is a 502 or a log line.
+An answer with no usable value in the window raises its subclass NoWeatherDataError.
 """
 
 import time
@@ -74,6 +75,14 @@ class WeatherUnavailableError(Exception):
     """Open-Meteo timed out, failed, or returned something we cannot read."""
 
 
+class NoWeatherDataError(WeatherUnavailableError):
+    """Open-Meteo answered, but every series is empty inside the window (nothing was stored)."""
+
+
+class MissingLocationError(Exception):
+    """fetch_and_store_weather was called for a meetup without coordinates (a caller bug)."""
+
+
 # -- Summary ------------------------------------------------------------------
 
 
@@ -85,7 +94,7 @@ class WeatherSummary:
     avg_apparent_temperature: float | None
     total_precipitation_mm: float | None
     max_wind_kmh: float | None
-    rained: bool
+    rained: bool | None
     hourly: HourlyData
 
 
@@ -126,7 +135,7 @@ def summarize_weather(hourly: HourlyData, start: datetime) -> WeatherSummary | N
         avg_apparent_temperature=_mean(present["apparent_temperature"]),
         total_precipitation_mm=total,
         max_wind_kmh=round(max(wind), 1) if wind else None,
-        rained=total is not None and total >= _RAIN_THRESHOLD_MM,
+        rained=None if total is None else total >= _RAIN_THRESHOLD_MM,
         hourly=used,
     )
 
@@ -181,50 +190,59 @@ class OpenMeteoClient:
 
     @staticmethod
     def _parse(response: httpx.Response) -> HourlyData:
+        """Read and validate the hourly block: equal-length arrays, ISO times, numeric-or-null values."""
         try:
             raw: dict[str, Any] = response.json()["hourly"]
             hourly: HourlyData = {name: list(raw[name]) for name in ("time", *_HOURLY_VARIABLES)}
+            if len({len(series) for series in hourly.values()}) != 1:
+                raise ValueError("arrays of different lengths")
+            for moment in hourly["time"]:
+                datetime.fromisoformat(moment)  # type: ignore[arg-type]
+            for name in _HOURLY_VARIABLES:
+                if not all(v is None or (isinstance(v, int | float) and not isinstance(v, bool)) for v in hourly[name]):
+                    raise ValueError(f"non-numeric value in {name}")
         except (ValueError, KeyError, TypeError) as exc:
             log.warning("Open-Meteo returned unreadable data", error=type(exc).__name__)
             raise WeatherUnavailableError("Open-Meteo returned data in an unexpected format") from exc
-        if len({len(series) for series in hourly.values()}) != 1:
-            log.warning("Open-Meteo returned arrays of different lengths")
-            raise WeatherUnavailableError("Open-Meteo returned data in an unexpected format")
         return hourly
 
 
 # -- Persistence --------------------------------------------------------------
 
 
-async def fetch_and_store_weather(session: Session, meetup: Meetup, client: OpenMeteoClient) -> MeetupWeather | None:
-    """Fetch the weather of a located meetup and upsert its row.
+async def fetch_and_store_weather(session: Session, meetup: Meetup, client: OpenMeteoClient) -> MeetupWeather:
+    """Fetch the weather of a located meetup and upsert its row, returning the stored row.
 
-    Returns the stored row, or None (writing nothing) when the meetup has no
-    location or the provider had no value for the window. Provider failures
-    raise WeatherUnavailableError. Safe to run twice at once: the primary key
-    plus ON CONFLICT DO UPDATE leave one row.
+    Contract:
+    - Precondition: the meetup has coordinates (callers check is_weather_ready
+      first); otherwise MissingLocationError is raised and nothing is fetched.
+    - NoWeatherDataError (a WeatherUnavailableError) when the provider had no
+      value for the window: nothing is written, so a later run can retry.
+    - WeatherUnavailableError for any other provider failure.
+    - Safe to run twice at once: the primary key plus ON CONFLICT DO UPDATE
+      leave one row.
     """
     if meetup.latitude is None or meetup.longitude is None:
-        log.warning("Weather skipped: meetup has no location", meetup_id=str(meetup.id))
-        return None
+        raise MissingLocationError(f"Cannot fetch weather: meetup {meetup.id} has no coordinates.")
 
     hourly = await client.fetch_hourly(meetup.latitude, meetup.longitude, meetup.date)
     summary = summarize_weather(hourly, meetup.date)
     if summary is None:
         log.warning("Weather skipped: no data in the window", meetup_id=str(meetup.id))
-        return None
+        raise NoWeatherDataError("Open-Meteo has no data for the window of this meetup")
 
-    values = {
-        "meetup_id": meetup.id,
-        "avg_temperature": summary.avg_temperature,
-        "avg_apparent_temperature": summary.avg_apparent_temperature,
-        "total_precipitation_mm": summary.total_precipitation_mm,
-        "max_wind_kmh": summary.max_wind_kmh,
-        "rained": summary.rained,
-        "hourly": summary.hourly,
-        "fetched_at": datetime.now(UTC),
-        "source": SOURCE,
-    }
+    # Building the model applies its defaults (fetched_at), the single source of truth.
+    row = MeetupWeather(
+        meetup_id=meetup.id,
+        avg_temperature=summary.avg_temperature,
+        avg_apparent_temperature=summary.avg_apparent_temperature,
+        total_precipitation_mm=summary.total_precipitation_mm,
+        max_wind_kmh=summary.max_wind_kmh,
+        rained=summary.rained,
+        hourly=summary.hourly,
+        source=SOURCE,
+    )
+    values = row.model_dump()
     stmt = pg_insert(MeetupWeather).values(values)
     stmt = stmt.on_conflict_do_update(
         index_elements=["meetup_id"],
@@ -233,4 +251,6 @@ async def fetch_and_store_weather(session: Session, meetup: Meetup, client: Open
     session.exec(stmt)  # type: ignore[arg-type]
     session.commit()
     log.info("Weather stored", meetup_id=str(meetup.id), rained=summary.rained)
-    return session.get(MeetupWeather, meetup.id, populate_existing=True)
+    stored = session.get(MeetupWeather, meetup.id, populate_existing=True)
+    assert stored is not None  # just upserted in this transaction
+    return stored

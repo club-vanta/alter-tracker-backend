@@ -17,6 +17,8 @@ from app.core.config import get_settings
 from app.models.models import MeetupWeather, Organization
 from app.services.weather import (
     SOURCE,
+    MissingLocationError,
+    NoWeatherDataError,
     OpenMeteoClient,
     WeatherUnavailableError,
     fetch_and_store_weather,
@@ -168,6 +170,23 @@ def test_summarize_weather_keeps_a_series_that_is_entirely_null_as_none():
     assert summary is not None
     assert summary.avg_apparent_temperature is None
     assert summary.avg_temperature == 11.0
+
+
+def test_summarize_weather_rained_is_unknown_without_any_precipitation_value():
+    """WHY: Unknown precipitation is not the same as dry; rained stays NULL."""
+    payload = hourly_payload(
+        temperature=[10.0, 12.0],
+        apparent=[9.0, 11.0],
+        precipitation=[None, None],
+        wind=[4.0, 6.0],
+        first_hour=datetime(2026, 10, 24, 22, 0),
+    )
+
+    summary = summarize_weather(payload, START)
+
+    assert summary is not None
+    assert summary.total_precipitation_mm is None
+    assert summary.rained is None
 
 
 def test_summarize_weather_returns_none_when_every_series_is_null_in_the_window():
@@ -357,6 +376,37 @@ def test_client_maps_unreadable_json_to_weather_unavailable(mock_get: AsyncMock,
         asyncio.run(run())
 
 
+def _hourly_with(**overrides: list[Any]) -> dict[str, list[Any]]:
+    hourly = hourly_payload([1.0, 2.0], [1.0, 2.0], [0.0, 0.0], [3.0, 4.0], first_hour=datetime(2026, 10, 24, 22, 0))
+    hourly.update(overrides)
+    return hourly
+
+
+@pytest.mark.parametrize(
+    "hourly",
+    [
+        _hourly_with(time=["2026-10-24T22:00", None]),
+        _hourly_with(time=["2026-10-24T22:00", "not a time"]),
+        _hourly_with(time=["2026-10-24T22:00", 5]),
+        _hourly_with(temperature_2m=[1.0, "warm"]),
+        _hourly_with(precipitation=[0.0, [1]]),
+        _hourly_with(wind_speed_10m=[True, 2.0]),
+        _hourly_with(apparent_temperature=[1.0]),
+    ],
+    ids=["null-time", "bad-time", "numeric-time", "string-value", "list-value", "bool-value", "short-array"],
+)
+def test_client_maps_malformed_values_to_weather_unavailable(mock_get: AsyncMock, hourly: dict[str, list[Any]]):
+    """WHY: Bad provider data must surface as WeatherUnavailableError, never a raw ValueError or TypeError."""
+    mock_get.return_value = api_response(hourly)
+
+    async def run() -> None:
+        async with OpenMeteoClient(get_settings()) as client:
+            await client.fetch_hourly(LAT, LON, START)
+
+    with pytest.raises(WeatherUnavailableError, match="unexpected format"):
+        asyncio.run(run())
+
+
 def test_client_maps_invalid_json_to_weather_unavailable(mock_get: AsyncMock):
     """WHY: A non-JSON 200 (proxy page) must not escape as ValueError."""
     resp = MagicMock()
@@ -375,8 +425,8 @@ def test_client_maps_invalid_json_to_weather_unavailable(mock_get: AsyncMock):
 # -- fetch_and_store_weather --------------------------------------------------
 
 
-def _fetch(session: Session, meetup: Any) -> MeetupWeather | None:
-    async def run() -> MeetupWeather | None:
+def _fetch(session: Session, meetup: Any) -> MeetupWeather:
+    async def run() -> MeetupWeather:
         async with OpenMeteoClient(get_settings()) as client:
             return await fetch_and_store_weather(session, meetup, client)
 
@@ -401,7 +451,6 @@ def test_fetch_and_store_weather_writes_the_row_with_source_and_timestamp(
 
     row = _fetch(session, meetup)
 
-    assert row is not None
     assert row.meetup_id == meetup.id
     assert row.avg_temperature == 16.0
     assert row.avg_apparent_temperature == 14.0
@@ -427,13 +476,12 @@ def test_fetch_and_store_weather_second_call_overwrites_and_keeps_one_row(
 
     rows = session.exec(select(MeetupWeather).where(MeetupWeather.meetup_id == meetup.id)).all()
     assert len(rows) == 1
-    assert row is not None
     assert row.total_precipitation_mm == 2.0
     assert row.rained is True
     assert rows[0].total_precipitation_mm == 2.0
 
 
-def test_fetch_and_store_weather_writes_nothing_when_the_window_has_no_data(
+def test_fetch_and_store_weather_raises_no_data_and_writes_nothing_when_the_window_is_empty(
     session: Session, org: Organization, mock_get: AsyncMock
 ):
     """WHY: Review focus 4: all-null data writes no row, so a later run can try again."""
@@ -442,8 +490,37 @@ def test_fetch_and_store_weather_writes_nothing_when_the_window_has_no_data(
         hourly_payload([None] * 3, [None] * 3, [None] * 3, [None] * 3, first_hour=datetime(2026, 10, 24, 22, 0))
     )
 
-    assert _fetch(session, meetup) is None
+    with pytest.raises(NoWeatherDataError):
+        _fetch(session, meetup)
+
     assert session.exec(select(MeetupWeather)).all() == []
+
+
+def test_no_weather_data_error_is_a_weather_unavailable_error():
+    """WHY: Callers that only care about 'provider could not help' catch one type."""
+    assert issubclass(NoWeatherDataError, WeatherUnavailableError)
+
+
+def test_fetch_and_store_weather_requires_a_location(session: Session, org: Organization, mock_get: AsyncMock):
+    """WHY: Fetching for a meetup without coordinates is a caller bug; fail before any request."""
+    meetup = make_meetup(session, org=org, date=START)
+
+    with pytest.raises(MissingLocationError, match="no coordinates"):
+        _fetch(session, meetup)
+
+    mock_get.assert_not_awaited()
+    assert session.exec(select(MeetupWeather)).all() == []
+
+
+def test_fetch_and_store_weather_stores_unknown_rain_as_null(session: Session, org: Organization, mock_get: AsyncMock):
+    """WHY: A row with no precipitation values keeps rained NULL instead of claiming it was dry."""
+    meetup = _located_meetup(session, org)
+    mock_get.return_value = api_response(window_payload([None] * 10))
+
+    row = _fetch(session, meetup)
+
+    assert row.total_precipitation_mm is None
+    assert row.rained is None
 
 
 def test_fetch_and_store_weather_propagates_provider_failures_and_writes_nothing(

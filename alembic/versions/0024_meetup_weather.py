@@ -29,7 +29,7 @@ def upgrade() -> None:
         sa.Column("avg_apparent_temperature", sa.Float(), nullable=True),
         sa.Column("total_precipitation_mm", sa.Float(), nullable=True),
         sa.Column("max_wind_kmh", sa.Float(), nullable=True),
-        sa.Column("rained", sa.Boolean(), nullable=False),
+        sa.Column("rained", sa.Boolean(), nullable=True),
         sa.Column("hourly", sa.JSON(), nullable=False),
         sa.Column("fetched_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("source", sa.String(length=64), nullable=False),

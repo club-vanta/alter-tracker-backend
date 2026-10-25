@@ -553,9 +553,11 @@ class MeetupWeather(SQLModel, table=True):
     meetup's coordinates change (it no longer describes that place).
 
     The four float columns summarize the hours in [floor_hour(date),
-    date + 6h). Each is NULL when the provider had no value for that series in
-    the window; a row is never written when every series is empty. rained is
-    total_precipitation_mm >= 0.2 (False when precipitation is unknown).
+    date + 6h). NULL means the provider had no value for that series anywhere
+    in the window (avg_temperature, avg_apparent_temperature,
+    total_precipitation_mm, max_wind_kmh). rained is total_precipitation_mm >=
+    0.2, so it is NULL exactly when total_precipitation_mm is NULL: unknown is
+    not the same as dry. A row is never written when every series is empty.
 
     hourly stores the raw hourly arrays (time, temperature_2m,
     apparent_temperature, precipitation, wind_speed_10m) restricted to the
@@ -571,7 +573,7 @@ class MeetupWeather(SQLModel, table=True):
     avg_apparent_temperature: float | None = Field(default=None)
     total_precipitation_mm: float | None = Field(default=None)
     max_wind_kmh: float | None = Field(default=None)
-    rained: bool
+    rained: bool | None = Field(default=None)
     hourly: dict[str, list[str | float | None]] = Field(sa_column=Column(JSON, nullable=False))
     fetched_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC), sa_column=Column(DateTime(timezone=True), nullable=False)
