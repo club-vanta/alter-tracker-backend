@@ -5,6 +5,7 @@ GET /organizations/{org_id}/stats/attendance -> attendance per meetup and in tot
 GET /organizations/{org_id}/stats/arrivals   -> arrival times and sign-up lead time (org admin)
 GET /organizations/{org_id}/stats/demographics -> gender and age of attendees (org admin)
 GET /organizations/{org_id}/stats/retention  -> new and returning guests, cohorts, lapsed regulars (org admin)
+GET /organizations/{org_id}/stats/operations -> guest types, payments, check-ins, busiest door slot, bans (org admin)
 """
 
 import uuid
@@ -22,12 +23,20 @@ from app.openapi_examples.stats_examples import (
     ARRIVAL_STATS_RESPONSES,
     ATTENDANCE_STATS_RESPONSES,
     DEMOGRAPHIC_STATS_RESPONSES,
+    OPERATIONS_STATS_RESPONSES,
     RETENTION_STATS_RESPONSES,
 )
-from app.schemas import ArrivalStatsPublic, AttendanceStatsPublic, DemographicStatsPublic, RetentionStatsPublic
+from app.schemas import (
+    ArrivalStatsPublic,
+    AttendanceStatsPublic,
+    DemographicStatsPublic,
+    OperationsStatsPublic,
+    RetentionStatsPublic,
+)
 from app.services.stats.arrivals import arrival_stats
 from app.services.stats.attendance import attendance_stats
 from app.services.stats.demographics import demographic_stats
+from app.services.stats.operations import operations_stats
 from app.services.stats.retention import retention_stats
 from app.services.stats.scope import InvalidStatsPeriodError, StatsPeriod, is_finalized_meetup_of_org
 
@@ -137,3 +146,18 @@ async def get_retention_stats(
     _admin: User = Depends(get_org_admin),
 ) -> RetentionStatsPublic:
     return RetentionStatsPublic.model_validate(retention_stats(session, org_id, scope.period, scope.meetup_id))
+
+
+@router.get(
+    "/organizations/{org_id}/stats/operations",
+    response_model=OperationsStatsPublic,
+    summary="Door operations of finalized meetups: guest types, payments, check-ins and bans",
+    responses=OPERATIONS_STATS_RESPONSES,
+)
+async def get_operations_stats(
+    org_id: uuid.UUID,
+    scope: StatsScope = Depends(stats_scope),
+    session: Session = Depends(get_session),
+    _admin: User = Depends(get_org_admin),
+) -> OperationsStatsPublic:
+    return OperationsStatsPublic.model_validate(operations_stats(session, org_id, scope.period, scope.meetup_id))

@@ -6,6 +6,7 @@ Endpoints:
   GET /organizations/{org_id}/stats/arrivals
   GET /organizations/{org_id}/stats/demographics
   GET /organizations/{org_id}/stats/retention
+  GET /organizations/{org_id}/stats/operations
 """
 
 from typing import Any
@@ -437,6 +438,80 @@ RETENTION_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_respons
                         "retention": {
                             "summary": "A period compared with the previous period",
                             "value": RETENTION_STATS_EXAMPLE,
+                        },
+                    }
+                }
+            },
+        }
+    },
+    error_401_invalid_credentials(),
+    error_403_admin_required(),
+    error_404_meetup(),
+    error_422_validation(),
+)
+
+
+# -- GET /organizations/{org_id}/stats/operations --
+
+# Two meetups, one of them paying. 60 people came in (the guest type counts); the
+# paying meetup had 30 attended, of whom 20 paid, 6 owe and 4 are exempt.
+OPERATIONS_STATS_EXAMPLE = {
+    "summary": {"attended": 60, "paid_share": 0.7692, "avg_peak_checkins": 14.5, "bans": 2},
+    "guest_types": [
+        {"guest_type": "NORMAL", "attended": 48, "share": 0.8},
+        {"guest_type": "INVITED", "attended": 6, "share": 0.1},
+        {"guest_type": "STAFF", "attended": 4, "share": 0.0667},
+        {"guest_type": "VENDOR", "attended": 2, "share": 0.0333},
+    ],
+    "payments": {
+        "paying_events": 1,
+        "paid": 20,
+        "pending": 6,
+        "exempt": 4,
+        "cancelled_but_paid": 1,
+        "paid_share": 0.7692,
+    },
+    "staff": [
+        {"user_id": 12, "username": "carlos", "checkins": 34},
+        {"user_id": 15, "username": "sofia", "checkins": 20},
+        {"user_id": None, "username": None, "checkins": 6},
+    ],
+    "busiest": {
+        "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567801",
+        "meetup_name": "Alter Abril",
+        "local_time": "20:15",
+        "checkins": 17,
+    },
+    "ban_list": [
+        {
+            "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+            "displayname": "Lucia",
+            "reason": "Disrespect at the door",
+            "timestamp": "2026-04-19T23:10:00Z",
+            "actor_username": "carlos",
+        },
+        {
+            "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678902",
+            "displayname": "Mateo",
+            "reason": None,
+            "timestamp": "2026-04-05T22:40:00Z",
+            "actor_username": None,
+        },
+    ],
+    "comparison_kind": "PREVIOUS_PERIOD",
+    "comparison": {"attended": 52, "paid_share": 0.7, "avg_peak_checkins": 12.0, "bans": 1},
+}
+
+OPERATIONS_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_responses(
+    {
+        200: {
+            "description": "Door operations of finalized meetups: guest types, payments, check-ins and bans",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "operations": {
+                            "summary": "A period compared with the previous period",
+                            "value": OPERATIONS_STATS_EXAMPLE,
                         },
                     }
                 }

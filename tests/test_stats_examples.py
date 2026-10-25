@@ -7,9 +7,16 @@ from app.openapi_examples.stats_examples import (
     ARRIVAL_STATS_EXAMPLE,
     ATTENDANCE_STATS_EXAMPLE,
     DEMOGRAPHIC_STATS_EXAMPLE,
+    OPERATIONS_STATS_EXAMPLE,
     RETENTION_STATS_EXAMPLE,
 )
-from app.schemas.stats import ArrivalStatsPublic, AttendanceStatsPublic, DemographicStatsPublic, RetentionStatsPublic
+from app.schemas.stats import (
+    ArrivalStatsPublic,
+    AttendanceStatsPublic,
+    DemographicStatsPublic,
+    OperationsStatsPublic,
+    RetentionStatsPublic,
+)
 
 
 @pytest.mark.parametrize(
@@ -19,8 +26,9 @@ from app.schemas.stats import ArrivalStatsPublic, AttendanceStatsPublic, Demogra
         (ArrivalStatsPublic, ARRIVAL_STATS_EXAMPLE),
         (DemographicStatsPublic, DEMOGRAPHIC_STATS_EXAMPLE),
         (RetentionStatsPublic, RETENTION_STATS_EXAMPLE),
+        (OperationsStatsPublic, OPERATIONS_STATS_EXAMPLE),
     ],
-    ids=["attendance", "arrivals", "demographics", "retention"],
+    ids=["attendance", "arrivals", "demographics", "retention", "operations"],
 )
 def test_stats_example_matches_its_response_model(model: type[BaseModel], example: dict):
     model.model_validate(example)
@@ -47,3 +55,19 @@ def test_retention_example_is_consistent():
     assert sum(c["size"] for c in example["cohorts"]) == summary["new_guests"]
     assert all(len(c["retention"]) <= 12 for c in example["cohorts"])
     assert len(example["lapsed"]) <= example["lapsed_total"]
+
+
+def test_operations_example_is_consistent():
+    example = OPERATIONS_STATS_EXAMPLE
+    summary, payments = example["summary"], example["payments"]
+    attended = sum(row["attended"] for row in example["guest_types"])
+
+    assert [row["guest_type"] for row in example["guest_types"]] == ["NORMAL", "INVITED", "STAFF", "VENDOR"]
+    assert summary["attended"] == attended
+    assert all(row["share"] == round(row["attended"] / attended, 4) for row in example["guest_types"])
+    assert summary["paid_share"] == payments["paid_share"]
+    assert payments["paid_share"] == round(payments["paid"] / (payments["paid"] + payments["pending"]), 4)
+    assert payments["paid"] + payments["pending"] + payments["exempt"] <= attended
+    assert sum(row["checkins"] for row in example["staff"]) == attended
+    assert example["busiest"]["checkins"] >= summary["avg_peak_checkins"]
+    assert len(example["ban_list"]) == summary["bans"]

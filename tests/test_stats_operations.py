@@ -3,6 +3,7 @@
 from datetime import UTC, date, datetime, timedelta
 from itertools import count
 
+from fastapi import status
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
@@ -362,3 +363,187 @@ def test_all_time_has_no_comparison(session: Session, org: Organization):
 
     assert stats.comparison_kind is None
     assert stats.comparison is None
+
+
+# -- endpoint --
+
+
+def _operations_url(org: Organization) -> str:
+    return f"/organizations/{org.id}/stats/operations"
+
+
+def _utc_z(moment: datetime) -> str:
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_operations_stats_returns_401_without_auth(client: TestClient, org: Organization):
+    resp = client.get(_operations_url(org))
+
+    assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_operations_stats_returns_403_for_staff_member(
+    client: TestClient, session: Session, org: Organization, staff_user, staff_headers: dict
+):
+    make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
+
+    resp = client.get(_operations_url(org), headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_operations_stats_returns_403_before_checking_the_period_for_staff(
+    client: TestClient, session: Session, org: Organization, staff_user, staff_headers: dict
+):
+    make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
+
+    resp = client.get(_operations_url(org), params={"from": "2026-05-01", "to": "2026-05-01"}, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_operations_stats_returns_403_before_checking_the_meetup_for_staff(
+    client: TestClient, session: Session, org: Organization, staff_user, staff_headers: dict
+):
+    make_org_member(session, org=org, user=staff_user, role=OrgRole.STAFF)
+    meetup = make_meetup(session, org=org, is_finalized=False)
+
+    resp = client.get(_operations_url(org), params={"meetup_id": str(meetup.id)}, headers=staff_headers)
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_operations_stats_returns_200_for_org_admin(client: TestClient, session: Session, org: Organization):
+    _rsvp(session, _meetup(session, org, MARCH_6), minutes=0)
+    org_admin = make_user(session, username="org_admin")
+    make_org_member(session, org=org, user=org_admin, role=OrgRole.ADMIN)
+    headers = get_auth_headers(client, "org_admin", "a-very-secure-passphrase")
+
+    resp = client.get(_operations_url(org), params={"from": "2026-03-01", "to": "2026-04-01"}, headers=headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["summary"]["attended"] == 1
+
+
+def test_operations_stats_returns_200_with_exact_aggregate_body(
+    client: TestClient, session: Session, org: Organization, admin_headers: dict
+):
+    checker = make_user(session, username="door_checker")
+    meetup = _meetup(session, org, MARCH_6, requires_payment=True)
+    _rsvp(session, meetup, minutes=0, has_paid=True, checked_in_by=checker)
+    _rsvp(session, meetup, minutes=1)
+    _rsvp(session, meetup, minutes=2, guest_type=GuestType.STAFF, checked_in_by=checker)
+    banned_at = datetime(2026, 3, 20, 12, 0, tzinfo=UTC)
+    ban = _ban(session, org, banned_at, displayname="Rude Guest", reason="Rude at the door", actor=checker)
+
+    resp = client.get(_operations_url(org), params={"from": "2026-03-01", "to": "2026-04-01"}, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json() == {
+        "summary": {"attended": 3, "paid_share": 0.5, "avg_peak_checkins": 3.0, "bans": 1},
+        "guest_types": [
+            {"guest_type": "NORMAL", "attended": 2, "share": 0.6667},
+            {"guest_type": "INVITED", "attended": 0, "share": 0.0},
+            {"guest_type": "STAFF", "attended": 1, "share": 0.3333},
+            {"guest_type": "VENDOR", "attended": 0, "share": 0.0},
+        ],
+        "payments": {
+            "paying_events": 1,
+            "paid": 1,
+            "pending": 1,
+            "exempt": 1,
+            "cancelled_but_paid": 0,
+            "paid_share": 0.5,
+        },
+        "staff": [
+            {"user_id": checker.id, "username": "door_checker", "checkins": 2},
+            {"user_id": None, "username": None, "checkins": 1},
+        ],
+        "busiest": {"meetup_id": str(meetup.id), "meetup_name": meetup.name, "local_time": "20:00", "checkins": 3},
+        "ban_list": [
+            {
+                "guest_id": str(ban.guest_id),
+                "displayname": "Rude Guest",
+                "reason": "Rude at the door",
+                "timestamp": _utc_z(banned_at),
+                "actor_username": "door_checker",
+            }
+        ],
+        "comparison_kind": "PREVIOUS_PERIOD",
+        "comparison": {"attended": 0, "paid_share": None, "avg_peak_checkins": None, "bans": 0},
+    }
+
+
+def test_operations_stats_returns_200_for_one_meetup(
+    client: TestClient, session: Session, org: Organization, admin_headers: dict
+):
+    meetup = _meetup(session, org, MARCH_6)
+    _rsvp(session, meetup, minutes=0)
+    _rsvp(session, meetup, minutes=1, guest_type=GuestType.VENDOR)
+    other = _meetup(session, org, MARCH_13)
+    _rsvp(session, other, minutes=0)
+    _ban(session, org, MARCH_13, displayname="Other Night")
+
+    resp = client.get(
+        _operations_url(org),
+        params={"from": "2026-03-01", "to": "2026-04-01", "meetup_id": str(meetup.id)},
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json() == {
+        "summary": {"attended": 2, "paid_share": None, "avg_peak_checkins": 2.0, "bans": 0},
+        "guest_types": [
+            {"guest_type": "NORMAL", "attended": 1, "share": 0.5},
+            {"guest_type": "INVITED", "attended": 0, "share": 0.0},
+            {"guest_type": "STAFF", "attended": 0, "share": 0.0},
+            {"guest_type": "VENDOR", "attended": 1, "share": 0.5},
+        ],
+        "payments": None,
+        "staff": [{"user_id": None, "username": None, "checkins": 2}],
+        "busiest": {"meetup_id": str(meetup.id), "meetup_name": meetup.name, "local_time": "20:00", "checkins": 2},
+        "ban_list": [],
+        "comparison_kind": "PERIOD_AVERAGE",
+        "comparison": {"attended": 3, "paid_share": None, "avg_peak_checkins": 1.5, "bans": 1},
+    }
+
+
+def test_operations_stats_returns_404_for_unfinalized_meetup(
+    client: TestClient, session: Session, org: Organization, admin_headers: dict
+):
+    meetup = make_meetup(session, org=org, is_finalized=False)
+
+    resp = client.get(_operations_url(org), params={"meetup_id": str(meetup.id)}, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_operations_stats_returns_422_when_from_not_before_to(
+    client: TestClient, org: Organization, admin_headers: dict
+):
+    resp = client.get(_operations_url(org), params={"from": "2026-05-01", "to": "2026-04-01"}, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_operations_stats_returns_empty_body_for_empty_period(
+    client: TestClient, org: Organization, admin_headers: dict
+):
+    resp = client.get(_operations_url(org), params={"from": "2026-03-01", "to": "2026-04-01"}, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json() == {
+        "summary": {"attended": 0, "paid_share": None, "avg_peak_checkins": None, "bans": 0},
+        "guest_types": [
+            {"guest_type": "NORMAL", "attended": 0, "share": None},
+            {"guest_type": "INVITED", "attended": 0, "share": None},
+            {"guest_type": "STAFF", "attended": 0, "share": None},
+            {"guest_type": "VENDOR", "attended": 0, "share": None},
+        ],
+        "payments": None,
+        "staff": [],
+        "busiest": None,
+        "ban_list": [],
+        "comparison_kind": "PREVIOUS_PERIOD",
+        "comparison": {"attended": 0, "paid_share": None, "avg_peak_checkins": None, "bans": 0},
+    }

@@ -9412,6 +9412,262 @@
         }
       }
     },
+    "/organizations/{org_id}/stats/operations": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Door operations of finalized meetups: guest types, payments, check-ins and bans",
+        "operationId": "get_operations_stats_organizations__org_id__stats_operations_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "First local date to include. Omit for no lower bound.",
+              "title": "From"
+            },
+            "description": "First local date to include. Omit for no lower bound."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Local date the period ends before. Omit for no upper bound.",
+              "title": "To"
+            },
+            "description": "Local date the period ends before. Omit for no upper bound."
+          },
+          {
+            "name": "meetup_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Focus on one finalized meetup instead of the whole period.",
+              "title": "Meetup Id"
+            },
+            "description": "Focus on one finalized meetup instead of the whole period."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Door operations of finalized meetups: guest types, payments, check-ins and bans",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationsStatsPublic"
+                },
+                "examples": {
+                  "operations": {
+                    "summary": "A period compared with the previous period",
+                    "value": {
+                      "summary": {
+                        "attended": 60,
+                        "paid_share": 0.7692,
+                        "avg_peak_checkins": 14.5,
+                        "bans": 2
+                      },
+                      "guest_types": [
+                        {
+                          "guest_type": "NORMAL",
+                          "attended": 48,
+                          "share": 0.8
+                        },
+                        {
+                          "guest_type": "INVITED",
+                          "attended": 6,
+                          "share": 0.1
+                        },
+                        {
+                          "guest_type": "STAFF",
+                          "attended": 4,
+                          "share": 0.0667
+                        },
+                        {
+                          "guest_type": "VENDOR",
+                          "attended": 2,
+                          "share": 0.0333
+                        }
+                      ],
+                      "payments": {
+                        "paying_events": 1,
+                        "paid": 20,
+                        "pending": 6,
+                        "exempt": 4,
+                        "cancelled_but_paid": 1,
+                        "paid_share": 0.7692
+                      },
+                      "staff": [
+                        {
+                          "user_id": 12,
+                          "username": "carlos",
+                          "checkins": 34
+                        },
+                        {
+                          "user_id": 15,
+                          "username": "sofia",
+                          "checkins": 20
+                        },
+                        {
+                          "checkins": 6
+                        }
+                      ],
+                      "busiest": {
+                        "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567801",
+                        "meetup_name": "Alter Abril",
+                        "local_time": "20:15",
+                        "checkins": 17
+                      },
+                      "ban_list": [
+                        {
+                          "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+                          "displayname": "Lucia",
+                          "reason": "Disrespect at the door",
+                          "timestamp": "2026-04-19T23:10:00Z",
+                          "actor_username": "carlos"
+                        },
+                        {
+                          "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678902",
+                          "displayname": "Mateo",
+                          "timestamp": "2026-04-05T22:40:00Z"
+                        }
+                      ],
+                      "comparison_kind": "PREVIOUS_PERIOD",
+                      "comparison": {
+                        "attended": 52,
+                        "paid_share": 0.7,
+                        "avg_peak_checkins": 12.0,
+                        "bans": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Org admin privileges needed",
+                    "value": {
+                      "detail": "Organization admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_required_field": {
+                    "summary": "Missing required field",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "missing",
+                          "loc": [
+                            "body",
+                            "field_name"
+                          ],
+                          "msg": "Field required",
+                          "input": {}
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/users/": {
       "get": {
         "tags": [
@@ -9915,6 +10171,56 @@
         "title": "BanGuestRequest",
         "description": "Request body for banning a guest within an organization."
       },
+      "BanRowPublic": {
+        "properties": {
+          "guest_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Guest Id"
+          },
+          "displayname": {
+            "type": "string",
+            "title": "Displayname"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          },
+          "actor_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Username"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guest_id",
+          "displayname",
+          "reason",
+          "timestamp",
+          "actor_username"
+        ],
+        "title": "BanRowPublic",
+        "description": "A ban logged in scope. reason and actor_username are null when not recorded or the actor was deleted."
+      },
       "BannedGuestListResponse": {
         "properties": {
           "total": {
@@ -10084,6 +10390,36 @@
           "password"
         ],
         "title": "Body_login_auth_token_post"
+      },
+      "BusiestSlotPublic": {
+        "properties": {
+          "meetup_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Meetup Id"
+          },
+          "meetup_name": {
+            "type": "string",
+            "title": "Meetup Name"
+          },
+          "local_time": {
+            "type": "string",
+            "title": "Local Time"
+          },
+          "checkins": {
+            "type": "integer",
+            "title": "Checkins"
+          }
+        },
+        "type": "object",
+        "required": [
+          "meetup_id",
+          "meetup_name",
+          "local_time",
+          "checkins"
+        ],
+        "title": "BusiestSlotPublic",
+        "description": "The quarter hour with the most check-ins; local_time is its \"HH:MM\" start in Buenos Aires."
       },
       "CancellationStats": {
         "properties": {
@@ -11024,6 +11360,36 @@
         "title": "GuestType",
         "description": "Category of a guest's attendance at a specific meetup.\n\nNORMAL guests are subject to the meetup's requires_payment flag like\nany regular attendee. INVITED, VENDOR, and STAFF guests are exempt\nfrom the payment check-in gate regardless of has_paid: invited guests\nwere personally invited by the meetup organizer and don't pay entry,\nvendors bring their own stand to sell goods and aren't attending as\nparticipants, and staff are working the event itself. This is set\nper-RSVP (not on the Guest) because these categories are decided\nevent by event, not a persistent trait of the person."
       },
+      "GuestTypeRowPublic": {
+        "properties": {
+          "guest_type": {
+            "$ref": "#/components/schemas/GuestType"
+          },
+          "attended": {
+            "type": "integer",
+            "title": "Attended"
+          },
+          "share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guest_type",
+          "attended",
+          "share"
+        ],
+        "title": "GuestTypeRowPublic",
+        "description": "Attended RSVPs of one guest type; share is of all attended, null when nobody attended."
+      },
       "GuestTypeStats": {
         "properties": {
           "normal_count": {
@@ -11518,6 +11884,176 @@
         ],
         "title": "MeetupStatsPublic",
         "description": "Grouped attendance/cancellation/guest-type/payment statistics for a meetup."
+      },
+      "OperationsPaymentStatsPublic": {
+        "properties": {
+          "paying_events": {
+            "type": "integer",
+            "title": "Paying Events"
+          },
+          "paid": {
+            "type": "integer",
+            "title": "Paid"
+          },
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "exempt": {
+            "type": "integer",
+            "title": "Exempt"
+          },
+          "cancelled_but_paid": {
+            "type": "integer",
+            "title": "Cancelled But Paid"
+          },
+          "paid_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid Share"
+          }
+        },
+        "type": "object",
+        "required": [
+          "paying_events",
+          "paid",
+          "pending",
+          "exempt",
+          "cancelled_but_paid",
+          "paid_share"
+        ],
+        "title": "OperationsPaymentStatsPublic",
+        "description": "Attended RSVPs of the meetups that require payment. Only NORMAL guests pay; every other\ntype is exempt. paid_share is paid / (paid + pending), null when nobody owes entry."
+      },
+      "OperationsStatsPublic": {
+        "properties": {
+          "summary": {
+            "$ref": "#/components/schemas/OperationsSummaryPublic"
+          },
+          "guest_types": {
+            "items": {
+              "$ref": "#/components/schemas/GuestTypeRowPublic"
+            },
+            "type": "array",
+            "title": "Guest Types"
+          },
+          "payments": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationsPaymentStatsPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "staff": {
+            "items": {
+              "$ref": "#/components/schemas/StaffCheckinsPublic"
+            },
+            "type": "array",
+            "title": "Staff"
+          },
+          "busiest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BusiestSlotPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ban_list": {
+            "items": {
+              "$ref": "#/components/schemas/BanRowPublic"
+            },
+            "type": "array",
+            "title": "Ban List"
+          },
+          "comparison_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatsComparisonKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comparison": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationsSummaryPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary",
+          "guest_types",
+          "payments",
+          "staff",
+          "busiest",
+          "ban_list",
+          "comparison_kind",
+          "comparison"
+        ],
+        "title": "OperationsStatsPublic",
+        "description": "Door operations over every guest type, with the figures to compare against. payments is\nnull when no meetup in scope requires payment; ban_list holds the newest 20 of summary.bans."
+      },
+      "OperationsSummaryPublic": {
+        "properties": {
+          "attended": {
+            "type": "integer",
+            "title": "Attended"
+          },
+          "paid_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid Share"
+          },
+          "avg_peak_checkins": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Peak Checkins"
+          },
+          "bans": {
+            "type": "integer",
+            "title": "Bans"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attended",
+          "paid_share",
+          "avg_peak_checkins",
+          "bans"
+        ],
+        "title": "OperationsSummaryPublic",
+        "description": "The figures compared between two scopes. avg_peak_checkins is the mean of each meetup's busiest quarter hour."
       },
       "OrgCreate": {
         "properties": {
@@ -12088,6 +12624,44 @@
         ],
         "title": "ServiceStatus",
         "description": "Status of an individual service check."
+      },
+      "StaffCheckinsPublic": {
+        "properties": {
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "checkins": {
+            "type": "integer",
+            "title": "Checkins"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "username",
+          "checkins"
+        ],
+        "title": "StaffCheckinsPublic",
+        "description": "Check-ins by one staff user. user_id and username are null for check-ins with no recorded checker."
       },
       "StaffRegisterRequest": {
         "properties": {

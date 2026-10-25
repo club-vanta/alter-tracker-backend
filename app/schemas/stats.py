@@ -10,7 +10,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.models import StatsComparisonKind, StatsFrequencyBucket, StatsLeadTimeBucket
+from app.models.models import GuestType, StatsComparisonKind, StatsFrequencyBucket, StatsLeadTimeBucket
 
 # -- Attendance --
 
@@ -251,5 +251,96 @@ class RetentionStatsPublic(BaseModel):
     lapsed_total: int | None
     comparison_kind: StatsComparisonKind | None
     comparison: RetentionSummaryPublic | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# -- Operations --
+
+
+class GuestTypeRowPublic(BaseModel):
+    """Attended RSVPs of one guest type; share is of all attended, null when nobody attended."""
+
+    guest_type: GuestType
+    attended: int
+    share: float | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OperationsPaymentStatsPublic(BaseModel):
+    """
+    Attended RSVPs of the meetups that require payment. Only NORMAL guests pay; every other
+    type is exempt. paid_share is paid / (paid + pending), null when nobody owes entry.
+    """
+
+    paying_events: int
+    paid: int
+    pending: int
+    exempt: int
+    cancelled_but_paid: int
+    paid_share: float | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StaffCheckinsPublic(BaseModel):
+    """Check-ins by one staff user. user_id and username are null for check-ins with no recorded checker."""
+
+    user_id: int | None
+    username: str | None
+    checkins: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BusiestSlotPublic(BaseModel):
+    """The quarter hour with the most check-ins; local_time is its "HH:MM" start in Buenos Aires."""
+
+    meetup_id: uuid.UUID
+    meetup_name: str
+    local_time: str
+    checkins: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BanRowPublic(BaseModel):
+    """A ban logged in scope. reason and actor_username are null when not recorded or the actor was deleted."""
+
+    guest_id: uuid.UUID
+    displayname: str
+    reason: str | None
+    timestamp: datetime
+    actor_username: str | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OperationsSummaryPublic(BaseModel):
+    """The figures compared between two scopes. avg_peak_checkins is the mean of each meetup's busiest quarter hour."""
+
+    attended: int
+    paid_share: float | None
+    avg_peak_checkins: float | None
+    bans: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OperationsStatsPublic(BaseModel):
+    """
+    Door operations over every guest type, with the figures to compare against. payments is
+    null when no meetup in scope requires payment; ban_list holds the newest 20 of summary.bans.
+    """
+
+    summary: OperationsSummaryPublic
+    guest_types: list[GuestTypeRowPublic]
+    payments: OperationsPaymentStatsPublic | None
+    staff: list[StaffCheckinsPublic]
+    busiest: BusiestSlotPublic | None
+    ban_list: list[BanRowPublic]
+    comparison_kind: StatsComparisonKind | None
+    comparison: OperationsSummaryPublic | None
 
     model_config = ConfigDict(from_attributes=True)
