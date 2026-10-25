@@ -3,7 +3,7 @@
 Photon is never called: httpx.AsyncClient.get is patched, like tests/test_mazmo.py.
 """
 
-import time
+import asyncio
 from collections.abc import Iterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -48,7 +48,7 @@ def fresh_rate_limiter() -> Iterator[None]:
     geocoding._last_call = None
 
 
-@pytest.fixture()
+@pytest.fixture(autouse=True)
 def mock_get() -> Iterator[AsyncMock]:
     with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock) as mocked:
         mocked.return_value = photon_response([])
@@ -103,6 +103,18 @@ def test_label_uses_street_alone_without_housenumber():
     assert build_label({"street": "Thames"}) == "Thames"
 
 
+def test_label_prefers_district_over_locality():
+    """WHY: When both exist the district is the more specific neighborhood."""
+    assert build_label({"name": "Plaza", "district": "Palermo", "locality": "Tigre"}) == "Plaza, Palermo"
+
+
+def test_label_drops_a_housenumber_that_has_no_street():
+    """WHY: A bare number segment ("1500") tells the admin nothing."""
+    assert (
+        build_label({"name": "Club Vanta", "housenumber": "1500", "city": "Buenos Aires"}) == "Club Vanta, Buenos Aires"
+    )
+
+
 # -- Route --------------------------------------------------------------------
 
 
@@ -122,13 +134,15 @@ def test_geocode_returns_results_and_sends_the_exact_photon_params(
     )
 
 
-def test_geocode_sends_an_identifying_user_agent(client: TestClient, admin_headers: dict, org: Organization):
-    """WHY: Photon's fair use policy asks clients to identify themselves."""
+def test_geocode_sends_an_identifying_user_agent_and_a_5_second_timeout(
+    client: TestClient, admin_headers: dict, org: Organization
+):
+    """WHY: Photon's fair use policy asks clients to identify themselves; a slow provider must fail fast."""
     with patch.object(httpx.AsyncClient, "__init__", autospec=True, side_effect=httpx.AsyncClient.__init__) as init:
-        with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock, return_value=photon_response([])):
-            client.get(_url(org), params={"q": "thames"}, headers=admin_headers)
+        client.get(_url(org), params={"q": "thames"}, headers=admin_headers)
 
     assert init.call_args.kwargs["headers"]["User-Agent"] == "alter-tracker/1.0 (club-vanta.com)"
+    assert init.call_args.kwargs["timeout"] == 5.0
 
 
 def test_geocode_trims_the_query(client: TestClient, admin_headers: dict, org: Organization, mock_get: AsyncMock):
@@ -163,6 +177,44 @@ def test_geocode_caps_results_at_five(client: TestClient, admin_headers: dict, o
     resp = client.get(_url(org), params={"q": "place"}, headers=admin_headers)
 
     assert [r["label"] for r in resp.json()] == [f"Place {n}" for n in range(5)]
+
+
+def test_geocode_caps_after_filtering_not_before(
+    client: TestClient, admin_headers: dict, org: Organization, mock_get: AsyncMock
+):
+    """WHY: Photon returns non-Argentine matches first; slicing before the filter would return nothing."""
+    mock_get.return_value = photon_response(
+        [feature(countrycode="UY", name=f"Foreign {n}") for n in range(6)]
+        + [feature(name=f"Local {n}") for n in range(6)]
+    )
+
+    resp = client.get(_url(org), params={"q": "place"}, headers=admin_headers)
+
+    assert [r["label"] for r in resp.json()] == [f"Local {n}" for n in range(5)]
+
+
+@pytest.mark.parametrize(
+    "bad_feature",
+    [
+        {"properties": {"countrycode": "AR", "name": "No geometry"}},
+        {"properties": {"countrycode": "AR", "name": "Null coords"}, "geometry": {"coordinates": None}},
+        {"properties": {"countrycode": "AR", "name": "Short coords"}, "geometry": {"coordinates": [-58.4]}},
+        {"properties": {"countrycode": "AR", "name": "Text coords"}, "geometry": {"coordinates": ["a", "b"]}},
+        {"properties": None, "geometry": {"coordinates": [-58.4, -34.5]}},
+        "not-a-feature",
+    ],
+    ids=["no-geometry", "null-coords", "short-coords", "text-coords", "null-properties", "not-an-object"],
+)
+def test_geocode_skips_a_malformed_feature_instead_of_failing(
+    client: TestClient, admin_headers: dict, org: Organization, mock_get: AsyncMock, bad_feature: object
+):
+    """WHY: One odd feature must not turn a good search into a 502."""
+    mock_get.return_value = photon_response([bad_feature, feature(name="Plaza")])  # type: ignore[list-item]
+
+    resp = client.get(_url(org), params={"q": "plaza"}, headers=admin_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert [r["label"] for r in resp.json()] == ["Plaza"]
 
 
 def test_geocode_returns_an_empty_list_when_nothing_matches(
@@ -226,9 +278,9 @@ def test_geocode_returns_502_when_photon_answers_with_an_error_status(
     [
         ValueError("not json"),
         {"unexpected": []},
-        {"features": [{"properties": {"countrycode": "AR", "name": "No geometry"}}]},
+        {"features": 5},
     ],
-    ids=["not-json", "no-features-key", "feature-without-geometry"],
+    ids=["not-json", "no-features-key", "features-not-a-list"],
 )
 def test_geocode_returns_502_when_photon_sends_unreadable_data(
     client: TestClient, admin_headers: dict, org: Organization, mock_get: AsyncMock, body: object
@@ -245,6 +297,7 @@ def test_geocode_returns_502_when_photon_sends_unreadable_data(
     resp = client.get(_url(org), params={"q": "thames"}, headers=admin_headers)
 
     assert resp.status_code == status.HTTP_502_BAD_GATEWAY
+    assert resp.json() == {"detail": UNAVAILABLE}
 
 
 @pytest.mark.parametrize("q", ["ab", "  ab  ", "x" * 201], ids=["too-short", "short-after-trim", "too-long"])
@@ -294,47 +347,80 @@ def test_geocode_returns_404_for_an_unknown_org(client: TestClient, admin_header
 # -- Rate limiter -------------------------------------------------------------
 
 
+class FakeClock:
+    """A clock that only moves when the limiter sleeps, yielding to other tasks like a real sleep."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+        self.sleeps: list[float] = []
+        self._real_sleep = asyncio.sleep
+
+    def monotonic(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+        await self._real_sleep(0)
+
+
+@pytest.fixture()
+def clock() -> Iterator[FakeClock]:
+    fake = FakeClock()
+    with patch.object(geocoding, "_monotonic", fake.monotonic), patch.object(geocoding, "_sleep", fake.sleep):
+        yield fake
+
+
 @pytest.mark.asyncio
-async def test_a_call_right_after_another_waits_out_the_one_second_interval():
+async def test_concurrent_searches_reach_photon_at_least_one_second_apart(clock: FakeClock, mock_get: AsyncMock):
+    """WHY: The lock is what spaces out simultaneous requests; without it they all fire at once."""
+    call_times: list[float] = []
+
+    async def record_call(*args: object, **kwargs: object) -> MagicMock:
+        call_times.append(clock.now)
+        return photon_response([])
+
+    mock_get.side_effect = record_call
+
+    async with PhotonClient(get_settings()) as photon:
+        await asyncio.gather(photon.search("one"), photon.search("two"), photon.search("three"))
+
+    assert len(call_times) == 3
+    assert call_times[1] - call_times[0] >= 1.0
+    assert call_times[2] - call_times[1] >= 1.0
+
+
+@pytest.mark.asyncio
+async def test_a_call_right_after_another_waits_exactly_the_one_second_interval(clock: FakeClock):
     """WHY: Photon asks for at most 1 request per second; callers wait, they are not rejected."""
-    with (
-        patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock, return_value=photon_response([])),
-        patch.object(geocoding.asyncio, "sleep", new_callable=AsyncMock) as sleep,
-    ):
-        async with PhotonClient(get_settings()) as photon:
+    async with PhotonClient(get_settings()) as photon:
+        await photon.search("first")
+        assert clock.sleeps == []
+        await photon.search("second")
+
+    assert clock.sleeps == [1.0]
+
+
+@pytest.mark.asyncio
+async def test_a_call_after_the_interval_does_not_wait(clock: FakeClock):
+    """WHY: The limiter must not slow down searches that are already spaced out."""
+    geocoding._last_call = clock.now - 2.0
+
+    async with PhotonClient(get_settings()) as photon:
+        await photon.search("later")
+
+    assert clock.sleeps == []
+
+
+@pytest.mark.asyncio
+async def test_failed_calls_still_count_toward_the_rate_limit(clock: FakeClock, mock_get: AsyncMock):
+    """WHY: Retrying a failing provider in a tight loop would hammer it."""
+    mock_get.side_effect = httpx.ReadTimeout("slow")
+
+    async with PhotonClient(get_settings()) as photon:
+        with pytest.raises(GeocodingUnavailableError):
             await photon.search("first")
-            sleep.assert_not_awaited()
+        with pytest.raises(GeocodingUnavailableError):
             await photon.search("second")
 
-    sleep.assert_awaited_once()
-    assert 0 < sleep.await_args.args[0] <= 1.0
-
-
-@pytest.mark.asyncio
-async def test_a_call_after_the_interval_does_not_wait():
-    """WHY: The limiter must not slow down searches that are already spaced out."""
-    geocoding._last_call = time.monotonic() - 2.0
-    with (
-        patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock, return_value=photon_response([])),
-        patch.object(geocoding.asyncio, "sleep", new_callable=AsyncMock) as sleep,
-    ):
-        async with PhotonClient(get_settings()) as photon:
-            await photon.search("later")
-
-    sleep.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_failed_calls_still_count_toward_the_rate_limit():
-    """WHY: Retrying a failing provider in a tight loop would hammer it."""
-    with (
-        patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock, side_effect=httpx.ReadTimeout("slow")),
-        patch.object(geocoding.asyncio, "sleep", new_callable=AsyncMock) as sleep,
-    ):
-        async with PhotonClient(get_settings()) as photon:
-            with pytest.raises(GeocodingUnavailableError):
-                await photon.search("first")
-            with pytest.raises(GeocodingUnavailableError):
-                await photon.search("second")
-
-    sleep.assert_awaited_once()
+    assert clock.sleeps == [1.0]
