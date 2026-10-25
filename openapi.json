@@ -6699,7 +6699,7 @@
           "meetups"
         ],
         "summary": "Set or clear the venue of a meetup (org admin only)",
-        "description": "Set the venue of a meetup (label, latitude and longitude together) or\nclear it by sending all three as null.\n\nAllowed on finalized meetups: the venue is descriptive metadata and does\nnot affect check-ins or payments. Returns 422 if the fields are not set\nor cleared together, or are out of range.",
+        "description": "Set the venue of a meetup (label, latitude and longitude together) or\nclear it by sending all three as null.\n\nAllowed on finalized meetups: the venue is descriptive metadata and does\nnot affect check-ins or payments. Returns 422 if the fields are not set\nor cleared together, or are out of range.\n\nWeather: when the coordinates change or are cleared, the stored weather\nis deleted in the same commit (it described the old place). If the meetup\nis then ready for weather (see GET .../weather), it is fetched inline.\nA provider failure is logged and ignored: this route still returns 200\nand the weather worker retries later. A label-only change keeps the\nstored weather.",
         "operationId": "update_meetup_location_organizations__org_id__meetups__meetup_id__location_patch",
         "security": [
           {
@@ -7308,6 +7308,341 @@
                     "summary": "Cannot un-finalize a non-finalized meetup",
                     "value": {
                       "detail": "Cannot un-finalize: meetup 'Alter C\u00f3rdoba - Marzo 2024' is not currently finalized."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organizations/{org_id}/meetups/{meetup_id}/weather": {
+      "get": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Weather of a meetup (org member)",
+        "description": "Weather during the first 6 hours of a meetup, plus where it stands.\n\nstatus is NO_LOCATION without coordinates, OK when a row exists, PENDING\nwhile the window is not over plus 2 hours, otherwise NOT_FETCHED (an org\nadmin can fetch it via POST .../weather/refresh). weather is null unless\nstatus is OK; ready is true once the meetup has coordinates and its\nwindow ended at least 2 hours ago.",
+        "operationId": "get_meetup_weather_organizations__org_id__meetups__meetup_id__weather_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Weather of the meetup and where it stands",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetupWeatherStatusPublic"
+                },
+                "examples": {
+                  "ok": {
+                    "summary": "Weather fetched",
+                    "value": {
+                      "status": "OK",
+                      "weather": {
+                        "avg_temperature": 18.4,
+                        "avg_apparent_temperature": 17.1,
+                        "total_precipitation_mm": 0.0,
+                        "max_wind_kmh": 14.2,
+                        "rained": false,
+                        "fetched_at": "2024-03-24T10:15:00Z",
+                        "source": "open-meteo-historical-forecast"
+                      },
+                      "ready": true
+                    }
+                  },
+                  "partial": {
+                    "summary": "The provider lacked precipitation: null means no data, rained is null too",
+                    "value": {
+                      "status": "OK",
+                      "weather": {
+                        "avg_temperature": 18.4,
+                        "avg_apparent_temperature": 17.1,
+                        "max_wind_kmh": 14.2,
+                        "fetched_at": "2024-03-24T10:15:00Z",
+                        "source": "open-meteo-historical-forecast"
+                      },
+                      "ready": true
+                    }
+                  },
+                  "no_location": {
+                    "summary": "The meetup has no coordinates",
+                    "value": {
+                      "status": "NO_LOCATION",
+                      "ready": false
+                    }
+                  },
+                  "pending": {
+                    "summary": "Located, but the window is not over plus 2 hours",
+                    "value": {
+                      "status": "PENDING",
+                      "ready": false
+                    }
+                  },
+                  "not_fetched": {
+                    "summary": "Ready, but no row yet",
+                    "value": {
+                      "status": "NOT_FETCHED",
+                      "ready": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account not approved or disabled",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "pending_approval": {
+                    "summary": "Account pending approval",
+                    "value": {
+                      "detail": "Your account is pending admin approval. Please try again later."
+                    }
+                  },
+                  "account_disabled": {
+                    "summary": "Account disabled",
+                    "value": {
+                      "detail": "Your account has been disabled."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organizations/{org_id}/meetups/{meetup_id}/weather/refresh": {
+      "post": {
+        "tags": [
+          "meetups"
+        ],
+        "summary": "Fetch the weather of a meetup again (org admin only)",
+        "description": "Fetch the weather from Open-Meteo and overwrite the stored snapshot.\n\nReturns 409 when the meetup has no location, or when its window ended\nless than 2 hours ago (the provider has not published the hours yet).\nReturns 502 when the provider has no data for that place and time, or is\nunavailable; the stored snapshot, if any, is left untouched.",
+        "operationId": "refresh_meetup_weather_organizations__org_id__meetups__meetup_id__weather_refresh_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "meetup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meetup Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Weather fetched again and stored over the previous snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetupWeatherPublic"
+                },
+                "examples": {
+                  "refreshed": {
+                    "summary": "Refreshed",
+                    "value": {
+                      "avg_temperature": 18.4,
+                      "avg_apparent_temperature": 17.1,
+                      "total_precipitation_mm": 0.0,
+                      "max_wind_kmh": 14.2,
+                      "rained": false,
+                      "fetched_at": "2024-03-24T10:15:00Z",
+                      "source": "open-meteo-historical-forecast"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Org admin privileges needed",
+                    "value": {
+                      "detail": "Organization admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Weather cannot be refreshed",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "no_location": {
+                    "summary": "The meetup has no coordinates",
+                    "value": {
+                      "detail": "Cannot refresh weather: the meetup has no location. Set a location first."
+                    }
+                  },
+                  "too_early": {
+                    "summary": "The provider has not published the hours yet",
+                    "value": {
+                      "detail": "Cannot refresh weather: the event ended less than 2 hours ago. Try again later."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Weather provider error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "no_data": {
+                    "summary": "The provider answered without data for that place and time",
+                    "value": {
+                      "detail": "Cannot refresh weather: the weather provider has no data for this place and time. Check the meetup location, or try again later."
+                    }
+                  },
+                  "unavailable": {
+                    "summary": "The provider timed out or failed",
+                    "value": {
+                      "detail": "Cannot refresh weather: the weather provider is unavailable right now. Try again in a moment."
                     }
                   }
                 }
@@ -12277,6 +12612,115 @@
         "title": "MeetupStatsPublic",
         "description": "Grouped attendance/cancellation/guest-type/payment statistics for a meetup."
       },
+      "MeetupWeatherPublic": {
+        "properties": {
+          "avg_temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Temperature"
+          },
+          "avg_apparent_temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Apparent Temperature"
+          },
+          "total_precipitation_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Precipitation Mm"
+          },
+          "max_wind_kmh": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Wind Kmh"
+          },
+          "rained": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rained"
+          },
+          "fetched_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Fetched At"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "avg_temperature",
+          "avg_apparent_temperature",
+          "total_precipitation_mm",
+          "max_wind_kmh",
+          "rained",
+          "fetched_at",
+          "source"
+        ],
+        "title": "MeetupWeatherPublic",
+        "description": "Weather during the first 6 hours of a meetup, from Open-Meteo.\n\nEach float summarizes the hours of the window [date, date + 6h). A null\nmeans the provider had no value for that series anywhere in the window\n(shown as \"no data\"), never zero:\n- avg_temperature, avg_apparent_temperature: degrees Celsius, mean.\n- total_precipitation_mm: millimetres, sum. Null when unknown.\n- max_wind_kmh: km/h, highest hour.\n- rained: total_precipitation_mm >= 0.2. Null exactly when\n  total_precipitation_mm is null: unknown is not the same as dry.\n\nfetched_at is when the snapshot was taken; source names the provider\ndataset. The raw hourly arrays are stored but not returned."
+      },
+      "MeetupWeatherStatusPublic": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/WeatherStatus"
+          },
+          "weather": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MeetupWeatherPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "weather",
+          "ready"
+        ],
+        "title": "MeetupWeatherStatusPublic",
+        "description": "Weather of a meetup plus where it stands.\n\nstatus is OK (weather is set), NO_LOCATION (no coordinates), PENDING\n(located, but the window is not over plus 2 hours) or NOT_FETCHED (ready,\nno row yet). weather is null unless status is OK. ready is true when the\nmeetup has coordinates and its window ended at least 2 hours ago, whether\nor not a row exists."
+      },
       "OperationsPaymentStatsPublic": {
         "properties": {
           "paying_events": {
@@ -13377,6 +13821,17 @@
           "code"
         ],
         "title": "VerifyRecoveryCodeRequest"
+      },
+      "WeatherStatus": {
+        "type": "string",
+        "enum": [
+          "OK",
+          "NO_LOCATION",
+          "PENDING",
+          "NOT_FETCHED"
+        ],
+        "title": "WeatherStatus",
+        "description": "Where the weather of a meetup stands.\n\nOK:           a weather row exists.\nNO_LOCATION:  the meetup has no coordinates, so there is nothing to look up.\nPENDING:      it has a location but its window is not over yet, plus the\n              provider delay (see is_weather_ready).\nNOT_FETCHED:  ready, but no row yet (the worker has not got to it, or the\n              provider failed); an org admin can refresh."
       }
     },
     "securitySchemes": {

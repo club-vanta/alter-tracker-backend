@@ -113,6 +113,24 @@ class StatsComparisonKind(StrEnum):
     PERIOD_AVERAGE = "PERIOD_AVERAGE"
 
 
+class WeatherStatus(StrEnum):
+    """
+    Where the weather of a meetup stands.
+
+    OK:           a weather row exists.
+    NO_LOCATION:  the meetup has no coordinates, so there is nothing to look up.
+    PENDING:      it has a location but its window is not over yet, plus the
+                  provider delay (see is_weather_ready).
+    NOT_FETCHED:  ready, but no row yet (the worker has not got to it, or the
+                  provider failed); an org admin can refresh.
+    """
+
+    OK = "OK"
+    NO_LOCATION = "NO_LOCATION"
+    PENDING = "PENDING"
+    NOT_FETCHED = "NOT_FETCHED"
+
+
 class StatsLeadTimeBucket(StrEnum):
     """How many whole local days before the meetup an RSVP was made."""
 

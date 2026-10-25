@@ -10,6 +10,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator, model_validator
 
+from app.models.models import WeatherStatus
+
 # Pattern for validating Mazmo frontend URLs.
 # Expected format: https://mazmo.net/{+community}/{thread-slug}-{id}
 # Community may start with '+'. Thread ID may be numeric or alphanumeric.
@@ -194,3 +196,47 @@ class MeetupStatsPublic(BaseModel):
     cancellations: CancellationStats
     guest_types: GuestTypeStats
     payment: PaymentStats
+
+
+class MeetupWeatherPublic(BaseModel):
+    """
+    Weather during the first 6 hours of a meetup, from Open-Meteo.
+
+    Each float summarizes the hours of the window [date, date + 6h). A null
+    means the provider had no value for that series anywhere in the window
+    (shown as "no data"), never zero:
+    - avg_temperature, avg_apparent_temperature: degrees Celsius, mean.
+    - total_precipitation_mm: millimetres, sum. Null when unknown.
+    - max_wind_kmh: km/h, highest hour.
+    - rained: total_precipitation_mm >= 0.2. Null exactly when
+      total_precipitation_mm is null: unknown is not the same as dry.
+
+    fetched_at is when the snapshot was taken; source names the provider
+    dataset. The raw hourly arrays are stored but not returned.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    avg_temperature: float | None
+    avg_apparent_temperature: float | None
+    total_precipitation_mm: float | None
+    max_wind_kmh: float | None
+    rained: bool | None
+    fetched_at: datetime
+    source: str
+
+
+class MeetupWeatherStatusPublic(BaseModel):
+    """
+    Weather of a meetup plus where it stands.
+
+    status is OK (weather is set), NO_LOCATION (no coordinates), PENDING
+    (located, but the window is not over plus 2 hours) or NOT_FETCHED (ready,
+    no row yet). weather is null unless status is OK. ready is true when the
+    meetup has coordinates and its window ended at least 2 hours ago, whether
+    or not a row exists.
+    """
+
+    status: WeatherStatus
+    weather: MeetupWeatherPublic | None
+    ready: bool

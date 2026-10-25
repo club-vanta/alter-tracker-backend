@@ -49,7 +49,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import Session, col
 
 from app.core.config import Settings
-from app.models.models import Meetup, MeetupWeather
+from app.models.models import Meetup, MeetupWeather, WeatherStatus
 
 log = structlog.get_logger(__name__)
 
@@ -147,6 +147,15 @@ def is_weather_ready(meetup: Meetup, now: datetime) -> bool:
     if meetup.latitude is None or meetup.longitude is None:
         return False
     return _as_utc(meetup.date) + _READY_AFTER <= _as_utc(now)
+
+
+def weather_status(meetup: Meetup, has_row: bool, now: datetime) -> WeatherStatus:
+    """Classify a meetup's weather: no coordinates, then a stored row, then readiness."""
+    if meetup.latitude is None or meetup.longitude is None:
+        return WeatherStatus.NO_LOCATION
+    if has_row:
+        return WeatherStatus.OK
+    return WeatherStatus.NOT_FETCHED if is_weather_ready(meetup, now) else WeatherStatus.PENDING
 
 
 def weather_ready_clause(now: datetime) -> ColumnElement[bool]:

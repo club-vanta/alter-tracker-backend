@@ -16,6 +16,17 @@ GEOCODING_UNAVAILABLE_DETAIL = (
     "Try again in a moment, or enter the address later."
 )
 
+# Shared with the weather refresh route so the documented messages are the real ones.
+WEATHER_REFRESH_NO_LOCATION_DETAIL = "Cannot refresh weather: the meetup has no location. Set a location first."
+WEATHER_REFRESH_TOO_EARLY_DETAIL = "Cannot refresh weather: the event ended less than 2 hours ago. Try again later."
+WEATHER_NO_DATA_DETAIL = (
+    "Cannot refresh weather: the weather provider has no data for this place and time. "
+    "Check the meetup location, or try again later."
+)
+WEATHER_UNAVAILABLE_DETAIL = (
+    "Cannot refresh weather: the weather provider is unavailable right now. Try again in a moment."
+)
+
 # Type alias for FastAPI responses dict
 ResponsesDict = dict[int | str, dict[str, Any]]
 
@@ -1283,6 +1294,52 @@ def error_504_mazmo_create_guest() -> ResponsesDict:
                                     "Error: Connection timed out. Try again in a few moments."
                                 )
                             },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_weather_not_ready() -> ResponsesDict:
+    """409 - The meetup cannot be refreshed yet. Only for POST /meetups/{id}/weather/refresh."""
+    return {
+        409: {
+            "description": "Weather cannot be refreshed",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "no_location": {
+                            "summary": "The meetup has no coordinates",
+                            "value": {"detail": WEATHER_REFRESH_NO_LOCATION_DETAIL},
+                        },
+                        "too_early": {
+                            "summary": "The provider has not published the hours yet",
+                            "value": {"detail": WEATHER_REFRESH_TOO_EARLY_DETAIL},
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_502_weather_provider() -> ResponsesDict:
+    """502 - Open-Meteo failed or had no data. Only for POST /meetups/{id}/weather/refresh."""
+    return {
+        502: {
+            "description": "Weather provider error",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "no_data": {
+                            "summary": "The provider answered without data for that place and time",
+                            "value": {"detail": WEATHER_NO_DATA_DETAIL},
+                        },
+                        "unavailable": {
+                            "summary": "The provider timed out or failed",
+                            "value": {"detail": WEATHER_UNAVAILABLE_DETAIL},
                         },
                     }
                 }

@@ -67,6 +67,8 @@ from app.schemas.meetups import (
     MeetupLocationUpdate,
     MeetupPublic,
     MeetupStatsPublic,
+    MeetupWeatherPublic,
+    MeetupWeatherStatusPublic,
     PaymentStats,
     SyncResponse,
 )
@@ -170,6 +172,8 @@ __all__ = [
     "MeetupNewReturningPublic",
     "MeetupPublic",
     "MeetupStatsPublic",
+    "MeetupWeatherPublic",
+    "MeetupWeatherStatusPublic",
     "OperationsPaymentStatsPublic",
     "OperationsStatsPublic",
     "OperationsSummaryPublic",
