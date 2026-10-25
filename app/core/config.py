@@ -91,6 +91,13 @@ class Settings(BaseSettings):
     # is interactive, so a slow provider fails fast instead of hanging the form.
     photon_request_timeout: float = 5.0
 
+    # Base URL of the Open-Meteo historical forecast API used for meetup weather.
+    open_meteo_base_url: str = "https://historical-forecast-api.open-meteo.com/v1/forecast"
+
+    # Timeout in seconds for outbound HTTP calls to Open-Meteo. Inline fetches
+    # run inside a PATCH, so a slow provider fails fast and the worker retries.
+    open_meteo_request_timeout: float = 5.0
+
     # A regex of the allowed domains
     allowed_domains_regex: str = ALLOWED_DOMAINS_REGEX
 

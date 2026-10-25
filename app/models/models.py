@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Column, DateTime, Integer
+from sqlalchemy import JSON, Column, DateTime, Integer
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
@@ -539,6 +539,44 @@ class GuestMazmoProfile(SQLModel, table=True):
     synced_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     guest: Guest = Relationship(back_populates="mazmo_profile")
+
+
+# ── Meetup Weather ───────────────────────────────────────────────────────────
+
+
+class MeetupWeather(SQLModel, table=True):
+    """
+    Weather during the first 6 hours of a meetup, from Open-Meteo.
+
+    1:1 with Meetup - meetup_id IS the primary key, like GuestMazmoProfile.
+    A row is a snapshot that gets overwritten on refresh and deleted when the
+    meetup's coordinates change (it no longer describes that place).
+
+    The four float columns summarize the hours in [floor_hour(date),
+    date + 6h). Each is NULL when the provider had no value for that series in
+    the window; a row is never written when every series is empty. rained is
+    total_precipitation_mm >= 0.2 (False when precipitation is unknown).
+
+    hourly stores the raw hourly arrays (time, temperature_2m,
+    apparent_temperature, precipitation, wind_speed_10m) restricted to the
+    window hours used for the summary, nulls included, not the whole day the
+    provider returned. That keeps the row small and lets the summary be
+    audited against exactly the data behind it.
+    """
+
+    __tablename__ = "meetup_weather"  # type: ignore[assignment]
+
+    meetup_id: uuid.UUID = Field(foreign_key="meetups.id", primary_key=True, ondelete="CASCADE")
+    avg_temperature: float | None = Field(default=None)
+    avg_apparent_temperature: float | None = Field(default=None)
+    total_precipitation_mm: float | None = Field(default=None)
+    max_wind_kmh: float | None = Field(default=None)
+    rained: bool
+    hourly: dict[str, list[str | float | None]] = Field(sa_column=Column(JSON, nullable=False))
+    fetched_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    source: str = Field(max_length=64)
 
 
 # ── Event Log ─────────────────────────────────────────────────────────────────
