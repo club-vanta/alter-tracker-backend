@@ -73,11 +73,10 @@ class AttendanceStatsPublic(BaseModel):
 class ArrivalBucketPublic(BaseModel):
     """
     Arrivals in one 15 minute bucket starting start_minute minutes from the
-    meetup start (negative = before). local_time is "HH:MM" for one meetup, null otherwise.
+    meetup start (negative = before). clock_curve has the same arrivals by the local clock.
     """
 
     start_minute: int
-    local_time: str | None
     arrivals: int
 
     model_config = ConfigDict(from_attributes=True)

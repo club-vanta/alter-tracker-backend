@@ -41,7 +41,6 @@ from app.services.stats.scope import (
     STATS_TZ,
     StatsPeriod,
     finalized_meetup_conditions,
-    floor_to_quarter_hour,
     ratio,
     single_meetup_conditions,
 )
@@ -71,11 +70,10 @@ _LEAD_TIME_LIMITS: tuple[tuple[int, StatsLeadTimeBucket], ...] = (
 class ArrivalBucket:
     """
     Arrivals in one 15 minute bucket starting start_minute minutes from the
-    meetup start (negative = before). local_time is "HH:MM" in one-event mode.
+    meetup start (negative = before). ClockBucket counts by the local clock.
     """
 
     start_minute: int
-    local_time: str | None
     arrivals: int
 
 
@@ -94,7 +92,7 @@ class ClockBucket:
 
 @dataclass(frozen=True)
 class Arrival:
-    """One arrival: minutes from its meetup's start, and minutes from local midnight of the meetup's date."""
+    """One arrival: minutes from its meetup's start, and minutes from the local midnight starting its night."""
 
     offset: int
     clock: int
@@ -144,39 +142,18 @@ class ArrivalStats:
 # -- Pure functions --
 
 
-def _clock(local_start: datetime, minutes: int) -> str:
-    return (local_start + timedelta(minutes=minutes)).strftime("%H:%M")
-
-
-def _clock_bucket_start(local_start: datetime, offset: int) -> int:
-    """Offset of the quarter hour of the local clock that the arrival falls in."""
-    floored = floor_to_quarter_hour(local_start + timedelta(minutes=offset))
-    return (floored - local_start) // timedelta(minutes=1)
-
-
-def arrival_curve(offsets: list[int], *, local_start: datetime | None = None) -> list[ArrivalBucket]:
+def arrival_curve(offsets: list[int]) -> list[ArrivalBucket]:
     """
-    Arrivals per 15 minute bucket, with the empty buckets between the first
-    and last arrival so the curve is continuous.
-
-    Without local_start the buckets are floor(offset / 15) * 15 minutes from
-    the start. With the meetup's local start (one-event mode) they are
-    quarter hours of the local clock; start_minute is the offset of the bucket
-    from the start and local_time its "HH:MM". Order is by start_minute, so a
-    meetup crossing midnight stays in order.
+    Arrivals per 15 minute bucket of floor(offset / 15) * 15 minutes from the
+    start, with the empty buckets between the first and last arrival so the
+    curve is continuous. One meetup and several are bucketed alike; the local
+    clock view is clock_curve.
     """
     if not offsets:
         return []
-    if local_start is None:
-        counts = Counter(offset // BUCKET_MINUTES * BUCKET_MINUTES for offset in offsets)
-    else:
-        counts = Counter(_clock_bucket_start(local_start, offset) for offset in offsets)
+    counts = Counter(offset // BUCKET_MINUTES * BUCKET_MINUTES for offset in offsets)
     return [
-        ArrivalBucket(
-            start_minute=minute,
-            local_time=_clock(local_start, minute) if local_start is not None else None,
-            arrivals=counts.get(minute, 0),
-        )
+        ArrivalBucket(start_minute=minute, arrivals=counts.get(minute, 0))
         for minute in range(min(counts), max(counts) + 1, BUCKET_MINUTES)
     ]
 
@@ -370,9 +347,8 @@ def arrival_stats(
         comparison_rows = _load_rows(session, *finalized_meetup_conditions(org_id, previous)) if previous else None
         kind = StatsComparisonKind.PREVIOUS_PERIOD if previous else None
 
-    local_start = rows[0].meetup_date.astimezone(STATS_TZ) if meetup_id is not None and rows else None
     arrivals, excluded = _arrivals(rows)
-    curve = arrival_curve([a.offset for a in arrivals], local_start=local_start)
+    curve = arrival_curve([a.offset for a in arrivals])
     return ArrivalStats(
         curve=curve,
         clock_curve=clock_curve([a.clock for a in arrivals]),

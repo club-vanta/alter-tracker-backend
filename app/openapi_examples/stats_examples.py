@@ -99,14 +99,14 @@ ATTENDANCE_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_respon
 
 ARRIVAL_STATS_EXAMPLE = {
     "curve": [
-        {"start_minute": -15, "local_time": None, "arrivals": 3},
-        {"start_minute": 0, "local_time": None, "arrivals": 10},
-        {"start_minute": 15, "local_time": None, "arrivals": 17},
-        {"start_minute": 30, "local_time": None, "arrivals": 15},
-        {"start_minute": 45, "local_time": None, "arrivals": 11},
-        {"start_minute": 60, "local_time": None, "arrivals": 6},
-        {"start_minute": 75, "local_time": None, "arrivals": 3},
-        {"start_minute": 90, "local_time": None, "arrivals": 1},
+        {"start_minute": -15, "arrivals": 3},
+        {"start_minute": 0, "arrivals": 10},
+        {"start_minute": 15, "arrivals": 17},
+        {"start_minute": 30, "arrivals": 15},
+        {"start_minute": 45, "arrivals": 11},
+        {"start_minute": 60, "arrivals": 6},
+        {"start_minute": 75, "arrivals": 3},
+        {"start_minute": 90, "arrivals": 1},
     ],
     "clock_curve": [
         {"start_minute": 1305, "local_time": "21:45", "arrivals": 3},
@@ -121,7 +121,7 @@ ARRIVAL_STATS_EXAMPLE = {
     "summary": {
         "arrivals": 66,
         "excluded_arrivals": 2,
-        "peak": {"start_minute": 15, "local_time": None, "arrivals": 17},
+        "peak": {"start_minute": 15, "arrivals": 17},
         "peak_local_time": "22:15",
         "mean_minutes": 34,
         "p90_minutes": 66,
@@ -141,7 +141,7 @@ ARRIVAL_STATS_EXAMPLE = {
     "comparison": {
         "arrivals": 44,
         "excluded_arrivals": 1,
-        "peak": {"start_minute": 15, "local_time": None, "arrivals": 12},
+        "peak": {"start_minute": 15, "arrivals": 12},
         "peak_local_time": "22:15",
         "mean_minutes": 36,
         "p90_minutes": 66,

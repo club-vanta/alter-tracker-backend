@@ -11120,17 +11120,6 @@
             "type": "integer",
             "title": "Start Minute"
           },
-          "local_time": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Local Time"
-          },
           "arrivals": {
             "type": "integer",
             "title": "Arrivals"
@@ -11139,11 +11128,10 @@
         "type": "object",
         "required": [
           "start_minute",
-          "local_time",
           "arrivals"
         ],
         "title": "ArrivalBucketPublic",
-        "description": "Arrivals in one 15 minute bucket starting start_minute minutes from the\nmeetup start (negative = before). local_time is \"HH:MM\" for one meetup, null otherwise."
+        "description": "Arrivals in one 15 minute bucket starting start_minute minutes from the\nmeetup start (negative = before). clock_curve has the same arrivals by the local clock."
       },
       "ArrivalStatsPublic": {
         "properties": {

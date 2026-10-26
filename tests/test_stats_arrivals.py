@@ -75,19 +75,10 @@ def test_arrival_curve_buckets_relative_minutes():
         (75, 0),
         (90, 1),
     ]
-    assert all(b.local_time is None for b in curve)
 
 
 def test_arrival_curve_empty():
     assert arrival_curve([]) == []
-
-
-def test_arrival_curve_clock_buckets_floor_to_the_quarter_hour():
-    start = datetime(2026, 4, 5, 22, 10, tzinfo=STATS_TZ)
-
-    curve = arrival_curve([0, 4, 5], local_start=start)
-
-    assert curve == [ArrivalBucket(-10, "22:00", 2), ArrivalBucket(5, "22:15", 1)]
 
 
 def test_clock_curve_buckets_local_quarter_hours_across_midnight():
@@ -119,7 +110,7 @@ def test_summarize_arrivals_mean_p90_peak_and_first_hour():
     assert summary.mean_minutes == 23  # 158 / 7 = 22.6
     assert summary.p90_minutes == 90
     assert summary.first_hour_share == 0.8571
-    assert summary.peak == ArrivalBucket(0, None, 3)
+    assert summary.peak == ArrivalBucket(0, 3)
     assert summary.mean_local_time == "23:23"
     assert summary.p90_local_time == "00:30"
     assert summary.peak_local_time == "23:00"
@@ -189,19 +180,31 @@ def test_arrival_stats_sums_meetups_by_local_clock(session: Session):
 
     stats = arrival_stats(session, org.id, ALL_TIME, None)
 
-    assert [(b.local_time, b.arrivals) for b in stats.clock_curve] == [
-        ("22:00", 2),
-        ("22:15", 0),
-        ("22:30", 0),
-        ("22:45", 0),
-        ("23:00", 0),
-        ("23:15", 0),
-        ("23:30", 0),
-        ("23:45", 0),
-        ("00:00", 0),
-        ("00:15", 1),
+    assert stats.clock_curve == [
+        ClockBucket(1320, "22:00", 2),
+        ClockBucket(1335, "22:15", 0),
+        ClockBucket(1350, "22:30", 0),
+        ClockBucket(1365, "22:45", 0),
+        ClockBucket(1380, "23:00", 0),
+        ClockBucket(1395, "23:15", 0),
+        ClockBucket(1410, "23:30", 0),
+        ClockBucket(1425, "23:45", 0),
+        ClockBucket(1440, "00:00", 0),
+        ClockBucket(1455, "00:15", 1),
     ]
-    assert stats.clock_curve[-1].start_minute == 1455
+
+
+def test_arrival_stats_one_event_buckets_from_its_start_and_by_the_clock(session: Session):
+    org = make_org(session)
+    # A 22:10 start: the offset curve counts from it, the clock curve from 22:00.
+    meetup = _finalized_meetup(session, org, datetime(2026, 4, 5, 22, 10, tzinfo=STATS_TZ).astimezone(UTC))
+    for minutes in (0, 4, 5):
+        _arrived(session, meetup, minutes)
+
+    stats = arrival_stats(session, org.id, ALL_TIME, meetup.id)
+
+    assert stats.curve == [ArrivalBucket(0, 3)]
+    assert stats.clock_curve == [ClockBucket(1320, "22:00", 2), ClockBucket(1335, "22:15", 1)]
 
 
 def test_arrival_stats_one_event_uses_clock_time_across_midnight(session: Session):
@@ -212,14 +215,14 @@ def test_arrival_stats_one_event_uses_clock_time_across_midnight(session: Sessio
 
     stats = arrival_stats(session, org.id, ALL_TIME, meetup.id)
 
-    assert [(b.local_time, b.start_minute, b.arrivals) for b in stats.curve] == [
-        ("23:00", 0, 1),
-        ("23:15", 15, 0),
-        ("23:30", 30, 0),
-        ("23:45", 45, 0),
-        ("00:00", 60, 0),
-        ("00:15", 75, 0),
-        ("00:30", 90, 1),
+    assert [(b.local_time, b.start_minute, b.arrivals) for b in stats.clock_curve] == [
+        ("23:00", 1380, 1),
+        ("23:15", 1395, 0),
+        ("23:30", 1410, 0),
+        ("23:45", 1425, 0),
+        ("00:00", 1440, 0),
+        ("00:15", 1455, 0),
+        ("00:30", 1470, 1),
     ]
     assert stats.summary.mean_local_time == "23:53"
     assert stats.summary.p90_local_time == "00:35"
@@ -258,6 +261,7 @@ def test_arrival_stats_without_arrivals_is_empty(session: Session):
         stats = arrival_stats(session, org.id, ALL_TIME, meetup_id)
 
         assert stats.curve == []
+        assert stats.clock_curve == []
         assert stats.summary.arrivals == 0
         assert stats.summary.peak is None
         assert stats.summary.first_hour_share is None
@@ -276,6 +280,9 @@ def test_arrival_stats_excludes_arrivals_outside_the_offset_window(session: Sess
         assert stats.summary.excluded_arrivals == 3
         assert (stats.curve[0].start_minute, stats.curve[-1].start_minute) == (-120, 705)
         assert sum(b.arrivals for b in stats.curve) == 2
+        # 17:00 and 06:59 the next morning, of a 19:00 start.
+        assert (stats.clock_curve[0].local_time, stats.clock_curve[-1].local_time) == ("17:00", "06:45")
+        assert sum(b.arrivals for b in stats.clock_curve) == 2
         assert stats.summary.mean_minutes == 300
         assert stats.summary.mean_local_time == "00:00"
         assert stats.summary.p90_minutes == 719
@@ -320,7 +327,8 @@ def test_arrival_stats_truncates_the_start_to_the_minute(session: Session):
 
     stats = arrival_stats(session, org.id, ALL_TIME, meetup.id)
 
-    assert stats.curve == [ArrivalBucket(10, "23:00", 1)]
+    assert stats.curve == [ArrivalBucket(0, 1)]
+    assert stats.clock_curve == [ClockBucket(1380, "23:00", 1)]
     assert stats.summary.mean_minutes == 10
     assert stats.summary.mean_local_time == "23:00"
 
@@ -421,6 +429,10 @@ def test_arrival_stats_clock_puts_a_meetup_after_midnight_on_the_night_before(se
 
     assert stats.summary.mean_local_time == "23:55"
     assert stats.summary.p90_local_time == "00:40"
+    assert (stats.clock_curve[0], stats.clock_curve[-1]) == (
+        ClockBucket(1380, "23:00", 1),
+        ClockBucket(1470, "00:30", 1),
+    )
 
 
 def test_arrival_stats_aggregate_clock_counts_from_each_meetups_own_date(session: Session):
@@ -518,10 +530,10 @@ def test_arrival_stats_returns_200_with_exact_aggregate_body(
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json() == {
         "curve": [
-            {"start_minute": -15, "local_time": None, "arrivals": 1},
-            {"start_minute": 0, "local_time": None, "arrivals": 1},
-            {"start_minute": 15, "local_time": None, "arrivals": 1},
-            {"start_minute": 30, "local_time": None, "arrivals": 1},
+            {"start_minute": -15, "arrivals": 1},
+            {"start_minute": 0, "arrivals": 1},
+            {"start_minute": 15, "arrivals": 1},
+            {"start_minute": 30, "arrivals": 1},
         ],
         "clock_curve": [
             {"start_minute": 1125, "local_time": "18:45", "arrivals": 1},
@@ -532,7 +544,7 @@ def test_arrival_stats_returns_200_with_exact_aggregate_body(
         "summary": {
             "arrivals": 4,
             "excluded_arrivals": 0,
-            "peak": {"start_minute": -15, "local_time": None, "arrivals": 1},
+            "peak": {"start_minute": -15, "arrivals": 1},
             "peak_local_time": "18:45",
             "mean_minutes": 11,
             "p90_minutes": 30,
@@ -562,12 +574,12 @@ def test_arrival_stats_returns_200_for_one_meetup_in_clock_time(
 
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json() == {
-        "curve": [{"start_minute": 0, "local_time": "19:00", "arrivals": 1}],
+        "curve": [{"start_minute": 0, "arrivals": 1}],
         "clock_curve": [{"start_minute": 1140, "local_time": "19:00", "arrivals": 1}],
         "summary": {
             "arrivals": 1,
             "excluded_arrivals": 0,
-            "peak": {"start_minute": 0, "local_time": "19:00", "arrivals": 1},
+            "peak": {"start_minute": 0, "arrivals": 1},
             "peak_local_time": "19:00",
             "mean_minutes": 10,
             "p90_minutes": 10,
@@ -580,7 +592,7 @@ def test_arrival_stats_returns_200_for_one_meetup_in_clock_time(
         "comparison": {
             "arrivals": 2,
             "excluded_arrivals": 0,
-            "peak": {"start_minute": 0, "local_time": None, "arrivals": 1},
+            "peak": {"start_minute": 0, "arrivals": 1},
             "peak_local_time": "19:00",
             "mean_minutes": 30,
             "p90_minutes": 50,
@@ -644,12 +656,12 @@ def test_arrival_stats_returns_200_with_exact_previous_period_body(
 
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json() == {
-        "curve": [{"start_minute": 0, "local_time": None, "arrivals": 1}],
+        "curve": [{"start_minute": 0, "arrivals": 1}],
         "clock_curve": [{"start_minute": 1140, "local_time": "19:00", "arrivals": 1}],
         "summary": {
             "arrivals": 1,
             "excluded_arrivals": 0,
-            "peak": {"start_minute": 0, "local_time": None, "arrivals": 1},
+            "peak": {"start_minute": 0, "arrivals": 1},
             "peak_local_time": "19:00",
             "mean_minutes": 10,
             "p90_minutes": 10,
@@ -662,7 +674,7 @@ def test_arrival_stats_returns_200_with_exact_previous_period_body(
         "comparison": {
             "arrivals": 1,
             "excluded_arrivals": 1,
-            "peak": {"start_minute": 30, "local_time": None, "arrivals": 1},
+            "peak": {"start_minute": 30, "arrivals": 1},
             "peak_local_time": "19:30",
             "mean_minutes": 30,
             "p90_minutes": 30,
