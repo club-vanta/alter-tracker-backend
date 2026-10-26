@@ -72,7 +72,7 @@ async def test_mazmo_client_transforms_frontend_url_to_api_url():
     frontend_url = "https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217"
     api_url = client._to_api_url(frontend_url)
 
-    assert api_url == "https://prod.mazmoapi.net/communities/eventos-reuniones-argentina/threads/alter-cordoba-4217"
+    assert api_url == "https://api.mazmo.net/communities/eventos-reuniones-argentina/threads/alter-cordoba-4217"
 
 
 # ── fetch_rsvps ───────────────────────────────────────────────────────────────

@@ -182,7 +182,7 @@ def test_create_guest_by_mazmo_returns_404_when_mazmo_says_user_not_found(
     client: TestClient, staff_headers: dict, mock_mazmo_for_guests
 ):
     """Verify that a 404 from Mazmo surfaces as a 404 to the caller."""
-    fake_request = httpx.Request("GET", "https://prod.mazmoapi.net/users/nobody")
+    fake_request = httpx.Request("GET", "https://api.mazmo.net/users/nobody")
     fake_response = httpx.Response(404, request=fake_request)
     exc = MazmoAPIError("Mazmo returned 404")
     exc.__cause__ = httpx.HTTPStatusError("404", request=fake_request, response=fake_response)

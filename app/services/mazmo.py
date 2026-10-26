@@ -7,7 +7,7 @@ All methods are async and use a shared httpx.AsyncClient.
 URL Transformation
 ──────────────────
 Frontend URLs:  https://mazmo.net/{community}/{thread-slug}-{thread_id}
-API URLs:       https://prod.mazmoapi.net/communities/{community}/threads/{thread-slug}-{thread_id}
+API URLs:       https://api.mazmo.net/communities/{community}/threads/{thread-slug}-{thread_id}
 
 The transformation is encapsulated in _to_api_url().
 
@@ -187,13 +187,13 @@ class MazmoClient:
 
     def _to_api_url(self, frontend_url: str) -> str:
         """
-        Transform mazmo.net URL to prod.mazmoapi.net URL.
+        Transform mazmo.net URL to api.mazmo.net URL.
 
         https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217
-        → https://prod.mazmoapi.net/communities/eventos-reuniones-argentina/threads/alter-cordoba-4217
+        → https://api.mazmo.net/communities/eventos-reuniones-argentina/threads/alter-cordoba-4217
 
         https://mazmo.net/+eventos-reuniones-argentina/alter-tal-selmo-opgnjcy4d0u
-        → https://prod.mazmoapi.net/communities/eventos-reuniones-argentina/threads/alter-tal-selmo-opgnjcy4d0u
+        → https://api.mazmo.net/communities/eventos-reuniones-argentina/threads/alter-tal-selmo-opgnjcy4d0u
         """
         parsed = urlparse(frontend_url)
         path_parts = parsed.path.strip("/").split("/")

@@ -67,7 +67,7 @@ class Settings(BaseSettings):
 
     # Base URL of the Mazmo API. Extracted here so it can be overridden in
     # tests or if Mazmo ever changes their domain.
-    mazmo_base_url: str = "https://prod.mazmoapi.net"
+    mazmo_base_url: str = "https://api.mazmo.net"
 
     # Maximum number of user IDs sent per /users request.
     # Keeps query strings short enough to avoid 414 URI Too Long errors.
