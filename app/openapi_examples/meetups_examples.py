@@ -438,7 +438,7 @@ DISABLE_PAYMENT_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_409_payment_already_disabled(),
 }
 
-# ── PATCH /meetups/{id}/location ──────────────────────────────────────────────
+# -- PATCH /meetups/{id}/location ----------------------------------------------
 
 UPDATE_LOCATION_REQUEST_EXAMPLES: dict[str, Any] = {
     "set": {
@@ -529,9 +529,11 @@ READ_WEATHER_RESPONSES: dict[int | str, dict[str, Any]] = {
             }
         },
     },
-    **error_401_invalid_credentials(),
-    **error_403_not_approved(),
-    **error_404_meetup(),
+    **merge_error_responses(
+        error_401_invalid_credentials(),
+        error_403_not_approved(),
+        error_404_meetup(),
+    ),
 }
 
 REFRESH_WEATHER_RESPONSES: dict[int | str, dict[str, Any]] = {

@@ -569,7 +569,7 @@ class GuestMazmoProfile(SQLModel, table=True):
     guest: Guest = Relationship(back_populates="mazmo_profile")
 
 
-# ── Meetup Weather ───────────────────────────────────────────────────────────
+# -- Meetup Weather -----------------------------------------------------------
 
 
 class MeetupWeather(SQLModel, table=True):

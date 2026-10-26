@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     # If Mazmo doesn't respond within this window the request is aborted.
     mazmo_request_timeout: float = 15.0
 
-    # ── Photon geocoding API ──────────────────────────────────────────────────
+    # -- Photon geocoding API -----------------------------------------------------
 
     # Base URL of the Photon search endpoint used for the meetup address search.
     photon_base_url: str = "https://photon.komoot.io/api"
@@ -90,6 +90,8 @@ class Settings(BaseSettings):
     # Timeout in seconds for outbound HTTP calls to Photon. The address search
     # is interactive, so a slow provider fails fast instead of hanging the form.
     photon_request_timeout: float = 5.0
+
+    # -- Open-Meteo weather API ---------------------------------------------------
 
     # Base URL of the Open-Meteo historical forecast API used for meetup weather.
     open_meteo_base_url: str = "https://historical-forecast-api.open-meteo.com/v1/forecast"
