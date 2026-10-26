@@ -8,23 +8,26 @@ MazmoClient: an async context manager around one shared httpx.AsyncClient.
 Request
 -------
   GET {open_meteo_base_url}?latitude=..&longitude=..&start_date=..&end_date=..
-      &hourly=temperature_2m,apparent_temperature,precipitation,wind_speed_10m
+      &hourly=temperature_2m,apparent_temperature,precipitation,wind_speed_10m,weather_code,is_day
       &timezone=UTC&wind_speed_unit=kmh
-start_date/end_date are the UTC dates covering the window, so a night event
-that crosses midnight asks for two days.
+start_date/end_date are the UTC dates covering the whole window, so a night
+event that crosses midnight asks for two days.
 
 Window
 ------
-[floor_hour(date), date + 6h). Hours used: every hourly timestamp t with
-floor_hour(date) <= t < date + 6h, so an event at 22:30 uses 22:00 through
-04:00 (the hour that contains the start counts).
+[floor_hour(date) - 3h, date + 6h), split in two:
+  before: floor_hour(date) - 3h <= t < floor_hour(date), the 3 hours people
+          see while deciding whether to go out.
+  during: floor_hour(date) <= t < date + 6h, so an event at 22:30 uses 22:00
+          through 04:00 (the hour that contains the start counts).
 
 Summary
 -------
-Averages of temperature and apparent temperature, the sum of precipitation
-and the max wind, each rounded to 1 decimal. Nulls are skipped per series, so
-a missing temperature does not drop that hour's precipitation. Nothing is
-summarized (None) only when every series is empty inside the window.
+Per window: averages of temperature and apparent temperature and the sum of
+precipitation, each rounded to 1 decimal, and rained at >= 0.2 mm. The max
+wind is a during figure only. Nulls are skipped per series, so a missing
+temperature does not drop that hour's precipitation. Nothing is summarized
+(None) only when every series is empty in both windows.
 
 Pacing
 ------
@@ -58,14 +61,17 @@ log = structlog.get_logger(__name__)
 
 SOURCE = "open-meteo-historical-forecast"
 
-_HOURLY_VARIABLES = ("temperature_2m", "apparent_temperature", "precipitation", "wind_speed_10m")
+# The first four are summarized; weather_code and is_day are only kept for the hourly chart.
+_SUMMARIZED_VARIABLES = ("temperature_2m", "apparent_temperature", "precipitation", "wind_speed_10m")
+_HOURLY_VARIABLES = (*_SUMMARIZED_VARIABLES, "weather_code", "is_day")
+_BEFORE = timedelta(hours=3)
 _WINDOW = timedelta(hours=6)
 # The provider publishes a finished hour with some delay, so wait before the first fetch.
 _PROVIDER_DELAY = timedelta(hours=2)
 READY_AFTER = _WINDOW + _PROVIDER_DELAY
 _RAIN_THRESHOLD_MM = 0.2
 
-type HourlyData = dict[str, list[str | float | None]]
+type HourlyData = dict[str, list[str | int | float | None]]
 
 # -- Errors -------------------------------------------------------------------
 
@@ -94,15 +100,34 @@ class MissingLocationError(Exception):
 
 
 @dataclass(frozen=True)
+class WindowSummary:
+    """Stats over the hours of one window; each is None when its series has no value there."""
+
+    avg_temperature: float | None
+    avg_apparent_temperature: float | None
+    total_precipitation_mm: float | None
+    rained: bool | None
+
+
+@dataclass(frozen=True)
 class WeatherSummary:
-    """Stats over the window hours, plus the raw arrays they came from."""
+    """The during window flat (as stored since the first version), the before window, and the raw arrays of both."""
 
     avg_temperature: float | None
     avg_apparent_temperature: float | None
     total_precipitation_mm: float | None
     max_wind_kmh: float | None
     rained: bool | None
+    before: WindowSummary
     hourly: HourlyData
+
+
+def _floor_hour(start: datetime) -> datetime:
+    return as_utc(start).replace(minute=0, second=0, microsecond=0)
+
+
+def _window_start(start: datetime) -> datetime:
+    return _floor_hour(start) - _BEFORE
 
 
 def _window_end(start: datetime) -> datetime:
@@ -113,32 +138,47 @@ def _mean(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 1) if values else None
 
 
-def summarize_weather(hourly: HourlyData, start: datetime) -> WeatherSummary | None:
-    """Summarize the hourly arrays over [floor_hour(start), start + 6h), or None without any value."""
-    window_start = as_utc(start).replace(minute=0, second=0, microsecond=0)
-    window_end = _window_end(start)
-    times = hourly["time"]
-    indexes = [i for i, t in enumerate(times) if window_start <= as_utc(datetime.fromisoformat(str(t))) < window_end]
-    used: HourlyData = {"time": [times[i] for i in indexes]}
-    present: dict[str, list[float]] = {}
-    for name in _HOURLY_VARIABLES:
-        series = [hourly[name][i] for i in indexes]
-        used[name] = series
-        present[name] = [float(v) for v in series if v is not None]
+def _present(hourly: HourlyData, indexes: list[int]) -> dict[str, list[float]]:
+    """The non-null values of each summarized series at the given hours."""
+    return {
+        name: [float(v) for v in (hourly[name][i] for i in indexes) if v is not None] for name in _SUMMARIZED_VARIABLES
+    }
 
-    if not any(present.values()):
-        return None
 
+def _window_summary(present: dict[str, list[float]]) -> WindowSummary:
     precipitation = present["precipitation"]
     total = round(sum(precipitation), 1) if precipitation else None
-    wind = present["wind_speed_10m"]
-    return WeatherSummary(
+    return WindowSummary(
         avg_temperature=_mean(present["temperature_2m"]),
         avg_apparent_temperature=_mean(present["apparent_temperature"]),
         total_precipitation_mm=total,
-        max_wind_kmh=round(max(wind), 1) if wind else None,
         rained=None if total is None else total >= _RAIN_THRESHOLD_MM,
-        hourly=used,
+    )
+
+
+def summarize_weather(hourly: HourlyData, start: datetime) -> WeatherSummary | None:
+    """Summarize the hourly arrays over the before and during windows, or None without any value in either."""
+    start_hour = _floor_hour(start)
+    window_start, window_end = _window_start(start), _window_end(start)
+    moments = [as_utc(datetime.fromisoformat(str(t))) for t in hourly["time"]]
+    before = [i for i, t in enumerate(moments) if window_start <= t < start_hour]
+    during = [i for i, t in enumerate(moments) if start_hour <= t < window_end]
+    before_present, during_present = _present(hourly, before), _present(hourly, during)
+
+    if not any(before_present.values()) and not any(during_present.values()):
+        return None
+
+    used = before + during
+    during_summary = _window_summary(during_present)
+    wind = during_present["wind_speed_10m"]
+    return WeatherSummary(
+        avg_temperature=during_summary.avg_temperature,
+        avg_apparent_temperature=during_summary.avg_apparent_temperature,
+        total_precipitation_mm=during_summary.total_precipitation_mm,
+        max_wind_kmh=round(max(wind), 1) if wind else None,
+        rained=during_summary.rained,
+        before=_window_summary(before_present),
+        hourly={name: [hourly[name][i] for i in used] for name in ("time", *_HOURLY_VARIABLES)},
     )
 
 
@@ -211,7 +251,7 @@ class OpenMeteoClient:
 
     async def fetch_hourly(self, latitude: float, longitude: float, start: datetime) -> HourlyData:
         """Fetch the hourly arrays of the UTC days covering the window of a meetup starting at `start`."""
-        first_day = as_utc(start).date()
+        first_day = _window_start(start).date()
         # The window is half open, so one microsecond back keeps a midnight end on the same day.
         last_day = (_window_end(start) - timedelta(microseconds=1)).date()
         params: dict[str, str | float] = {

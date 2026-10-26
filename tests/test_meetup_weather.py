@@ -57,6 +57,8 @@ def hourly_for(date: datetime, temperature: float | None, precipitation: float |
         "apparent_temperature": [None if temperature is None else temperature - 2] * 7,
         "precipitation": [precipitation] * 7,
         "wind_speed_10m": [None if temperature is None else 12.0] * 7,
+        "weather_code": [None if temperature is None else 0] * 7,
+        "is_day": [None if temperature is None else 0] * 7,
     }
 
 

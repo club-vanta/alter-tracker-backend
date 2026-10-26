@@ -614,7 +614,7 @@ class MeetupWeather(SQLModel, table=True):
     total_precipitation_mm: float | None = Field(default=None)
     max_wind_kmh: float | None = Field(default=None)
     rained: bool | None = Field(default=None)
-    hourly: dict[str, list[str | float | None]] = Field(sa_column=Column(JSON, nullable=False))
+    hourly: dict[str, list[str | int | float | None]] = Field(sa_column=Column(JSON, nullable=False))
     fetched_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC), sa_column=Column(DateTime(timezone=True), nullable=False)
     )
