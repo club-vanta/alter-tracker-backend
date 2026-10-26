@@ -419,6 +419,33 @@ def test_weather_stats_one_event_returns_before_and_hours_with_offsets(session: 
     assert (last.precipitation_mm, last.weather_code, last.is_day) == (None, None, None)
 
 
+def test_weather_stats_one_event_reads_a_row_stored_before_weather_codes(session: Session):
+    """WHY: An old worker can write a row without weather_code or is_day during a deploy; the tab must still load."""
+    hourly = _half_past_hourly()
+    del hourly["weather_code"], hourly["is_day"]
+    org = make_org(session)
+    meetup = _meetup(session, org, datetime(2026, 4, 5, 22, 30, tzinfo=UTC), weather=True, hourly=hourly)
+
+    stats = weather_stats(session, org.id, ALL_TIME, meetup.id)
+
+    assert stats.event is not None
+    assert [(h.weather_code, h.is_day) for h in stats.event.hours] == [(None, None)] * 10
+    assert stats.event.hours[0].temperature == 14.0
+
+
+def test_weather_stats_one_event_offsets_ignore_seconds_in_the_start(session: Session):
+    """WHY: A start at 22:30:15 still puts the 19:00 hour at -210, not -211."""
+    org = make_org(session)
+    meetup = _meetup(
+        session, org, datetime(2026, 4, 5, 22, 30, 15, tzinfo=UTC), weather=True, hourly=_half_past_hourly()
+    )
+
+    stats = weather_stats(session, org.id, ALL_TIME, meetup.id)
+
+    assert stats.event is not None
+    assert stats.event.hours[0].offset_minutes == -210
+
+
 def test_weather_stats_one_event_without_a_row_has_no_before_and_no_hours(session: Session):
     org = make_org(session)
     meetup = _meetup(session, org, datetime(2026, 4, 5, 22, tzinfo=UTC), attended=1, located=True)

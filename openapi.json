@@ -13367,7 +13367,7 @@
           "source"
         ],
         "title": "MeetupWeatherPublic",
-        "description": "Weather during the first 6 hours of a meetup, from Open-Meteo.\n\nEach float summarizes the hours of the window [floor_hour(date), date + 6h). A null\nmeans the provider had no value for that series anywhere in the window\n(shown as \"no data\"), never zero:\n- avg_temperature, avg_apparent_temperature: degrees Celsius, mean.\n- total_precipitation_mm: millimetres, sum. Null when unknown.\n- max_wind_kmh: km/h, highest hour.\n- rained: total_precipitation_mm >= 0.2. Null exactly when\n  total_precipitation_mm is null: unknown is not the same as dry.\n\nfetched_at is when the snapshot was taken; source names the provider\ndataset. The raw hourly arrays are stored but not returned."
+        "description": "Weather during the first 6 hours of a meetup, from Open-Meteo.\n\nEach float summarizes the hours of the window [floor_hour(date), date + 6h). A null\nmeans the provider had no value for that series anywhere in the window\n(shown as \"no data\"), never zero:\n- avg_temperature, avg_apparent_temperature: degrees Celsius, mean.\n- total_precipitation_mm: millimetres, sum. Null when unknown.\n- max_wind_kmh: km/h, highest hour.\n- rained: total_precipitation_mm >= 0.2. Null exactly when\n  total_precipitation_mm is null: unknown is not the same as dry.\n\nfetched_at is when the snapshot was taken; source names the provider\ndataset. The raw hourly arrays are not returned here; the weather stats\nreturn them for one meetup."
       },
       "MeetupWeatherStatusPublic": {
         "properties": {

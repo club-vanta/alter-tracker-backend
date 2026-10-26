@@ -4,13 +4,20 @@ Open-Meteo is never called: httpx.AsyncClient.get is patched, like tests/test_ge
 """
 
 import asyncio
+import importlib.util
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
+from types import ModuleType
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from alembic.operations import Operations
+from alembic.runtime.migration import MigrationContext
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import text
 from sqlmodel import Session, col, select, update
 from structlog.testing import capture_logs
 
@@ -733,3 +740,40 @@ def test_weather_ready_at_is_eight_hours_after_the_start(session: Session, org: 
     meetup = make_meetup(session, org=org, date=datetime(2026, 10, 24, 22, 30, tzinfo=UTC))
 
     assert weather_ready_at(meetup) == datetime(2026, 10, 25, 6, 30, tzinfo=UTC)
+
+
+# -- Migration 0025 -----------------------------------------------------------
+
+
+def _migration_0025() -> ModuleType:
+    path = Path(__file__).parent.parent / "alembic" / "versions" / "0025_meetup_weather_before.py"
+    spec = importlib.util.spec_from_file_location("migration_0025", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_migration_0025_adds_the_before_columns_and_empties_the_table(session: Session, org: Organization):
+    """
+    WHY: Stored rows lack the before hours, and the worker only fills meetups without a row,
+    so the upgrade must delete them. Runs the real downgrade then upgrade inside the test
+    transaction (Postgres DDL is transactional, so the rollback restores the schema).
+    """
+    meetup = _located_meetup(session, org)
+    _fetch(session, meetup)
+    migration = _migration_0025()
+    context = MigrationContext.configure(session.connection())
+
+    with Operations.context(context):
+        migration.downgrade()
+        migration.upgrade()
+
+    columns = {c["name"] for c in sa_inspect(session.connection()).get_columns("meetup_weather")}
+    assert {
+        "before_avg_temperature",
+        "before_avg_apparent_temperature",
+        "before_total_precipitation_mm",
+        "before_rained",
+    } <= columns
+    assert session.exec(text("SELECT count(*) FROM meetup_weather")).one()[0] == 0  # type: ignore[call-overload]

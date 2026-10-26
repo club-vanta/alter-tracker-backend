@@ -9,6 +9,10 @@ meetup_weather, and deletes every stored row: they were fetched with the old
 window (no before hours, no weather_code or is_day), and the weather worker
 only fills meetups without a row, so deleting them makes it fetch every meetup
 again with the new window.
+
+Downgrade only drops the columns: it does not bring back the deleted rows, and
+rows fetched since keep the wider hourly arrays (the old code ignores the extra
+hours and keys).
 """
 
 from collections.abc import Sequence

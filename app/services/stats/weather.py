@@ -55,6 +55,8 @@ class WeatherMeetupRow:
 
 @dataclass(frozen=True)
 class TemperatureBandRow:
+    """Meetups of one band; avg_attended and no_show_rate are None for a band with no events."""
+
     band: StatsTemperatureBand
     events: int
     avg_attended: float | None
@@ -142,11 +144,16 @@ def _band_rows(
 def _hours(weather: MeetupWeather, start: datetime) -> list[WeatherHour]:
     """The stored hourly arrays as one row per hour, offset from the meetup start."""
     hourly = weather.hourly
-    start = as_utc(start)
+    # Offsets count whole minutes, so seconds in the start do not shift them by one.
+    start = as_utc(start).replace(second=0, microsecond=0)
+    times = hourly["time"]
+    # A row written by a worker older than weather_code and is_day lacks them; it still charts.
+    codes = hourly.get("weather_code") or [None] * len(times)
+    day_flags = hourly.get("is_day") or [None] * len(times)
     hours = []
-    for i, moment in enumerate(hourly["time"]):
+    for i, moment in enumerate(times):
         time = as_utc(datetime.fromisoformat(str(moment)))
-        code, is_day = hourly["weather_code"][i], hourly["is_day"][i]
+        code, is_day = codes[i], day_flags[i]
         hours.append(
             WeatherHour(
                 time=time,
