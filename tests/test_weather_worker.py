@@ -16,7 +16,7 @@ import pytest
 from sqlmodel import Session, select
 
 from app.jobs import weather_worker
-from app.jobs.weather_worker import RunSummary, run_once
+from app.jobs.weather_worker import BATCH_SIZE, RunSummary, run_once
 from app.models.models import Meetup, MeetupWeather, Organization
 from app.services.weather import (
     HourlyData,
@@ -277,6 +277,26 @@ def test_run_once_survives_a_row_inserted_between_selection_and_fetch(session: S
     assert [(row.meetup_id, row.avg_temperature) for row in rows] == [(meetup.id, 15.0)]
 
 
+def test_run_once_discards_a_fetch_for_a_meetup_moved_meanwhile_without_a_cooldown(
+    session: Session, org: Organization, instant_clock
+):
+    """WHY: A move during the fetch is not a failure: no row, no failed count, retried on the next pass."""
+    meetup = located(session, org, NOW - timedelta(days=2))
+    cooldown: dict[UUID, float] = {}
+
+    class MovingClient(FakeClient):
+        async def fetch_hourly(self, latitude: float, longitude: float, start: datetime) -> HourlyData:
+            meetup.latitude = LAT + 1.0
+            session.flush()
+            return await super().fetch_hourly(latitude, longitude, start)
+
+    summary = run(session, MovingClient(), cooldown=cooldown)
+
+    assert summary == RunSummary(fetched=0, failed=0, skipped=1)
+    assert stored_ids(session) == []
+    assert cooldown == {}
+
+
 # -- cooldown -----------------------------------------------------------------
 
 
@@ -426,6 +446,37 @@ def test_main_installs_stop_handlers_and_loops_until_stopped(main_patches: Magic
     assert main_patches.await_count == 2
     installed = {call.args[0] for call in main_patches.install.call_args_list}  # type: ignore[attr-defined]
     assert installed == {weather_worker.signal.SIGTERM, weather_worker.signal.SIGINT}
+
+
+def test_main_runs_the_next_pass_at_once_while_passes_fill_the_batch(main_patches: MagicMock):
+    """WHY: A backlog over 50 must drain at the provider pace, not 50 per 30 minutes."""
+    full = RunSummary(fetched=BATCH_SIZE, failed=0, skipped=0)
+    main_patches.side_effect = [full, full, RunSummary(fetched=3, failed=0, skipped=0)]
+    waits: list[int] = []
+
+    def stop_at_the_first_long_wait() -> None:
+        waits.append(1)
+        weather_worker.request_stop(15, None)
+
+    with (
+        patch.object(weather_worker, "wait_for_next_run", stop_at_the_first_long_wait),
+        patch.object(weather_worker.STOP, "wait") as pace,
+    ):
+        assert weather_worker.main([]) == 0
+
+    assert main_patches.await_count == 3
+    assert [call.args for call in pace.call_args_list] == [(1.0,), (1.0,)]
+    assert len(waits) == 1
+
+
+def test_main_waits_the_full_interval_when_a_full_batch_was_all_skipped(main_patches: MagicMock):
+    """WHY: Nothing was handled, so an immediate pass could loop hot on rows that vanish."""
+    main_patches.return_value = RunSummary(fetched=0, failed=0, skipped=BATCH_SIZE)
+
+    with patch.object(weather_worker, "wait_for_next_run", lambda: weather_worker.request_stop(15, None)):
+        assert weather_worker.main([]) == 0
+
+    assert main_patches.await_count == 1
 
 
 def test_main_keeps_looping_when_a_pass_crashes(main_patches: MagicMock):

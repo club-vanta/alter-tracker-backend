@@ -5,7 +5,9 @@ Weather worker: fetches the weather of finished meetups, as its own process.
 
 Each pass selects, in SQL, the weather-ready meetups (see weather_ready_clause) that have no
 meetup_weather row, oldest first, at most 50, and fetches them one by one at 1 request per second.
-Without --once the worker passes immediately (catch-up) and then every 30 minutes.
+Without --once the worker passes immediately (catch-up) and then every 30 minutes. A pass that
+filled the batch is followed by the next one after a pacing second instead of the 30 minutes, so a
+backlog drains at the provider pace.
 
 Safety
 ------
@@ -38,6 +40,7 @@ from app.core.logging import setup_logging
 from app.models.models import Meetup, MeetupWeather
 from app.services.weather import (
     OpenMeteoClient,
+    WeatherLocationChangedError,
     WeatherUnavailableError,
     fetch_and_store_weather,
     weather_ready_clause,
@@ -66,6 +69,11 @@ class RunSummary:
     fetched: int
     failed: int
     skipped: int
+
+    @property
+    def filled_batch(self) -> bool:
+        """True when the pass selected a full batch and handled some of it, so more may be waiting."""
+        return self.fetched + self.failed + self.skipped == BATCH_SIZE and self.fetched + self.failed > 0
 
 
 # -- Stop flag ----------------------------------------------------------------
@@ -141,6 +149,9 @@ async def run_once(
                 continue  # deleted since the selection, counted as skipped
             try:
                 await fetch_and_store_weather(session, meetup, client)
+            except WeatherLocationChangedError:
+                # Not a failure and no cooldown: the next pass fetches for the new place.
+                log.info("Weather discarded, meetup moved during the fetch", meetup_id=str(meetup_id))
             except WeatherUnavailableError as exc:
                 failed += 1
                 cooldown[meetup_id] = _monotonic() + _RETRY_COOLDOWN_SECONDS
@@ -181,17 +192,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     cooldown: dict[UUID, float] = {}
     try:
         while not stop_requested():
+            summary_filled_batch = False
             try:
                 summary = asyncio.run(_run_pass(engine, cooldown))
             except Exception:
                 log.exception("Weather pass crashed")  # e.g. database down: wait and try again
             else:
+                summary_filled_batch = summary.filled_batch
                 log.info(
                     "Weather pass finished", fetched=summary.fetched, failed=summary.failed, skipped=summary.skipped
                 )
             if args.once:
                 break
-            wait_for_next_run()
+            if summary_filled_batch:
+                STOP.wait(_MIN_INTERVAL_SECONDS)  # keep 1 request per second across back-to-back passes
+            else:
+                wait_for_next_run()
     finally:
         engine.dispose()
     return 0

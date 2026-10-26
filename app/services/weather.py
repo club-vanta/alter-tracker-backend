@@ -47,7 +47,7 @@ import httpx
 import structlog
 from sqlalchemy import ColumnElement, and_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import Session, col
+from sqlmodel import Session, col, select
 
 from app.core.config import Settings
 from app.core.outbound import OUTBOUND_HEADERS
@@ -80,6 +80,10 @@ class WeatherTimeoutError(WeatherUnavailableError):
 
 class NoWeatherDataError(WeatherUnavailableError):
     """Open-Meteo answered, but every series is empty inside the window (nothing was stored)."""
+
+
+class WeatherLocationChangedError(WeatherUnavailableError):
+    """The meetup moved while its weather was being fetched, so the answer was discarded (nothing was stored)."""
 
 
 class MissingLocationError(Exception):
@@ -261,16 +265,28 @@ async def fetch_and_store_weather(session: Session, meetup: Meetup, client: Open
     - NoWeatherDataError (a WeatherUnavailableError) when the provider had no
       value for the window: nothing is written, so a later run can retry.
     - WeatherUnavailableError for any other provider failure.
+    - WeatherLocationChangedError when the meetup's coordinates changed while
+      the provider was answering: the answer belongs to the old place, so
+      nothing is written (the caller that moved it fetches again).
     - Safe to run twice at once: the primary key plus ON CONFLICT DO UPDATE
       leave one row.
     """
     if meetup.latitude is None or meetup.longitude is None:
         raise MissingLocationError(f"Cannot fetch weather: meetup {meetup.id} has no coordinates.")
 
-    hourly = await client.fetch_hourly(meetup.latitude, meetup.longitude, meetup.date)
+    latitude, longitude = meetup.latitude, meetup.longitude
+    hourly = await client.fetch_hourly(latitude, longitude, meetup.date)
     summary = summarize_weather(hourly, meetup.date)
     if summary is None:
         raise NoWeatherDataError("Open-Meteo has no data for the window of this meetup")
+
+    # Lock the meetup row while checking it still sits where we fetched for, so a
+    # concurrent move waits until this write is committed and then deletes the row.
+    unmoved = select(Meetup.id).where(
+        col(Meetup.id) == meetup.id, col(Meetup.latitude) == latitude, col(Meetup.longitude) == longitude
+    )
+    if session.exec(unmoved.with_for_update()).first() is None:
+        raise WeatherLocationChangedError(f"Meetup {meetup.id} moved while its weather was being fetched")
 
     # Building the model applies its defaults (fetched_at), the single source of truth.
     row = MeetupWeather(

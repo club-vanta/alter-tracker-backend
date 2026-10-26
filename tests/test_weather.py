@@ -11,22 +11,24 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select, update
 from structlog.testing import capture_logs
 
 from app.core.config import get_settings
-from app.models.models import MeetupWeather, Organization
+from app.models.models import Meetup, MeetupWeather, Organization
 from app.services.weather import (
     SOURCE,
     MissingLocationError,
     NoWeatherDataError,
     OpenMeteoClient,
+    WeatherLocationChangedError,
     WeatherTimeoutError,
     WeatherUnavailableError,
     fetch_and_store_weather,
     is_weather_ready,
     summarize_weather,
     weather_ready_at,
+    weather_too_early_detail,
 )
 from tests.conftest import make_meetup
 
@@ -565,6 +567,41 @@ def test_fetch_and_store_weather_propagates_provider_failures_and_writes_nothing
         _fetch(session, meetup)
 
     assert session.exec(select(MeetupWeather)).all() == []
+
+
+def test_fetch_and_store_weather_discards_the_answer_when_the_meetup_moved_during_the_fetch(
+    session: Session, org: Organization, mock_get: AsyncMock
+):
+    """WHY: A worker mid-fetch must not store the old place's weather after an admin moved the meetup."""
+    meetup = _located_meetup(session, org)
+    meetup_id = meetup.id
+
+    def move_while_fetching(*args: Any, **kwargs: Any) -> MagicMock:
+        session.exec(update(Meetup).where(col(Meetup.id) == meetup_id).values(latitude=LAT + 1.0))  # type: ignore[arg-type]
+        return api_response(window_payload())
+
+    mock_get.side_effect = move_while_fetching
+
+    with pytest.raises(WeatherLocationChangedError):
+        _fetch(session, meetup)
+
+    assert session.exec(select(MeetupWeather)).all() == []
+
+
+def test_weather_location_changed_error_is_a_weather_unavailable_error():
+    """WHY: Callers that only log provider trouble (the inline fetch, the refresh route) already handle it."""
+    assert issubclass(WeatherLocationChangedError, WeatherUnavailableError)
+
+
+def test_too_early_detail_takes_its_hours_from_the_readiness_rule():
+    """WHY: The 409 text must follow READY_AFTER instead of repeating a number."""
+    ready_at = datetime(2026, 10, 25, 6, 30, tzinfo=UTC)
+
+    with patch("app.services.weather.READY_AFTER", timedelta(hours=5)):
+        assert weather_too_early_detail(ready_at) == (
+            "Cannot refresh weather: it is available 5 hours after the event starts (from 2026-10-25T06:30:00Z). "
+            "Try again then."
+        )
 
 
 def test_weather_ready_at_is_eight_hours_after_the_start(session: Session, org: Organization):
