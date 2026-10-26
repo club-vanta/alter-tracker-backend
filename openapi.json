@@ -11252,7 +11252,7 @@
           "first_hour_share"
         ],
         "title": "ArrivalSummaryPublic",
-        "description": "*_minutes are offsets from the meetup start (negative = before);\n*_local_time are \"HH:MM\" of the local clock, counted from midnight of each\nmeetup's local date. Over several meetups the offset and clock figures are\ncomputed separately, so they need not line up when meetups start at\ndifferent hours. peak is the busiest bucket of the curve; peak_local_time\nis the start of the busiest local quarter hour. Means are rounded to the\nminute. arrivals counts the arrivals from 120 minutes before to 720\nminutes after the start; excluded_arrivals counts those outside that\nwindow, which no other field includes. The optional fields are null when\nnobody arrived inside the window."
+        "description": "*_minutes are offsets from the meetup start (negative = before);\n*_local_time are \"HH:MM\" of the local clock, counted from midnight starting\neach meetup's night (a start before noon belongs to the night before).\nOver several meetups the offset and clock figures are computed\nseparately, so they need not line up when meetups start at different\nhours. peak is the busiest bucket of the curve; peak_local_time\nis the start of the busiest local quarter hour. Means are rounded to the\nminute. arrivals counts the arrivals from 120 minutes before to 720\nminutes after the start; excluded_arrivals counts those outside that\nwindow, which no other field includes. The optional fields are null when\nnobody arrived inside the window."
       },
       "AttendanceStats": {
         "properties": {
@@ -13598,7 +13598,7 @@
           "repeat_guests"
         ],
         "title": "NoShowSummaryPublic",
-        "description": "Expected audience RSVPs (signed up, not cancelled) and no-shows in scope.\nrepeat_guests counts the guests with 2 or more no-shows: in the period,\nor for one meetup, those of its no-shows who reach 2 over all time."
+        "description": "Expected audience RSVPs (signed up, not cancelled) and no-shows in scope.\nrepeat_guests counts the guests with 2 or more no-shows: in the period,\nor for one meetup, those of its no-shows who reach 2 over all time. As a\none-meetup comparison it holds the period's totals, so only no_show_rate\ncompares like with like there."
       },
       "OperationsPaymentStatsPublic": {
         "properties": {
