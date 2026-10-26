@@ -575,6 +575,7 @@ WEATHER_STATS_EXAMPLE = {
             "avg_temperature": 11.4,
             "rained": True,
             "total_precipitation_mm": 3.2,
+            "before_avg_temperature": 12.6,
             "has_weather": True,
         },
         {
@@ -586,6 +587,7 @@ WEATHER_STATS_EXAMPLE = {
             "avg_temperature": 18.0,
             "rained": False,
             "total_precipitation_mm": 0.0,
+            "before_avg_temperature": 21.3,
             "has_weather": True,
         },
         {
@@ -597,11 +599,10 @@ WEATHER_STATS_EXAMPLE = {
             "avg_temperature": None,
             "rained": None,
             "total_precipitation_mm": None,
+            "before_avg_temperature": None,
             "has_weather": False,
         },
     ],
-    "rainy": {"events": 1, "avg_attended": 30.0, "no_show_rate": 0.2368},
-    "dry": {"events": 1, "avg_attended": 31.0, "no_show_rate": 0.1143},
     "temperature_bands": [
         {"band": "BELOW_10", "events": 0, "avg_attended": None, "no_show_rate": None},
         {"band": "FROM_10_TO_15", "events": 1, "avg_attended": 30.0, "no_show_rate": 0.2368},
@@ -609,7 +610,13 @@ WEATHER_STATS_EXAMPLE = {
         {"band": "FROM_20_TO_25", "events": 0, "avg_attended": None, "no_show_rate": None},
         {"band": "FROM_25", "events": 0, "avg_attended": None, "no_show_rate": None},
     ],
-    "without_weather": 1,
+    "temperature_bands_before": [
+        {"band": "BELOW_10", "events": 0, "avg_attended": None, "no_show_rate": None},
+        {"band": "FROM_10_TO_15", "events": 1, "avg_attended": 30.0, "no_show_rate": 0.2368},
+        {"band": "FROM_15_TO_20", "events": 0, "avg_attended": None, "no_show_rate": None},
+        {"band": "FROM_20_TO_25", "events": 1, "avg_attended": 31.0, "no_show_rate": 0.1143},
+        {"band": "FROM_25", "events": 0, "avg_attended": None, "no_show_rate": None},
+    ],
     "comparison_kind": None,
     "comparison": None,
 }
@@ -627,14 +634,37 @@ WEATHER_STATS_EVENT_EXAMPLE = {
             "source": "open-meteo-historical-forecast",
         },
         "ready": True,
-        "attended": 30,
-        "no_show_rate": 0.2368,
+        "before": {
+            "avg_temperature": 12.6,
+            "avg_apparent_temperature": 10.9,
+            "total_precipitation_mm": 4.1,
+            "rained": True,
+        },
+        # Abbreviated: a 22:00 meetup has 9 hours, from 19:00 (-180) through 03:00 (+300).
+        "hours": [
+            {
+                "time": "2026-04-05T19:00:00Z",
+                "offset_minutes": -180,
+                "temperature": 13.1,
+                "apparent_temperature": 11.2,
+                "precipitation_mm": 1.5,
+                "weather_code": 63,
+                "is_day": False,
+            },
+            {
+                "time": "2026-04-05T22:00:00Z",
+                "offset_minutes": 0,
+                "temperature": 12.0,
+                "apparent_temperature": 10.1,
+                "precipitation_mm": 0.0,
+                "weather_code": 3,
+                "is_day": False,
+            },
+        ],
     },
     "meetups": [],
-    "rainy": None,
-    "dry": None,
     "temperature_bands": [],
-    "without_weather": 0,
+    "temperature_bands_before": [],
     "comparison_kind": None,
     "comparison": None,
 }
@@ -642,16 +672,16 @@ WEATHER_STATS_EVENT_EXAMPLE = {
 WEATHER_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_responses(
     {
         200: {
-            "description": "Weather against the attendance of finalized meetups",
+            "description": "Temperature against the attendance of finalized meetups, or the weather of one",
             "content": {
                 "application/json": {
                     "examples": {
                         "aggregate": {
-                            "summary": "A period: rainy and dry groups, temperature bands, meetups without weather",
+                            "summary": "A period: temperature bands during and before the meetups, and each meetup",
                             "value": WEATHER_STATS_EXAMPLE,
                         },
                         "event": {
-                            "summary": "One meetup (meetup_id): its weather and attendance",
+                            "summary": "One meetup (meetup_id): its weather before and during, hour by hour",
                             "value": WEATHER_STATS_EVENT_EXAMPLE,
                         },
                     }

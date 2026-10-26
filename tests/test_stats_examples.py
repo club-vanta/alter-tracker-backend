@@ -101,20 +101,16 @@ def test_operations_example_is_consistent():
 def test_weather_example_is_consistent():
     example = WEATHER_STATS_EXAMPLE
     meetups = example["meetups"]
-    grouped = example["rainy"]["events"] + example["dry"]["events"]
+    bands = ["BELOW_10", "FROM_10_TO_15", "FROM_15_TO_20", "FROM_20_TO_25", "FROM_25"]
 
-    assert [row["band"] for row in example["temperature_bands"]] == [
-        "BELOW_10",
-        "FROM_10_TO_15",
-        "FROM_15_TO_20",
-        "FROM_20_TO_25",
-        "FROM_25",
-    ]
-    assert grouped == sum(1 for m in meetups if m["rained"] is not None)
+    assert [row["band"] for row in example["temperature_bands"]] == bands
+    assert [row["band"] for row in example["temperature_bands_before"]] == bands
     assert sum(row["events"] for row in example["temperature_bands"]) == sum(
         1 for m in meetups if m["avg_temperature"] is not None
     )
+    assert sum(row["events"] for row in example["temperature_bands_before"]) == sum(
+        1 for m in meetups if m["before_avg_temperature"] is not None
+    )
     no_row = [m for m in meetups if not m["has_weather"]]
-    assert all(m["avg_temperature"] is None for m in no_row)
-    assert example["without_weather"] == len(no_row)
+    assert all(m["avg_temperature"] is None and m["before_avg_temperature"] is None for m in no_row)
     assert [m["date"] for m in meetups] == sorted(m["date"] for m in meetups)

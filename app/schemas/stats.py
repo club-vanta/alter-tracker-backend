@@ -487,10 +487,10 @@ class OperationsStatsPublic(BaseModel):
 class WeatherMeetupRowPublic(BaseModel):
     """
     One finalized meetup with its attendance and weather. The weather fields are
-    null without a value: all three when the meetup has no weather row, and
-    rained and total_precipitation_mm when the provider had no precipitation data.
-    has_weather is true when the meetup has a weather row, so false exactly for
-    the meetups counted in without_weather.
+    null without a value: all of them when the meetup has no weather row,
+    rained and total_precipitation_mm when the provider had no precipitation
+    data, and before_avg_temperature when it had no temperature in the 3 hours
+    before the start. has_weather is true when the meetup has a weather row.
     """
 
     meetup_id: uuid.UUID
@@ -501,27 +501,18 @@ class WeatherMeetupRowPublic(BaseModel):
     avg_temperature: float | None
     rained: bool | None
     total_precipitation_mm: float | None
+    before_avg_temperature: float | None
     has_weather: bool
 
     model_config = ConfigDict(from_attributes=True)
 
 
-class WeatherGroupPublic(BaseModel):
-    """
-    Meetups that share a weather condition. avg_attended is the mean attended per
-    event; no_show_rate is pooled over the group (all no-shows over all expected
-    guests, not an average of rates). Both are null for a group with no events.
-    """
-
-    events: int
-    avg_attended: float | None
-    no_show_rate: float | None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class TemperatureBandRowPublic(BaseModel):
-    """Meetups whose average temperature falls in one band; figures as in WeatherGroupPublic."""
+    """
+    Meetups whose average temperature falls in one band. avg_attended is the mean
+    attended per event; no_show_rate is pooled over the band (all no-shows over
+    all expected guests, not an average of rates). Both are null for an empty band.
+    """
 
     band: StatsTemperatureBand
     events: int
@@ -531,29 +522,65 @@ class TemperatureBandRowPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class WeatherEventPublic(MeetupWeatherStatusPublic):
-    """The weather standing of one meetup (as GET .../meetups/{id}/weather) plus its attendance."""
+class WeatherWindowPublic(BaseModel):
+    """
+    The weather in the 3 hours before a meetup's start: averages of temperature
+    and apparent temperature, total precipitation and rained (>= 0.2 mm), each
+    null when the provider had no value for it there.
+    """
 
-    attended: int
-    no_show_rate: float | None
+    avg_temperature: float | None
+    avg_apparent_temperature: float | None
+    total_precipitation_mm: float | None
+    rained: bool | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WeatherHourPublic(BaseModel):
+    """
+    One stored hour of a meetup's weather. time is the UTC start of the hour;
+    offset_minutes runs from the meetup start to it, negative before (the hour
+    that contains a 22:30 start is -30). weather_code is the WMO code and is_day
+    whether the sun is up. Values are null where the provider had none.
+    """
+
+    time: datetime
+    offset_minutes: int
+    temperature: float | None
+    apparent_temperature: float | None
+    precipitation_mm: float | None
+    weather_code: int | None
+    is_day: bool | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WeatherEventPublic(MeetupWeatherStatusPublic):
+    """
+    The weather standing of one meetup (as GET .../meetups/{id}/weather, whose
+    weather is the during window) plus the window before its start and every
+    stored hour from 3 hours before the start hour through 6 hours after the
+    start. before is null and hours empty when the meetup has no weather row.
+    """
+
+    before: WeatherWindowPublic | None
+    hours: list[WeatherHourPublic]
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class WeatherStatsPublic(BaseModel):
     """
-    How weather relates to attendance, over finalized meetups.
+    How temperature relates to attendance, over finalized meetups.
 
     Aggregate mode (no meetup_id): event is null. meetups lists every meetup in
-    the period by date ascending. rainy is rained true and dry is rained false;
-    a meetup whose weather row has no precipitation data (rained null) joins
-    neither. temperature_bands always has all five bands in order, lower bound
-    inclusive, over avg_temperature; a meetup whose row has no temperature joins
-    none. without_weather counts only the meetups with no weather row at all;
-    a row with a null value is not counted there.
+    the period by date ascending. temperature_bands and temperature_bands_before
+    always have all five bands in order, lower bound inclusive, over
+    avg_temperature and before_avg_temperature respectively; a meetup without
+    that temperature joins no band of that list.
 
-    One-event mode (meetup_id): event is set; meetups, temperature_bands are
-    empty, rainy and dry are null and without_weather is 0.
+    One-event mode (meetup_id): event is set; meetups and both band lists are empty.
 
     The tab compares groups of events against each other instead of against
     another period, so comparison_kind and comparison are always null.
@@ -561,10 +588,8 @@ class WeatherStatsPublic(BaseModel):
 
     event: WeatherEventPublic | None
     meetups: list[WeatherMeetupRowPublic]
-    rainy: WeatherGroupPublic | None
-    dry: WeatherGroupPublic | None
     temperature_bands: list[TemperatureBandRowPublic]
-    without_weather: int
+    temperature_bands_before: list[TemperatureBandRowPublic]
     comparison_kind: None
     comparison: None
 

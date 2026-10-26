@@ -10672,7 +10672,7 @@
         "tags": [
           "stats"
         ],
-        "summary": "Rain and temperature against the attendance of finalized meetups",
+        "summary": "Temperature against attendance, or the hourly weather of one meetup",
         "operationId": "get_weather_stats_organizations__org_id__stats_weather_get",
         "security": [
           {
@@ -10750,7 +10750,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Weather against the attendance of finalized meetups",
+            "description": "Temperature against the attendance of finalized meetups, or the weather of one",
             "content": {
               "application/json": {
                 "schema": {
@@ -10758,7 +10758,7 @@
                 },
                 "examples": {
                   "aggregate": {
-                    "summary": "A period: rainy and dry groups, temperature bands, meetups without weather",
+                    "summary": "A period: temperature bands during and before the meetups, and each meetup",
                     "value": {
                       "meetups": [
                         {
@@ -10770,6 +10770,7 @@
                           "avg_temperature": 11.4,
                           "rained": true,
                           "total_precipitation_mm": 3.2,
+                          "before_avg_temperature": 12.6,
                           "has_weather": true
                         },
                         {
@@ -10781,6 +10782,7 @@
                           "avg_temperature": 18.0,
                           "rained": false,
                           "total_precipitation_mm": 0.0,
+                          "before_avg_temperature": 21.3,
                           "has_weather": true
                         },
                         {
@@ -10791,16 +10793,6 @@
                           "has_weather": false
                         }
                       ],
-                      "rainy": {
-                        "events": 1,
-                        "avg_attended": 30.0,
-                        "no_show_rate": 0.2368
-                      },
-                      "dry": {
-                        "events": 1,
-                        "avg_attended": 31.0,
-                        "no_show_rate": 0.1143
-                      },
                       "temperature_bands": [
                         {
                           "band": "BELOW_10",
@@ -10827,11 +10819,36 @@
                           "events": 0
                         }
                       ],
-                      "without_weather": 1
+                      "temperature_bands_before": [
+                        {
+                          "band": "BELOW_10",
+                          "events": 0
+                        },
+                        {
+                          "band": "FROM_10_TO_15",
+                          "events": 1,
+                          "avg_attended": 30.0,
+                          "no_show_rate": 0.2368
+                        },
+                        {
+                          "band": "FROM_15_TO_20",
+                          "events": 0
+                        },
+                        {
+                          "band": "FROM_20_TO_25",
+                          "events": 1,
+                          "avg_attended": 31.0,
+                          "no_show_rate": 0.1143
+                        },
+                        {
+                          "band": "FROM_25",
+                          "events": 0
+                        }
+                      ]
                     }
                   },
                   "event": {
-                    "summary": "One meetup (meetup_id): its weather and attendance",
+                    "summary": "One meetup (meetup_id): its weather before and during, hour by hour",
                     "value": {
                       "event": {
                         "status": "OK",
@@ -10845,12 +10862,36 @@
                           "source": "open-meteo-historical-forecast"
                         },
                         "ready": true,
-                        "attended": 30,
-                        "no_show_rate": 0.2368
+                        "before": {
+                          "avg_temperature": 12.6,
+                          "avg_apparent_temperature": 10.9,
+                          "total_precipitation_mm": 4.1,
+                          "rained": true
+                        },
+                        "hours": [
+                          {
+                            "time": "2026-04-05T19:00:00Z",
+                            "offset_minutes": -180,
+                            "temperature": 13.1,
+                            "apparent_temperature": 11.2,
+                            "precipitation_mm": 1.5,
+                            "weather_code": 63,
+                            "is_day": false
+                          },
+                          {
+                            "time": "2026-04-05T22:00:00Z",
+                            "offset_minutes": 0,
+                            "temperature": 12.0,
+                            "apparent_temperature": 10.1,
+                            "precipitation_mm": 0.0,
+                            "weather_code": 3,
+                            "is_day": false
+                          }
+                        ]
                       },
                       "meetups": [],
                       "temperature_bands": [],
-                      "without_weather": 0
+                      "temperature_bands_before": []
                     }
                   }
                 }
@@ -14545,7 +14586,7 @@
           "FROM_25"
         ],
         "title": "StatsTemperatureBand",
-        "description": "Average temperature of a meetup's first 6 hours, in degrees Celsius. The lower bound is inclusive."
+        "description": "Band of an average temperature in degrees Celsius: a meetup's first 6 hours, or the 3 hours before it.\nThe lower bound is inclusive."
       },
       "StatsVisitHistory": {
         "type": "string",
@@ -14620,7 +14661,7 @@
           "no_show_rate"
         ],
         "title": "TemperatureBandRowPublic",
-        "description": "Meetups whose average temperature falls in one band; figures as in WeatherGroupPublic."
+        "description": "Meetups whose average temperature falls in one band. avg_attended is the mean\nattended per event; no_show_rate is pooled over the band (all no-shows over\nall expected guests, not an average of rates). Both are null for an empty band."
       },
       "TokenResponse": {
         "properties": {
@@ -14871,20 +14912,22 @@
             "type": "boolean",
             "title": "Ready"
           },
-          "attended": {
-            "type": "integer",
-            "title": "Attended"
-          },
-          "no_show_rate": {
+          "before": {
             "anyOf": [
               {
-                "type": "number"
+                "$ref": "#/components/schemas/WeatherWindowPublic"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "No Show Rate"
+            ]
+          },
+          "hours": {
+            "items": {
+              "$ref": "#/components/schemas/WeatherHourPublic"
+            },
+            "type": "array",
+            "title": "Hours"
           }
         },
         "type": "object",
@@ -14892,19 +14935,24 @@
           "status",
           "weather",
           "ready",
-          "attended",
-          "no_show_rate"
+          "before",
+          "hours"
         ],
         "title": "WeatherEventPublic",
-        "description": "The weather standing of one meetup (as GET .../meetups/{id}/weather) plus its attendance."
+        "description": "The weather standing of one meetup (as GET .../meetups/{id}/weather, whose\nweather is the during window) plus the window before its start and every\nstored hour from 3 hours before the start hour through 6 hours after the\nstart. before is null and hours empty when the meetup has no weather row."
       },
-      "WeatherGroupPublic": {
+      "WeatherHourPublic": {
         "properties": {
-          "events": {
+          "time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Time"
+          },
+          "offset_minutes": {
             "type": "integer",
-            "title": "Events"
+            "title": "Offset Minutes"
           },
-          "avg_attended": {
+          "temperature": {
             "anyOf": [
               {
                 "type": "number"
@@ -14913,9 +14961,9 @@
                 "type": "null"
               }
             ],
-            "title": "Avg Attended"
+            "title": "Temperature"
           },
-          "no_show_rate": {
+          "apparent_temperature": {
             "anyOf": [
               {
                 "type": "number"
@@ -14924,17 +14972,54 @@
                 "type": "null"
               }
             ],
-            "title": "No Show Rate"
+            "title": "Apparent Temperature"
+          },
+          "precipitation_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precipitation Mm"
+          },
+          "weather_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weather Code"
+          },
+          "is_day": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Day"
           }
         },
         "type": "object",
         "required": [
-          "events",
-          "avg_attended",
-          "no_show_rate"
+          "time",
+          "offset_minutes",
+          "temperature",
+          "apparent_temperature",
+          "precipitation_mm",
+          "weather_code",
+          "is_day"
         ],
-        "title": "WeatherGroupPublic",
-        "description": "Meetups that share a weather condition. avg_attended is the mean attended per\nevent; no_show_rate is pooled over the group (all no-shows over all expected\nguests, not an average of rates). Both are null for a group with no events."
+        "title": "WeatherHourPublic",
+        "description": "One stored hour of a meetup's weather. time is the UTC start of the hour;\noffset_minutes runs from the meetup start to it, negative before (the hour\nthat contains a 22:30 start is -30). weather_code is the WMO code and is_day\nwhether the sun is up. Values are null where the provider had none."
       },
       "WeatherMeetupRowPublic": {
         "properties": {
@@ -15000,6 +15085,17 @@
             ],
             "title": "Total Precipitation Mm"
           },
+          "before_avg_temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Avg Temperature"
+          },
           "has_weather": {
             "type": "boolean",
             "title": "Has Weather"
@@ -15015,10 +15111,11 @@
           "avg_temperature",
           "rained",
           "total_precipitation_mm",
+          "before_avg_temperature",
           "has_weather"
         ],
         "title": "WeatherMeetupRowPublic",
-        "description": "One finalized meetup with its attendance and weather. The weather fields are\nnull without a value: all three when the meetup has no weather row, and\nrained and total_precipitation_mm when the provider had no precipitation data.\nhas_weather is true when the meetup has a weather row, so false exactly for\nthe meetups counted in without_weather."
+        "description": "One finalized meetup with its attendance and weather. The weather fields are\nnull without a value: all of them when the meetup has no weather row,\nrained and total_precipitation_mm when the provider had no precipitation\ndata, and before_avg_temperature when it had no temperature in the 3 hours\nbefore the start. has_weather is true when the meetup has a weather row."
       },
       "WeatherStatsPublic": {
         "properties": {
@@ -15039,26 +15136,6 @@
             "type": "array",
             "title": "Meetups"
           },
-          "rainy": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WeatherGroupPublic"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "dry": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WeatherGroupPublic"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "temperature_bands": {
             "items": {
               "$ref": "#/components/schemas/TemperatureBandRowPublic"
@@ -15066,9 +15143,12 @@
             "type": "array",
             "title": "Temperature Bands"
           },
-          "without_weather": {
-            "type": "integer",
-            "title": "Without Weather"
+          "temperature_bands_before": {
+            "items": {
+              "$ref": "#/components/schemas/TemperatureBandRowPublic"
+            },
+            "type": "array",
+            "title": "Temperature Bands Before"
           },
           "comparison_kind": {
             "type": "null",
@@ -15083,15 +15163,13 @@
         "required": [
           "event",
           "meetups",
-          "rainy",
-          "dry",
           "temperature_bands",
-          "without_weather",
+          "temperature_bands_before",
           "comparison_kind",
           "comparison"
         ],
         "title": "WeatherStatsPublic",
-        "description": "How weather relates to attendance, over finalized meetups.\n\nAggregate mode (no meetup_id): event is null. meetups lists every meetup in\nthe period by date ascending. rainy is rained true and dry is rained false;\na meetup whose weather row has no precipitation data (rained null) joins\nneither. temperature_bands always has all five bands in order, lower bound\ninclusive, over avg_temperature; a meetup whose row has no temperature joins\nnone. without_weather counts only the meetups with no weather row at all;\na row with a null value is not counted there.\n\nOne-event mode (meetup_id): event is set; meetups, temperature_bands are\nempty, rainy and dry are null and without_weather is 0.\n\nThe tab compares groups of events against each other instead of against\nanother period, so comparison_kind and comparison are always null."
+        "description": "How temperature relates to attendance, over finalized meetups.\n\nAggregate mode (no meetup_id): event is null. meetups lists every meetup in\nthe period by date ascending. temperature_bands and temperature_bands_before\nalways have all five bands in order, lower bound inclusive, over\navg_temperature and before_avg_temperature respectively; a meetup without\nthat temperature joins no band of that list.\n\nOne-event mode (meetup_id): event is set; meetups and both band lists are empty.\n\nThe tab compares groups of events against each other instead of against\nanother period, so comparison_kind and comparison are always null."
       },
       "WeatherStatus": {
         "type": "string",
@@ -15103,6 +15181,63 @@
         ],
         "title": "WeatherStatus",
         "description": "Where the weather of a meetup stands.\n\nOK:           a weather row exists.\nNO_LOCATION:  the meetup has no coordinates, so there is nothing to look up.\nPENDING:      it has a location but its window is not over yet, plus the\n              provider delay (see is_weather_ready).\nNOT_FETCHED:  ready, but no row yet (the worker has not got to it, or the\n              provider failed); an org admin can refresh."
+      },
+      "WeatherWindowPublic": {
+        "properties": {
+          "avg_temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Temperature"
+          },
+          "avg_apparent_temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Apparent Temperature"
+          },
+          "total_precipitation_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Precipitation Mm"
+          },
+          "rained": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rained"
+          }
+        },
+        "type": "object",
+        "required": [
+          "avg_temperature",
+          "avg_apparent_temperature",
+          "total_precipitation_mm",
+          "rained"
+        ],
+        "title": "WeatherWindowPublic",
+        "description": "The weather in the 3 hours before a meetup's start: averages of temperature\nand apparent temperature, total precipitation and rained (>= 0.2 mm), each\nnull when the provider had no value for it there."
       }
     },
     "securitySchemes": {

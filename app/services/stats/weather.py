@@ -1,27 +1,26 @@
 """
-Weather statistics: how rain and temperature relate to attendance.
+Weather statistics: how temperature relates to attendance, and the hour by
+hour weather of one meetup.
 
 Attendance figures come from the attendance service's per-meetup rows (never
 recounted); this module only joins them with each meetup's stored weather
-(MeetupWeather) and groups them. Groups pool the rows through summarize_rows,
-so a group's no-show rate is sum(no_show) / sum(expected) over its meetups,
-not an average of rates.
+(MeetupWeather) and groups them in temperature bands, once by the average
+during the meetup and once by the average in the 3 hours before it. Bands
+pool the rows through summarize_rows, so a band's no-show rate is
+sum(no_show) / sum(expected) over its meetups, not an average of rates.
 """
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlmodel import Session, col, select
 
 from app.models.models import Meetup, MeetupWeather, StatsTemperatureBand, WeatherStatus
-from app.services.stats.attendance import (
-    MeetupAttendanceRow,
-    meetup_attendance_rows,
-    single_meetup_attendance_rows,
-    summarize_rows,
-)
+from app.services.stats.attendance import MeetupAttendanceRow, meetup_attendance_rows, summarize_rows
 from app.services.stats.scope import StatsPeriod, finalized_meetup_conditions
+from app.services.timeutil import as_utc
 from app.services.weather import is_weather_ready, weather_status
 
 # Lower bound (inclusive) of each band above the first, in ascending order.
@@ -39,7 +38,7 @@ _BAND_LOWER_BOUNDS: tuple[tuple[float, StatsTemperatureBand], ...] = (
 class WeatherMeetupRow:
     """
     One finalized meetup with its attendance and weather (weather fields None without a value).
-    has_weather is True when a weather row exists, the same rule as without_weather.
+    has_weather is True when a weather row exists.
     """
 
     meetup_id: uuid.UUID
@@ -50,16 +49,8 @@ class WeatherMeetupRow:
     avg_temperature: float | None
     rained: bool | None
     total_precipitation_mm: float | None
+    before_avg_temperature: float | None
     has_weather: bool
-
-
-@dataclass(frozen=True)
-class WeatherGroup:
-    """Events of one group; avg_attended and no_show_rate are None for a group with no events."""
-
-    events: int
-    avg_attended: float | None
-    no_show_rate: float | None
 
 
 @dataclass(frozen=True)
@@ -71,14 +62,37 @@ class TemperatureBandRow:
 
 
 @dataclass(frozen=True)
+class WeatherWindow:
+    """The summary of the 3 hours before a meetup's start; each field None without a value."""
+
+    avg_temperature: float | None
+    avg_apparent_temperature: float | None
+    total_precipitation_mm: float | None
+    rained: bool | None
+
+
+@dataclass(frozen=True)
+class WeatherHour:
+    """One stored hour; offset_minutes runs from the meetup start to the hour's start (negative before)."""
+
+    time: datetime
+    offset_minutes: int
+    temperature: float | None
+    apparent_temperature: float | None
+    precipitation_mm: float | None
+    weather_code: int | None
+    is_day: bool | None
+
+
+@dataclass(frozen=True)
 class WeatherEvent:
-    """The weather standing of one meetup plus its attendance."""
+    """The weather standing of one meetup, its before window, and its stored hours (None and [] without a row)."""
 
     status: WeatherStatus
     weather: MeetupWeather | None
     ready: bool
-    attended: int
-    no_show_rate: float | None
+    before: WeatherWindow | None
+    hours: list[WeatherHour]
 
 
 @dataclass(frozen=True)
@@ -91,10 +105,8 @@ class WeatherStats:
 
     event: WeatherEvent | None
     meetups: list[WeatherMeetupRow]
-    rainy: WeatherGroup | None
-    dry: WeatherGroup | None
     temperature_bands: list[TemperatureBandRow]
-    without_weather: int
+    temperature_bands_before: list[TemperatureBandRow]
     comparison_kind: None
     comparison: None
 
@@ -115,19 +127,38 @@ def _pooled(rows: list[MeetupAttendanceRow]) -> tuple[int, float | None, float |
     return totals.events, totals.avg_attended_per_event, totals.no_show_rate
 
 
-def _group(rows: list[MeetupAttendanceRow]) -> WeatherGroup:
-    events, avg_attended, no_show_rate = _pooled(rows)
-    return WeatherGroup(events=events, avg_attended=avg_attended, no_show_rate=no_show_rate)
-
-
 def _band_rows(
     attendance: list[tuple[MeetupAttendanceRow, MeetupWeather | None]],
+    temperature_of: Callable[[MeetupWeather], float | None],
 ) -> list[TemperatureBandRow]:
     by_band: dict[StatsTemperatureBand, list[MeetupAttendanceRow]] = {band: [] for band in StatsTemperatureBand}
     for row, weather in attendance:
-        if weather is not None and weather.avg_temperature is not None:
-            by_band[band_for_temperature(weather.avg_temperature)].append(row)
+        temperature = None if weather is None else temperature_of(weather)
+        if temperature is not None:
+            by_band[band_for_temperature(temperature)].append(row)
     return [TemperatureBandRow(band, *_pooled(rows)) for band, rows in by_band.items()]
+
+
+def _hours(weather: MeetupWeather, start: datetime) -> list[WeatherHour]:
+    """The stored hourly arrays as one row per hour, offset from the meetup start."""
+    hourly = weather.hourly
+    start = as_utc(start)
+    hours = []
+    for i, moment in enumerate(hourly["time"]):
+        time = as_utc(datetime.fromisoformat(str(moment)))
+        code, is_day = hourly["weather_code"][i], hourly["is_day"][i]
+        hours.append(
+            WeatherHour(
+                time=time,
+                offset_minutes=(time - start) // timedelta(minutes=1),
+                temperature=hourly["temperature_2m"][i],  # type: ignore[arg-type]
+                apparent_temperature=hourly["apparent_temperature"][i],  # type: ignore[arg-type]
+                precipitation_mm=hourly["precipitation"][i],  # type: ignore[arg-type]
+                weather_code=None if code is None else int(code),
+                is_day=None if is_day is None else bool(is_day),
+            )
+        )
+    return hours
 
 
 # -- Queries --
@@ -138,16 +169,25 @@ def _weather_by_meetup(session: Session, conditions: list) -> dict[uuid.UUID, Me
     return {weather.meetup_id: weather for weather in session.exec(query)}
 
 
-def _event(session: Session, org_id: uuid.UUID, meetup_id: uuid.UUID, now: datetime) -> WeatherEvent:
-    [row] = single_meetup_attendance_rows(session, org_id, meetup_id)
+def _event(session: Session, meetup_id: uuid.UUID, now: datetime) -> WeatherEvent:
     meetup = session.get_one(Meetup, meetup_id)
     weather = session.get(MeetupWeather, meetup_id)
+    before = (
+        None
+        if weather is None
+        else WeatherWindow(
+            avg_temperature=weather.before_avg_temperature,
+            avg_apparent_temperature=weather.before_avg_apparent_temperature,
+            total_precipitation_mm=weather.before_total_precipitation_mm,
+            rained=weather.before_rained,
+        )
+    )
     return WeatherEvent(
         status=weather_status(meetup, weather is not None, now),
         weather=weather,
         ready=is_weather_ready(meetup, now),
-        attended=row.attended,
-        no_show_rate=summarize_rows([row]).no_show_rate,
+        before=before,
+        hours=[] if weather is None else _hours(weather, meetup.date),
     )
 
 
@@ -158,23 +198,21 @@ def weather_stats(
     session: Session, org_id: uuid.UUID, period: StatsPeriod, meetup_id: uuid.UUID | None
 ) -> WeatherStats:
     """
-    Weather against attendance for the period's finalized meetups, or the
+    Temperature against attendance for the period's finalized meetups, or the
     weather of one meetup. The caller guarantees meetup_id is a finalized
     meetup of the org.
 
-    Grouping: rainy is rained True and dry is rained False; a row whose rained
-    is None (no precipitation data) joins neither. A row whose avg_temperature
-    is None joins no band. without_weather counts only meetups with no row.
+    A row whose avg_temperature is None joins no band of temperature_bands;
+    one whose before_avg_temperature is None joins no band of
+    temperature_bands_before.
     """
     now = datetime.now(UTC)
     if meetup_id is not None:
         return WeatherStats(
-            event=_event(session, org_id, meetup_id, now),
+            event=_event(session, meetup_id, now),
             meetups=[],
-            rainy=None,
-            dry=None,
             temperature_bands=[],
-            without_weather=0,
+            temperature_bands_before=[],
             comparison_kind=None,
             comparison=None,
         )
@@ -182,9 +220,6 @@ def weather_stats(
     rows = meetup_attendance_rows(session, org_id, period)
     weather_of = _weather_by_meetup(session, finalized_meetup_conditions(org_id, period))
     paired = [(row, weather_of.get(row.meetup_id)) for row in rows]
-
-    def with_rained(value: bool) -> list[MeetupAttendanceRow]:
-        return [row for row, weather in paired if weather is not None and weather.rained is value]
 
     return WeatherStats(
         event=None,
@@ -198,14 +233,13 @@ def weather_stats(
                 avg_temperature=weather.avg_temperature if weather else None,
                 rained=weather.rained if weather else None,
                 total_precipitation_mm=weather.total_precipitation_mm if weather else None,
+                before_avg_temperature=weather.before_avg_temperature if weather else None,
                 has_weather=weather is not None,
             )
             for row, weather in paired
         ],
-        rainy=_group(with_rained(True)),
-        dry=_group(with_rained(False)),
-        temperature_bands=_band_rows(paired),
-        without_weather=sum(1 for _, weather in paired if weather is None),
+        temperature_bands=_band_rows(paired, lambda w: w.avg_temperature),
+        temperature_bands_before=_band_rows(paired, lambda w: w.before_avg_temperature),
         comparison_kind=None,
         comparison=None,
     )

@@ -143,7 +143,10 @@ class StatsLeadTimeBucket(StrEnum):
 
 
 class StatsTemperatureBand(StrEnum):
-    """Average temperature of a meetup's first 6 hours, in degrees Celsius. The lower bound is inclusive."""
+    """
+    Band of an average temperature in degrees Celsius: a meetup's first 6 hours, or the 3 hours before it.
+    The lower bound is inclusive.
+    """
 
     BELOW_10 = "BELOW_10"
     FROM_10_TO_15 = "FROM_10_TO_15"

@@ -117,9 +117,10 @@ from app.schemas.stats import (
     StaffCheckinsPublic,
     TemperatureBandRowPublic,
     WeatherEventPublic,
-    WeatherGroupPublic,
+    WeatherHourPublic,
     WeatherMeetupRowPublic,
     WeatherStatsPublic,
+    WeatherWindowPublic,
 )
 from app.schemas.users import UserSearchResult
 
@@ -225,7 +226,8 @@ __all__ = [
     "UserSearchResult",
     "VerifyRecoveryCodeRequest",
     "WeatherEventPublic",
-    "WeatherGroupPublic",
+    "WeatherHourPublic",
     "WeatherMeetupRowPublic",
     "WeatherStatsPublic",
+    "WeatherWindowPublic",
 ]
