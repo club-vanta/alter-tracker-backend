@@ -10407,7 +10407,8 @@
                           "no_show_rate": 0.2368,
                           "avg_temperature": 11.4,
                           "rained": true,
-                          "total_precipitation_mm": 3.2
+                          "total_precipitation_mm": 3.2,
+                          "has_weather": true
                         },
                         {
                           "meetup_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
@@ -10417,13 +10418,15 @@
                           "no_show_rate": 0.1143,
                           "avg_temperature": 18.0,
                           "rained": false,
-                          "total_precipitation_mm": 0.0
+                          "total_precipitation_mm": 0.0,
+                          "has_weather": true
                         },
                         {
                           "meetup_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
                           "name": "Alter Mayo",
                           "date": "2026-05-03T22:00:00Z",
-                          "attended": 28
+                          "attended": 28,
+                          "has_weather": false
                         }
                       ],
                       "rainy": {
@@ -14319,6 +14322,10 @@
               }
             ],
             "title": "Total Precipitation Mm"
+          },
+          "has_weather": {
+            "type": "boolean",
+            "title": "Has Weather"
           }
         },
         "type": "object",
@@ -14330,10 +14337,11 @@
           "no_show_rate",
           "avg_temperature",
           "rained",
-          "total_precipitation_mm"
+          "total_precipitation_mm",
+          "has_weather"
         ],
         "title": "WeatherMeetupRowPublic",
-        "description": "One finalized meetup with its attendance and weather. The weather fields are\nnull without a value: all three when the meetup has no weather row, and\nrained and total_precipitation_mm when the provider had no precipitation data."
+        "description": "One finalized meetup with its attendance and weather. The weather fields are\nnull without a value: all three when the meetup has no weather row, and\nrained and total_precipitation_mm when the provider had no precipitation data.\nhas_weather is true when the meetup has a weather row, so false exactly for\nthe meetups counted in without_weather."
       },
       "WeatherStatsPublic": {
         "properties": {
