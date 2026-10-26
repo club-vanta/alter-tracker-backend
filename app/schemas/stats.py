@@ -86,10 +86,11 @@ class ArrivalBucketPublic(BaseModel):
 class ArrivalSummaryPublic(BaseModel):
     """
     *_minutes are offsets from the meetup start (negative = before);
-    *_local_time are "HH:MM" of the local clock, counted from midnight of each
-    meetup's local date. Over several meetups the offset and clock figures are
-    computed separately, so they need not line up when meetups start at
-    different hours. peak is the busiest bucket of the curve; peak_local_time
+    *_local_time are "HH:MM" of the local clock, counted from midnight starting
+    each meetup's night (a start before noon belongs to the night before).
+    Over several meetups the offset and clock figures are computed
+    separately, so they need not line up when meetups start at different
+    hours. peak is the busiest bucket of the curve; peak_local_time
     is the start of the busiest local quarter hour. Means are rounded to the
     minute. arrivals counts the arrivals from 120 minutes before to 720
     minutes after the start; excluded_arrivals counts those outside that
@@ -192,7 +193,9 @@ class NoShowSummaryPublic(BaseModel):
     """
     Expected audience RSVPs (signed up, not cancelled) and no-shows in scope.
     repeat_guests counts the guests with 2 or more no-shows: in the period,
-    or for one meetup, those of its no-shows who reach 2 over all time.
+    or for one meetup, those of its no-shows who reach 2 over all time. As a
+    one-meetup comparison it holds the period's totals, so only no_show_rate
+    compares like with like there.
     """
 
     expected: int

@@ -361,6 +361,19 @@ def test_arrival_stats_single_meetup_compares_with_period(session: Session):
     assert stats.comparison.mean_local_time == "19:30"
 
 
+def test_arrival_stats_clock_puts_a_meetup_after_midnight_on_the_night_before(session: Session):
+    org = make_org(session)
+    late = _finalized_meetup(session, org, datetime(2026, 4, 5, 23, 0, tzinfo=STATS_TZ).astimezone(UTC))
+    _arrived(session, late, 10)  # 23:10
+    after_midnight = _finalized_meetup(session, org, datetime(2026, 4, 13, 0, 30, tzinfo=STATS_TZ).astimezone(UTC))
+    _arrived(session, after_midnight, 10)  # 00:40
+
+    stats = arrival_stats(session, org.id, ALL_TIME, None)
+
+    assert stats.summary.mean_local_time == "23:55"
+    assert stats.summary.p90_local_time == "00:40"
+
+
 def test_arrival_stats_aggregate_clock_counts_from_each_meetups_own_date(session: Session):
     org = make_org(session)
     # 23:50 and 00:10 of the same night average to midnight, not to noon.

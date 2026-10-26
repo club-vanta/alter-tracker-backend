@@ -10,8 +10,10 @@ plain values (offset minutes, and for one event the meetup's local start) so
 they can be tested without the database.
 
 Each arrival has two positions: its offset (minutes from its meetup's start)
-and its clock minute (minutes from local midnight of its meetup's local date,
-so an arrival after midnight is past 1440 and averages correctly). The
+and its clock minute (minutes from local midnight starting its meetup's night,
+so an arrival after midnight is past 1440 and averages correctly). A meetup's
+night is the local date of its start, except that a start before noon belongs
+to the night before: a meetup at 23:00 and one at 00:30 share one clock. The
 offset figures and the clock figures are computed separately: over several
 meetups that start at different hours they need not line up.
 """
@@ -50,6 +52,8 @@ FIRST_HOUR_MINUTES = 60
 # Arrivals outside this window of minutes from the start (late catch-up check-ins, clock errors) are excluded.
 MIN_OFFSET_MINUTES = -120
 MAX_OFFSET_MINUTES = 720  # exclusive
+# A meetup starting before noon belongs to the night before, for clock times.
+NIGHT_STARTS_AFTER = timedelta(hours=12)
 
 # Upper day bound (inclusive) of each lead-time bucket; the last one is open.
 _LEAD_TIME_LIMITS: tuple[tuple[int, StatsLeadTimeBucket], ...] = (
@@ -258,9 +262,9 @@ _ARRIVED = (GuestAttendanceStatus.ATTENDED, GuestAttendanceStatus.WALKIN)
 
 
 def _clock_minute(meetup_date: datetime, moment: datetime) -> int:
-    """Whole minutes from local midnight of the meetup's local date to moment."""
-    local_day = meetup_date.astimezone(STATS_TZ).date()
-    return (moment - datetime.combine(local_day, time.min, tzinfo=STATS_TZ)) // timedelta(minutes=1)
+    """Whole minutes from local midnight starting the meetup's night to moment."""
+    night = (meetup_date.astimezone(STATS_TZ) - NIGHT_STARTS_AFTER).date()
+    return (moment - datetime.combine(night, time.min, tzinfo=STATS_TZ)) // timedelta(minutes=1)
 
 
 def _arrivals(rows: list[_RsvpRow]) -> tuple[list[Arrival], int]:
