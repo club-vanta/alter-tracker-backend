@@ -93,7 +93,7 @@ def test_retention_new_and_returning_in_period(session: Session):
     stats = _stats(session, org, MARCH)
 
     assert stats.summary == RetentionSummary(
-        attendees=3, new_guests=2, returning=1, new_share=0.6667, first_timer_return_rate=0.0
+        attendees=3, new_guests=2, came_back=0, returning=1, new_share=0.6667, first_timer_return_rate=0.0
     )
     assert stats.meetups == [MeetupNewReturning(march.id, march.name, MARCH_DATE, new=2, returning=1)]
 
@@ -107,7 +107,7 @@ def test_retention_returning_does_not_need_the_previous_period(session: Session)
     stats = _stats(session, org, MARCH)
 
     assert (stats.summary.new_guests, stats.summary.returning) == (0, 1)
-    assert stats.comparison == RetentionSummary(0, 0, 0, None, None)
+    assert stats.comparison == RetentionSummary(0, 0, 0, 0, None, None)
 
 
 def test_retention_staff_attendance_is_not_a_first_time(session: Session):
@@ -161,13 +161,25 @@ def test_retention_first_timer_return_rate_looks_past_the_period(session: Sessio
     assert stats.summary.first_timer_return_rate == 0.5
 
 
+def test_retention_came_back_counts_returns_after_the_period(session: Session):
+    org = make_org(session)
+    march, may = _meetup(session, org, 3), _meetup(session, org, 5)
+    b, c = _guest(session), _guest(session)
+    _attend(session, b, march, may)
+    _attend(session, c, march)
+
+    stats = _stats(session, org, MARCH)
+
+    assert stats.summary.came_back == 1
+
+
 def test_retention_empty_period_has_null_shares(session: Session):
     org = make_org(session)
     march = _meetup(session, org, 3)
 
     stats = _stats(session, org, MARCH)
 
-    assert stats.summary == RetentionSummary(0, 0, 0, None, None)
+    assert stats.summary == RetentionSummary(0, 0, 0, 0, None, None)
     assert stats.meetups == [MeetupNewReturning(march.id, march.name, MARCH_DATE, new=0, returning=0)]
     assert stats.cohorts == []
     assert [(row.bucket, row.guests) for row in stats.frequency] == [(bucket, 0) for bucket in StatsFrequencyBucket]
@@ -204,7 +216,7 @@ def test_retention_first_time_ignores_other_orgs_and_open_meetups(session: Sessi
     stats = _stats(session, org, MARCH)
 
     assert stats.summary == RetentionSummary(
-        attendees=1, new_guests=1, returning=0, new_share=1.0, first_timer_return_rate=0.0
+        attendees=1, new_guests=1, came_back=0, returning=0, new_share=1.0, first_timer_return_rate=0.0
     )
     assert stats.meetups == [MeetupNewReturning(march.id, march.name, MARCH_DATE, new=1, returning=0)]
 
@@ -218,7 +230,7 @@ def test_retention_same_start_time_counts_the_guest_once_as_new(session: Session
     stats = _stats(session, org, MARCH)
 
     assert stats.summary == RetentionSummary(
-        attendees=1, new_guests=1, returning=0, new_share=1.0, first_timer_return_rate=1.0
+        attendees=1, new_guests=1, came_back=1, returning=0, new_share=1.0, first_timer_return_rate=1.0
     )
     assert sorted((m.new, m.returning) for m in stats.meetups) == [(0, 1), (1, 0)]
 
@@ -417,13 +429,13 @@ def test_retention_one_event(session: Session):
     stats = _stats(session, org, ALL_TIME, march.id)
 
     assert stats.summary == RetentionSummary(
-        attendees=3, new_guests=2, returning=1, new_share=0.6667, first_timer_return_rate=0.5
+        attendees=3, new_guests=2, came_back=1, returning=1, new_share=0.6667, first_timer_return_rate=0.5
     )
     assert (stats.meetups, stats.cohorts, stats.frequency, stats.lapsed) == ([], [], [], [])
     assert stats.lapsed_total is None
     assert stats.comparison_kind == StatsComparisonKind.PERIOD_AVERAGE
     assert stats.comparison == RetentionSummary(
-        attendees=3, new_guests=3, returning=0, new_share=1.0, first_timer_return_rate=0.6667
+        attendees=3, new_guests=3, came_back=2, returning=0, new_share=1.0, first_timer_return_rate=0.6667
     )
 
 
@@ -435,7 +447,7 @@ def test_retention_one_event_ignores_period_bounds(session: Session):
     stats = _stats(session, org, MARCH, january.id)
 
     assert stats.summary.attendees == 1
-    assert stats.comparison == RetentionSummary(0, 0, 0, None, None)
+    assert stats.comparison == RetentionSummary(0, 0, 0, 0, None, None)
 
 
 def test_retention_aggregate_compares_with_previous_period(session: Session):
@@ -449,7 +461,7 @@ def test_retention_aggregate_compares_with_previous_period(session: Session):
 
     assert stats.comparison_kind == StatsComparisonKind.PREVIOUS_PERIOD
     assert stats.comparison == RetentionSummary(
-        attendees=1, new_guests=1, returning=0, new_share=1.0, first_timer_return_rate=1.0
+        attendees=1, new_guests=1, came_back=1, returning=0, new_share=1.0, first_timer_return_rate=1.0
     )
 
 
@@ -560,6 +572,7 @@ def test_retention_stats_returns_200_with_exact_aggregate_body(
         "summary": {
             "attendees": 2,
             "new_guests": 1,
+            "came_back": 0,
             "returning": 1,
             "new_share": 0.5,
             "first_timer_return_rate": 0.0,
@@ -586,6 +599,7 @@ def test_retention_stats_returns_200_with_exact_aggregate_body(
         "comparison": {
             "attendees": 0,
             "new_guests": 0,
+            "came_back": 0,
             "returning": 0,
             "new_share": None,
             "first_timer_return_rate": None,
@@ -609,7 +623,14 @@ def test_retention_stats_returns_200_for_one_meetup(
 
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json() == {
-        "summary": {"attendees": 2, "new_guests": 1, "returning": 1, "new_share": 0.5, "first_timer_return_rate": 1.0},
+        "summary": {
+            "attendees": 2,
+            "new_guests": 1,
+            "came_back": 1,
+            "returning": 1,
+            "new_share": 0.5,
+            "first_timer_return_rate": 1.0,
+        },
         "meetups": [],
         "cohorts": [],
         "frequency": [],
@@ -619,6 +640,7 @@ def test_retention_stats_returns_200_for_one_meetup(
         "comparison": {
             "attendees": 2,
             "new_guests": 1,
+            "came_back": 1,
             "returning": 1,
             "new_share": 0.5,
             "first_timer_return_rate": 1.0,
@@ -665,6 +687,7 @@ def test_retention_stats_returns_empty_body_for_empty_period(
         "summary": {
             "attendees": 0,
             "new_guests": 0,
+            "came_back": 0,
             "returning": 0,
             "new_share": None,
             "first_timer_return_rate": None,
@@ -678,6 +701,7 @@ def test_retention_stats_returns_empty_body_for_empty_period(
         "comparison": {
             "attendees": 0,
             "new_guests": 0,
+            "came_back": 0,
             "returning": 0,
             "new_share": None,
             "first_timer_return_rate": None,

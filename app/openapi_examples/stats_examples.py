@@ -365,6 +365,7 @@ RETENTION_STATS_EXAMPLE = {
     "summary": {
         "attendees": 40,
         "new_guests": 16,
+        "came_back": 10,
         "returning": 24,
         "new_share": 0.4,
         "first_timer_return_rate": 0.625,
@@ -446,6 +447,7 @@ RETENTION_STATS_EXAMPLE = {
     "comparison": {
         "attendees": 34,
         "new_guests": 12,
+        "came_back": 6,
         "returning": 22,
         "new_share": 0.3529,
         "first_timer_return_rate": 0.5,
