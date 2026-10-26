@@ -69,7 +69,7 @@ Server runs at http://localhost:8000/docs
 | `LOG_LEVEL`                   | No       | `INFO`                      | Minimum log level: DEBUG, INFO, WARNING, ERROR                                                                                     |
 | `BACKEND_PORT`                | No       | `8000`                      | Port uvicorn listens on                                                                                                            |
 | `DEBUG`                       | No       | `false`                     | Enable SQLAlchemy SQL logging (never in prod)                                                                                      |
-| `MAZMO_BASE_URL`              | No       | `https://prod.mazmoapi.net` | Mazmo API base URL                                                                                                                 |
+| `MAZMO_BASE_URL`              | No       | `https://api.mazmo.net`     | Mazmo API base URL                                                                                                                 |
 | `MAZMO_USER_BATCH_SIZE`       | No       | `30`                        | Max user IDs per Mazmo request                                                                                                     |
 | `MAZMO_REQUEST_TIMEOUT`       | No       | `15.0`                      | Mazmo API timeout in seconds                                                                                                       |
 

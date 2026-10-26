@@ -156,7 +156,7 @@ def test_refresh_returns_502_when_mazmo_errors(
 ):
     """Verify that a Mazmo HTTP error maps to 502 and writes nothing."""
     guest = make_guest(session, mazmo_user_id=1501, mazmo_handle="err_r", displayname="Err Guest")
-    response = httpx.Response(503, request=httpx.Request("GET", "https://prod.mazmoapi.net/users"))
+    response = httpx.Response(503, request=httpx.Request("GET", "https://api.mazmo.net/users"))
     mock_mazmo.fetch_users.side_effect = httpx.HTTPStatusError("boom", request=response.request, response=response)
 
     resp = client.post("/guests/refresh-mazmo", headers=admin_headers)

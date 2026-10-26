@@ -10,6 +10,9 @@ Endpoints:
   POST  /organizations/{org_id}/meetups/{id}/guests/{guest_id}/add-walkin
   POST  /organizations/{org_id}/meetups/{id}/guests/{guest_id}/checkin
   PATCH /organizations/{org_id}/meetups/{id}/guests/{guest_id}/undo-checkin
+  PATCH /organizations/{org_id}/meetups/{id}/location
+  GET   /organizations/{org_id}/meetups/{id}/weather
+  POST  /organizations/{org_id}/meetups/{id}/weather/refresh
   PATCH /organizations/{org_id}/meetups/{id}/finalize
   PATCH /organizations/{org_id}/meetups/{id}/unfinalize
 """
@@ -25,6 +28,7 @@ from app.openapi_examples._constants import (
     MEETUP_EXAMPLE_2,
     MEETUP_EXAMPLE_FINALIZED,
     MEETUP_EXAMPLE_PAID,
+    MEETUP_EXAMPLE_WITH_LOCATION,
     MEETUP_GUEST_VENDOR_EXAMPLE,
     MEETUP_GUEST_WALKIN,
     MEETUP_STATS_EXAMPLE,
@@ -35,6 +39,7 @@ from app.openapi_examples._constants import (
 )
 from app.openapi_examples._error_responses import (
     error_401_invalid_credentials,
+    error_403_admin_required,
     error_403_not_approved,
     error_404_meetup,
     error_404_rsvp,
@@ -51,13 +56,18 @@ from app.openapi_examples._error_responses import (
     error_409_payment_already_enabled,
     error_409_payment_not_required,
     error_409_walkin_already_rsvped,
+    error_409_weather_not_ready,
     error_422_validation_guest_type,
+    error_422_validation_location,
     error_422_validation_reason,
     error_422_validation_url,
     error_502_mazmo_create_meetup,
     error_502_mazmo_sync,
+    error_502_weather_provider,
     error_504_mazmo_create_meetup,
     error_504_mazmo_sync,
+    error_504_weather_timeout,
+    merge_error_responses,
 )
 
 # ── POST /meetups/ ────────────────────────────────────────────────────────────
@@ -426,6 +436,121 @@ DISABLE_PAYMENT_RESPONSES: dict[int | str, dict[str, Any]] = {
     **error_404_meetup(),
     **error_409_meetup_finalized(),
     **error_409_payment_already_disabled(),
+}
+
+# -- PATCH /meetups/{id}/location ----------------------------------------------
+
+UPDATE_LOCATION_REQUEST_EXAMPLES: dict[str, Any] = {
+    "set": {
+        "summary": "Set the venue",
+        "description": "Label, latitude and longitude are set together",
+        "value": {
+            "location_label": "Club Vanta, Palermo, Buenos Aires",
+            "latitude": -34.5875,
+            "longitude": -58.4306,
+        },
+    },
+    "clear": {
+        "summary": "Clear the venue",
+        "description": "All three fields null removes the location",
+        "value": {"location_label": None, "latitude": None, "longitude": None},
+    },
+}
+
+UPDATE_LOCATION_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Meetup location updated (also allowed on finalized meetups)",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "set": {
+                        "summary": "Location set",
+                        "value": MEETUP_EXAMPLE_WITH_LOCATION,
+                    },
+                    "cleared": {
+                        "summary": "Location cleared",
+                        "value": MEETUP_EXAMPLE,
+                    },
+                }
+            }
+        },
+    },
+    **merge_error_responses(
+        error_401_invalid_credentials(),
+        error_403_admin_required(),
+        error_404_meetup(),
+        error_422_validation_location(),
+    ),
+}
+
+# -- GET /meetups/{id}/weather and POST /meetups/{id}/weather/refresh ----------
+
+WEATHER_EXAMPLE = {
+    "avg_temperature": 18.4,
+    "avg_apparent_temperature": 17.1,
+    "total_precipitation_mm": 0.0,
+    "max_wind_kmh": 14.2,
+    "rained": False,
+    "fetched_at": "2024-03-24T10:15:00Z",
+    "source": "open-meteo-historical-forecast",
+}
+
+READ_WEATHER_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Weather of the meetup and where it stands",
+        "content": {
+            "application/json": {
+                "examples": {
+                    "ok": {
+                        "summary": "Weather fetched",
+                        "value": {"status": "OK", "weather": WEATHER_EXAMPLE, "ready": True},
+                    },
+                    "partial": {
+                        "summary": "The provider lacked precipitation: null means no data, rained is null too",
+                        "value": {
+                            "status": "OK",
+                            "weather": {**WEATHER_EXAMPLE, "total_precipitation_mm": None, "rained": None},
+                            "ready": True,
+                        },
+                    },
+                    "no_location": {
+                        "summary": "The meetup has no coordinates",
+                        "value": {"status": "NO_LOCATION", "weather": None, "ready": False},
+                    },
+                    "pending": {
+                        "summary": "Located, but the window is not over plus 2 hours",
+                        "value": {"status": "PENDING", "weather": None, "ready": False},
+                    },
+                    "not_fetched": {
+                        "summary": "Ready, but no row yet",
+                        "value": {"status": "NOT_FETCHED", "weather": None, "ready": True},
+                    },
+                }
+            }
+        },
+    },
+    **merge_error_responses(
+        error_401_invalid_credentials(),
+        error_403_not_approved(),
+        error_404_meetup(),
+    ),
+}
+
+REFRESH_WEATHER_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Weather fetched again and stored over the previous snapshot",
+        "content": {
+            "application/json": {"examples": {"refreshed": {"summary": "Refreshed", "value": WEATHER_EXAMPLE}}}
+        },
+    },
+    **merge_error_responses(
+        error_401_invalid_credentials(),
+        error_403_admin_required(),
+        error_404_meetup(),
+        error_409_weather_not_ready(),
+        error_502_weather_provider(),
+        error_504_weather_timeout(),
+    ),
 }
 
 # ── PATCH /meetups/{id}/finalize ──────────────────────────────────────────────

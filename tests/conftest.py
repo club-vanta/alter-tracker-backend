@@ -18,13 +18,14 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlmodel import Session, SQLModel
 
 from app.core.config import get_settings
-from app.core.database import get_session
+from app.core.database import get_session, get_session_factory
 from app.core.security import get_password_hash
 from app.domain_types import MazmoUserId
 from app.main import app
@@ -72,6 +73,27 @@ def _ensure_test_database_exists() -> None:
 
 
 # -- Session-scoped: create DB schema once ------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def block_unmocked_http():
+    """
+    Fail loudly when a test reaches a real provider.
+
+    Every httpx request method (get, post, stream) ends in AsyncClient.send, so
+    patching it covers them all. Tests that patch AsyncClient.get on top of this
+    never reach send.
+    """
+
+    async def refuse(
+        self: httpx.AsyncClient, request: httpx.Request, *args: object, **kwargs: object
+    ) -> httpx.Response:
+        raise AssertionError(
+            f"Unmocked network call: {request.method} {request.url}. Patch httpx.AsyncClient.get in this test."
+        )
+
+    with patch.object(httpx.AsyncClient, "send", refuse):
+        yield
 
 
 @pytest.fixture(scope="session", autouse=False)
@@ -160,7 +182,12 @@ def client(session: Session):
     def override_get_session():
         yield session
 
+    def override_session_factory():
+        # A second session on the same connection: separate state, same shared transaction.
+        return lambda: Session(bind=session.get_bind())
+
     app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_session_factory] = override_session_factory
     with TestClient(app, raise_server_exceptions=True) as c:
         yield c
     app.dependency_overrides.clear()

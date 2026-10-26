@@ -1,4 +1,4 @@
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 
 from sqlmodel import Session, create_engine
 
@@ -22,3 +22,11 @@ def get_session() -> Generator[Session]:
     """FastAPI dependency that provides a database session per request."""
     with Session(engine) as session:
         yield session
+
+
+type SessionFactory = Callable[[], Session]
+
+
+def get_session_factory() -> SessionFactory:
+    """FastAPI dependency for work that needs its own short session (overridden in tests)."""
+    return lambda: Session(engine)

@@ -8,7 +8,20 @@ Usage:
     @router.post("/ban", responses={**error_404_guest(), **error_409_already_banned()})
 """
 
+from datetime import UTC, datetime
 from typing import Any
+
+from app.services.geocoding import GEOCODING_TIMEOUT_DETAIL, GEOCODING_UNAVAILABLE_DETAIL
+from app.services.weather import (
+    WEATHER_NO_DATA_DETAIL,
+    WEATHER_REFRESH_NO_LOCATION_DETAIL,
+    WEATHER_TIMEOUT_DETAIL,
+    WEATHER_UNAVAILABLE_DETAIL,
+    weather_too_early_detail,
+)
+
+WEATHER_TOO_EARLY_EXAMPLE_READY_AT = datetime(2026, 3, 7, 7, 0, tzinfo=UTC)
+
 
 # Type alias for FastAPI responses dict
 ResponsesDict = dict[int | str, dict[str, Any]]
@@ -1023,6 +1036,54 @@ def error_422_validation_reason() -> ResponsesDict:
     }
 
 
+def error_422_validation_location() -> ResponsesDict:
+    """422 - Meetup location set partially or out of range. Only for PATCH .../location."""
+    return {
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "partial_location": {
+                            "summary": "Label without coordinates",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "type": "value_error",
+                                        "loc": ["body"],
+                                        "msg": (
+                                            "Value error, Cannot set location: location_label, latitude and "
+                                            "longitude must be set together. Send all three, or all null to "
+                                            "clear the location."
+                                        ),
+                                        "input": {"location_label": "Club Vanta", "latitude": None, "longitude": None},
+                                    }
+                                ]
+                            },
+                        },
+                        "latitude_out_of_range": {
+                            "summary": "Latitude outside [-90, 90]",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "type": "value_error",
+                                        "loc": ["body"],
+                                        "msg": (
+                                            "Value error, Cannot set location: latitude must be "
+                                            "between -90 and 90, got 91.0."
+                                        ),
+                                        "input": {"location_label": "Club Vanta", "latitude": 91, "longitude": -58.4},
+                                    }
+                                ]
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
 def error_422_validation_guest_type() -> ResponsesDict:
     """422 - guest_type is not one of NORMAL/INVITED/VENDOR/STAFF."""
     return {
@@ -1081,6 +1142,44 @@ def error_422_validation_username() -> ResponsesDict:
 
 
 # ── 502/504 Gateway Errors ────────────────────────────────────────────────────
+
+
+def error_502_geocoding_unavailable() -> ResponsesDict:
+    """502 - The address search provider (Photon) failed. Only for GET /geocode."""
+    return {
+        502: {
+            "description": "Address search unavailable",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "geocoding_unavailable": {
+                            "summary": "Photon returned an error or unreadable data",
+                            "value": {"detail": GEOCODING_UNAVAILABLE_DETAIL},
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_504_geocoding_timeout() -> ResponsesDict:
+    """504 - The address search provider (Photon) did not respond in time. Only for GET /geocode."""
+    return {
+        504: {
+            "description": "Address search timed out",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "geocoding_timeout": {
+                            "summary": "Photon did not respond in time",
+                            "value": {"detail": GEOCODING_TIMEOUT_DETAIL},
+                        },
+                    }
+                }
+            },
+        }
+    }
 
 
 def error_502_mazmo_create_meetup() -> ResponsesDict:
@@ -1210,6 +1309,71 @@ def error_504_mazmo_create_guest() -> ResponsesDict:
                                     "Error: Connection timed out. Try again in a few moments."
                                 )
                             },
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_409_weather_not_ready() -> ResponsesDict:
+    """409 - The meetup cannot be refreshed yet. Only for POST /meetups/{id}/weather/refresh."""
+    return {
+        409: {
+            "description": "Weather cannot be refreshed",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "no_location": {
+                            "summary": "The meetup has no coordinates",
+                            "value": {"detail": WEATHER_REFRESH_NO_LOCATION_DETAIL},
+                        },
+                        "too_early": {
+                            "summary": "The event has not finished or the provider has not published the hours yet",
+                            "value": {"detail": weather_too_early_detail(WEATHER_TOO_EARLY_EXAMPLE_READY_AT)},
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_502_weather_provider() -> ResponsesDict:
+    """502 - Open-Meteo failed or had no data. Only for POST /meetups/{id}/weather/refresh."""
+    return {
+        502: {
+            "description": "Weather provider error",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "no_data": {
+                            "summary": "The provider answered without data for that place and time",
+                            "value": {"detail": WEATHER_NO_DATA_DETAIL},
+                        },
+                        "unavailable": {
+                            "summary": "The provider returned an error or unreadable data",
+                            "value": {"detail": WEATHER_UNAVAILABLE_DETAIL},
+                        },
+                    }
+                }
+            },
+        }
+    }
+
+
+def error_504_weather_timeout() -> ResponsesDict:
+    """504 - Open-Meteo did not respond in time. Only for POST /meetups/{id}/weather/refresh."""
+    return {
+        504: {
+            "description": "Weather provider timed out",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "timeout": {
+                            "summary": "The provider did not respond in time",
+                            "value": {"detail": WEATHER_TIMEOUT_DETAIL},
                         },
                     }
                 }

@@ -285,7 +285,7 @@ def test_sync_when_mazmo_returns_503_responds_with_502_bad_gateway(
     We return 502 to indicate "upstream server error" so the frontend
     can show an appropriate message.
     """
-    request = httpx.Request("GET", "https://prod.mazmoapi.net")
+    request = httpx.Request("GET", "https://api.mazmo.net")
     response = httpx.Response(503, request=request)
     error = httpx.HTTPStatusError("503", request=request, response=response)
     mock_mazmo.fetch_rsvps.side_effect = error
@@ -305,7 +305,7 @@ def test_sync_when_mazmo_is_unreachable_responds_with_504_gateway_timeout(
     that's different from a 5xx error. 504 indicates "couldn't connect"
     so staff knows to check their network or try again later.
     """
-    request = httpx.Request("GET", "https://prod.mazmoapi.net")
+    request = httpx.Request("GET", "https://api.mazmo.net")
     error = httpx.ConnectError("Connection refused", request=request)
 
     mock_mazmo.fetch_rsvps.side_effect = error

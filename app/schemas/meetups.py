@@ -8,7 +8,9 @@ import re
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator, model_validator
+
+from app.models.models import WeatherStatus
 
 # Pattern for validating Mazmo frontend URLs.
 # Expected format: https://mazmo.net/{+community}/{thread-slug}-{id}
@@ -17,6 +19,8 @@ from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator
 #   https://mazmo.net/eventos-reuniones-argentina/alter-cordoba-4217
 #   https://mazmo.net/+eventos-reuniones-argentina/alter-tal-selmo-secret-face-opgnjcy4d0u
 MAZMO_URL_PATTERN = re.compile(r"^https://mazmo\.net/\+?[\w-]+/[\w-]+$")
+
+MAX_LOCATION_LABEL_LENGTH = 255
 
 
 class MeetupPublic(BaseModel):
@@ -36,6 +40,46 @@ class MeetupPublic(BaseModel):
     is_finalized: bool
     finalized_at: datetime | None
     requires_payment: bool
+    location_label: str | None
+    latitude: float | None
+    longitude: float | None
+
+
+class MeetupLocationUpdate(BaseModel):
+    """
+    Request body for setting or clearing a meetup's location.
+
+    All three keys are required. Send them all null to clear the location,
+    or all set to store it: a label of 1..255 characters (trimmed), a latitude
+    in [-90, 90] and a longitude in [-180, 180].
+    """
+
+    location_label: str | None
+    latitude: float | None
+    longitude: float | None
+
+    @model_validator(mode="after")
+    def _validate_location(self) -> "MeetupLocationUpdate":
+        label, latitude, longitude = self.location_label, self.latitude, self.longitude
+        if label is None and latitude is None and longitude is None:
+            return self
+        if label is None or latitude is None or longitude is None:
+            raise ValueError(
+                "Cannot set location: location_label, latitude and longitude must be set together. "
+                "Send all three, or all null to clear the location."
+            )
+        label = label.strip()
+        if not 1 <= len(label) <= MAX_LOCATION_LABEL_LENGTH:
+            raise ValueError(
+                f"Cannot set location: location_label must have 1 to {MAX_LOCATION_LABEL_LENGTH} characters "
+                f"after trimming, got {len(label)}. Shorten the label or send all three fields as null to clear it."
+            )
+        if not -90 <= latitude <= 90:
+            raise ValueError(f"Cannot set location: latitude must be between -90 and 90, got {latitude}.")
+        if not -180 <= longitude <= 180:
+            raise ValueError(f"Cannot set location: longitude must be between -180 and 180, got {longitude}.")
+        self.location_label = label
+        return self
 
 
 class MeetupListResponse(BaseModel):
@@ -152,3 +196,47 @@ class MeetupStatsPublic(BaseModel):
     cancellations: CancellationStats
     guest_types: GuestTypeStats
     payment: PaymentStats
+
+
+class MeetupWeatherPublic(BaseModel):
+    """
+    Weather during the first 6 hours of a meetup, from Open-Meteo.
+
+    Each float summarizes the hours of the window [floor_hour(date), date + 6h). A null
+    means the provider had no value for that series anywhere in the window
+    (shown as "no data"), never zero:
+    - avg_temperature, avg_apparent_temperature: degrees Celsius, mean.
+    - total_precipitation_mm: millimetres, sum. Null when unknown.
+    - max_wind_kmh: km/h, highest hour.
+    - rained: total_precipitation_mm >= 0.2. Null exactly when
+      total_precipitation_mm is null: unknown is not the same as dry.
+
+    fetched_at is when the snapshot was taken; source names the provider
+    dataset. The raw hourly arrays are stored but not returned.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    avg_temperature: float | None
+    avg_apparent_temperature: float | None
+    total_precipitation_mm: float | None
+    max_wind_kmh: float | None
+    rained: bool | None
+    fetched_at: datetime
+    source: str
+
+
+class MeetupWeatherStatusPublic(BaseModel):
+    """
+    Weather of a meetup plus where it stands.
+
+    status is OK (weather is set), NO_LOCATION (no coordinates), PENDING
+    (located, but the window is not over plus 2 hours) or NOT_FETCHED (ready,
+    no row yet). weather is null unless status is OK. ready is true when the
+    meetup has coordinates and its window ended at least 2 hours ago, whether
+    or not a row exists.
+    """
+
+    status: WeatherStatus
+    weather: MeetupWeatherPublic | None
+    ready: bool

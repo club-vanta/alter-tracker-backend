@@ -15,11 +15,16 @@ PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/payment      -> ma
 PATCH /organizations/{org_id}/meetups/{meetup_id}/guests/{id}/payment/undo -> undo payment mark (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/enable-payment  -> mark event as paid (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/disable-payment -> mark event as free (org admin)
+PATCH /organizations/{org_id}/meetups/{meetup_id}/location       -> set or clear the venue (org admin)
+GET   /organizations/{org_id}/meetups/{meetup_id}/weather        -> weather of the meetup (org member)
+POST  /organizations/{org_id}/meetups/{meetup_id}/weather/refresh -> fetch the weather again (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/finalize       -> finalize (org admin)
 PATCH /organizations/{org_id}/meetups/{meetup_id}/unfinalize     -> unfinalize (org admin)
 """
 
+import time
 import uuid
+from collections import Counter
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -29,12 +34,22 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
-from sqlmodel import Session, select
+from sqlmodel import Session, col, delete, select
 
 from app.core.config import Settings, get_settings
-from app.core.database import get_session
+from app.core.database import SessionFactory, get_session, get_session_factory
 from app.core.deps import get_org_admin, get_org_member
-from app.models.models import EventLog, EventType, Guest, GuestType, Meetup, MeetupRsvp, OrganizationBan, User
+from app.models.models import (
+    EventLog,
+    EventType,
+    Guest,
+    GuestType,
+    Meetup,
+    MeetupRsvp,
+    MeetupWeather,
+    OrganizationBan,
+    User,
+)
 from app.openapi_examples.meetups_examples import (
     ADD_WALKIN_RESPONSES,
     CHECKIN_RESPONSES,
@@ -48,6 +63,8 @@ from app.openapi_examples.meetups_examples import (
     LIST_MEETUPS_RESPONSES,
     MARK_PAYMENT_RESPONSES,
     MEETUP_STATS_RESPONSES,
+    READ_WEATHER_RESPONSES,
+    REFRESH_WEATHER_RESPONSES,
     SYNC_MEETUP_RESPONSES,
     UNDO_CHECKIN_REQUEST_EXAMPLES,
     UNDO_CHECKIN_RESPONSES,
@@ -56,6 +73,8 @@ from app.openapi_examples.meetups_examples import (
     UNFINALIZE_MEETUP_RESPONSES,
     UPDATE_GUEST_TYPE_REQUEST_EXAMPLES,
     UPDATE_GUEST_TYPE_RESPONSES,
+    UPDATE_LOCATION_REQUEST_EXAMPLES,
+    UPDATE_LOCATION_RESPONSES,
 )
 from app.schemas import (
     AttendanceStats,
@@ -71,15 +90,35 @@ from app.schemas import (
     MeetupGuestListResponse,
     MeetupGuestPublic,
     MeetupListResponse,
+    MeetupLocationUpdate,
     MeetupPublic,
     MeetupStatsPublic,
+    MeetupWeatherPublic,
+    MeetupWeatherStatusPublic,
     PaymentResponse,
     PaymentStats,
     RsvpPublic,
     SyncResponse,
 )
 from app.services.mazmo import MazmoAPIError, MazmoClient, MazmoNetworkError
+from app.services.payment import PaymentStanding, payment_standing
 from app.services.sync import sync_guests
+from app.services.weather import (
+    WEATHER_NO_DATA_DETAIL,
+    WEATHER_REFRESH_NO_LOCATION_DETAIL,
+    WEATHER_TIMEOUT_DETAIL,
+    WEATHER_UNAVAILABLE_DETAIL,
+    MissingLocationError,
+    NoWeatherDataError,
+    OpenMeteoClient,
+    WeatherTimeoutError,
+    WeatherUnavailableError,
+    fetch_and_store_weather,
+    is_weather_ready,
+    weather_ready_at,
+    weather_status,
+    weather_too_early_detail,
+)
 
 log = structlog.get_logger(__name__)
 router = APIRouter(tags=["meetups"])
@@ -447,13 +486,8 @@ async def get_meetup_stats(
     walkin_count = 0
     cancelled_count = 0
     cancelled_but_paid_count = 0
-    normal_count = 0
-    invited_count = 0
-    vendor_count = 0
-    staff_count = 0
-    paid_count = 0
-    unpaid_count = 0
-    exempt_from_payment_count = 0
+    guest_types: Counter[str] = Counter()
+    payments: Counter[PaymentStanding] = Counter()
 
     for cancelled_rsvp, has_arrived, is_walkin, guest_type, has_paid in rows:
         if cancelled_rsvp:
@@ -470,21 +504,8 @@ async def get_meetup_stats(
         if is_walkin:
             walkin_count += 1
 
-        if guest_type == GuestType.NORMAL.value:
-            normal_count += 1
-            if has_paid:
-                paid_count += 1
-            else:
-                unpaid_count += 1
-        elif guest_type == GuestType.INVITED.value:
-            invited_count += 1
-            exempt_from_payment_count += 1
-        elif guest_type == GuestType.VENDOR.value:
-            vendor_count += 1
-            exempt_from_payment_count += 1
-        elif guest_type == GuestType.STAFF.value:
-            staff_count += 1
-            exempt_from_payment_count += 1
+        guest_types[guest_type] += 1
+        payments[payment_standing(guest_type, has_paid)] += 1
 
     return MeetupStatsPublic(
         attendance=AttendanceStats(
@@ -498,15 +519,15 @@ async def get_meetup_stats(
             cancelled_but_paid_count=cancelled_but_paid_count,
         ),
         guest_types=GuestTypeStats(
-            normal_count=normal_count,
-            invited_count=invited_count,
-            vendor_count=vendor_count,
-            staff_count=staff_count,
+            normal_count=guest_types[GuestType.NORMAL],
+            invited_count=guest_types[GuestType.INVITED],
+            vendor_count=guest_types[GuestType.VENDOR],
+            staff_count=guest_types[GuestType.STAFF],
         ),
         payment=PaymentStats(
-            paid_count=paid_count,
-            unpaid_count=unpaid_count,
-            exempt_from_payment_count=exempt_from_payment_count,
+            paid_count=payments[PaymentStanding.PAID],
+            unpaid_count=payments[PaymentStanding.PENDING],
+            exempt_from_payment_count=payments[PaymentStanding.EXEMPT],
         ),
     )
 
@@ -1188,6 +1209,97 @@ async def enable_payment_requirement(
     return meetup
 
 
+# -- Set or clear the meetup location -------------------------------------------
+
+
+async def _fetch_weather_after_location_change(
+    session_factory: SessionFactory, meetup_id: uuid.UUID, org_id: uuid.UUID, settings: Settings
+) -> None:
+    """Fetch the weather of a just-moved meetup; whatever goes wrong is logged and ignored.
+
+    Saving the venue must never fail because of weather. The fetch runs in its
+    own short session, so a database error in it cannot poison the request
+    session. That session holds one pooled connection during the call, bounded
+    by the 5 s provider timeout; org admins only, and a location is saved rarely.
+    The caller has already committed, so its own session holds no connection
+    meanwhile.
+    """
+    log_context = {"meetup_id": str(meetup_id), "org_id": str(org_id)}
+    try:
+        with session_factory() as fetch_session:
+            meetup = fetch_session.get(Meetup, meetup_id)
+            if meetup is None:
+                return
+            async with OpenMeteoClient(settings) as client:
+                await fetch_and_store_weather(fetch_session, meetup, client)
+    except (WeatherUnavailableError, MissingLocationError) as exc:
+        log.warning("Inline weather fetch failed", error=type(exc).__name__, detail=str(exc), **log_context)
+    except Exception:
+        # Never fail the location save over weather; the worker retries later.
+        log.exception("Inline weather fetch crashed", **log_context)
+
+
+@router.patch(
+    "/organizations/{org_id}/meetups/{meetup_id}/location",
+    response_model=MeetupPublic,
+    summary="Set or clear the venue of a meetup (org admin only)",
+    responses=UPDATE_LOCATION_RESPONSES,
+)
+async def update_meetup_location(
+    org_id: uuid.UUID,
+    meetup_id: uuid.UUID,
+    payload: Annotated[MeetupLocationUpdate, Body(openapi_examples=UPDATE_LOCATION_REQUEST_EXAMPLES)],
+    session: Session = Depends(get_session),
+    admin: User = Depends(get_org_admin),
+    settings: Settings = Depends(get_settings),
+    session_factory: SessionFactory = Depends(get_session_factory),
+) -> Meetup:
+    """
+    Set the venue of a meetup (label, latitude and longitude together) or
+    clear it by sending all three as null.
+
+    Allowed on finalized meetups: the venue is descriptive metadata and does
+    not affect check-ins or payments. Returns 422 if the fields are not set
+    or cleared together, or are out of range.
+
+    Weather: when the coordinates change or are cleared, the stored weather
+    is deleted in the same commit (it described the old place). If the meetup
+    is then ready for weather (see GET .../weather), it is fetched inline.
+    A provider failure is logged and ignored: this route still returns 200
+    and the weather worker retries later. A label-only change keeps the
+    stored weather.
+    """
+    meetup = _get_meetup_or_404_in_org(session, meetup_id, org_id)
+
+    moved = (meetup.latitude, meetup.longitude) != (payload.latitude, payload.longitude)
+    meetup.location_label = payload.location_label
+    meetup.latitude = payload.latitude
+    meetup.longitude = payload.longitude
+    # Decided before the commit, from the attributes just set, so the request
+    # session does not open a new transaction (and hold a connection) before the fetch.
+    fetch_weather = moved and is_weather_ready(meetup, datetime.now(UTC))
+
+    session.add(meetup)
+    if moved:
+        # sqlmodel's exec() overloads only accept select statements, not Delete.
+        session.exec(delete(MeetupWeather).where(col(MeetupWeather.meetup_id) == meetup_id))  # type: ignore[arg-type]
+    session.commit()
+
+    if fetch_weather:
+        await _fetch_weather_after_location_change(session_factory, meetup_id, org_id, settings)
+    session.refresh(meetup)
+
+    log.info(
+        "Meetup location updated",
+        staff=admin.username,
+        meetup_id=str(meetup_id),
+        meetup_name=meetup.name,
+        org_id=str(org_id),
+        cleared=meetup.location_label is None,
+    )
+    return meetup
+
+
 # -- Disable payment requirement ------------------------------------------------
 
 
@@ -1354,3 +1466,116 @@ async def unfinalize_meetup(
         org_id=str(org_id),
     )
     return meetup
+
+
+# -- Weather ------------------------------------------------------------------
+
+
+@router.get(
+    "/organizations/{org_id}/meetups/{meetup_id}/weather",
+    response_model=MeetupWeatherStatusPublic,
+    summary="Weather of a meetup (org member)",
+    responses=READ_WEATHER_RESPONSES,
+)
+async def get_meetup_weather(
+    org_id: uuid.UUID,
+    meetup_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    _member: User = Depends(get_org_member),
+) -> MeetupWeatherStatusPublic:
+    """
+    Weather during the first 6 hours of a meetup, plus where it stands.
+
+    status is NO_LOCATION without coordinates, OK when a row exists, PENDING
+    while the window is not over plus 2 hours, otherwise NOT_FETCHED (an org
+    admin can fetch it via POST .../weather/refresh). weather is null unless
+    status is OK; ready is true once the meetup has coordinates and its
+    window ended at least 2 hours ago.
+    """
+    meetup = _get_meetup_or_404_in_org(session, meetup_id, org_id)
+    row = session.get(MeetupWeather, meetup_id)
+    now = datetime.now(UTC)
+    return MeetupWeatherStatusPublic(
+        status=weather_status(meetup, row is not None, now),
+        weather=MeetupWeatherPublic.model_validate(row) if row else None,
+        ready=is_weather_ready(meetup, now),
+    )
+
+
+_WEATHER_REFRESH_FAILURES: dict[str, tuple[int, str]] = {
+    "no_data": (status.HTTP_502_BAD_GATEWAY, WEATHER_NO_DATA_DETAIL),
+    "timeout": (status.HTTP_504_GATEWAY_TIMEOUT, WEATHER_TIMEOUT_DETAIL),
+    "unavailable": (status.HTTP_502_BAD_GATEWAY, WEATHER_UNAVAILABLE_DETAIL),
+}
+
+
+def _weather_refresh_failure(
+    cause: str, exc: WeatherUnavailableError, meetup_id: uuid.UUID, started: float
+) -> HTTPException:
+    """Log a failed provider call once, with the meetup, and return the matching HTTP error."""
+    log.warning(
+        "Weather refresh failed",
+        cause=cause,
+        meetup_id=str(meetup_id),
+        detail=str(exc),
+        elapsed=time.monotonic() - started,
+    )
+    http_status, detail = _WEATHER_REFRESH_FAILURES[cause]
+    return HTTPException(status_code=http_status, detail=detail)
+
+
+@router.post(
+    "/organizations/{org_id}/meetups/{meetup_id}/weather/refresh",
+    response_model=MeetupWeatherPublic,
+    summary="Fetch the weather of a meetup again (org admin only)",
+    responses=REFRESH_WEATHER_RESPONSES,
+)
+async def refresh_meetup_weather(
+    org_id: uuid.UUID,
+    meetup_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    admin: User = Depends(get_org_admin),
+    settings: Settings = Depends(get_settings),
+) -> MeetupWeatherPublic:
+    """
+    Fetch the weather from Open-Meteo and overwrite the stored snapshot.
+
+    Returns 409 when the meetup has no location, or before the weather is
+    available (8 hours after the event starts; the message gives the time).
+    Returns 504 when the provider does not respond in time, and 502 when it
+    has no data for that place and time or is otherwise unavailable; the
+    stored snapshot, if any, is left untouched.
+    """
+    meetup = _get_meetup_or_404_in_org(session, meetup_id, org_id)
+
+    if meetup.latitude is None or meetup.longitude is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=WEATHER_REFRESH_NO_LOCATION_DETAIL)
+    if not is_weather_ready(meetup, datetime.now(UTC)):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=weather_too_early_detail(weather_ready_at(meetup))
+        )
+
+    # The session (one pooled connection) stays checked out during the provider
+    # call, bounded by the 5 s timeout. Acceptable: org admins only, and nothing
+    # is written before the call. Releasing it early would mean rollback/close
+    # on the request session, which the test fixtures' shared transaction does
+    # not tolerate cleanly.
+    started = time.monotonic()
+    try:
+        async with OpenMeteoClient(settings) as client:
+            row = await fetch_and_store_weather(session, meetup, client)
+    except NoWeatherDataError as exc:
+        raise _weather_refresh_failure("no_data", exc, meetup_id, started) from exc
+    except WeatherTimeoutError as exc:
+        raise _weather_refresh_failure("timeout", exc, meetup_id, started) from exc
+    except WeatherUnavailableError as exc:
+        raise _weather_refresh_failure("unavailable", exc, meetup_id, started) from exc
+
+    log.info(
+        "Meetup weather refreshed",
+        staff=admin.username,
+        meetup_id=str(meetup_id),
+        meetup_name=meetup.name,
+        org_id=str(org_id),
+    )
+    return MeetupWeatherPublic.model_validate(row)

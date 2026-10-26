@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Column, DateTime, Integer
+from sqlalchemy import JSON, Column, DateTime, Integer
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
@@ -99,6 +99,90 @@ class GuestAttendanceStatus(StrEnum):
     CANCELLED = "CANCELLED"
     NO_SHOW = "NO_SHOW"
     UPCOMING = "UPCOMING"
+
+
+class StatsComparisonKind(StrEnum):
+    """
+    What an org statistics block is compared against.
+
+    PREVIOUS_PERIOD: the period of the same length right before the selected one.
+    PERIOD_AVERAGE:  one meetup compared with the whole selected period.
+    """
+
+    PREVIOUS_PERIOD = "PREVIOUS_PERIOD"
+    PERIOD_AVERAGE = "PERIOD_AVERAGE"
+
+
+class WeatherStatus(StrEnum):
+    """
+    Where the weather of a meetup stands.
+
+    OK:           a weather row exists.
+    NO_LOCATION:  the meetup has no coordinates, so there is nothing to look up.
+    PENDING:      it has a location but its window is not over yet, plus the
+                  provider delay (see is_weather_ready).
+    NOT_FETCHED:  ready, but no row yet (the worker has not got to it, or the
+                  provider failed); an org admin can refresh.
+    """
+
+    OK = "OK"
+    NO_LOCATION = "NO_LOCATION"
+    PENDING = "PENDING"
+    NOT_FETCHED = "NOT_FETCHED"
+
+
+class StatsLeadTimeBucket(StrEnum):
+    """How many whole local days before the meetup an RSVP was made."""
+
+    SAME_DAY = "SAME_DAY"
+    ONE_DAY = "ONE_DAY"
+    TWO_THREE = "TWO_THREE"
+    FOUR_SEVEN = "FOUR_SEVEN"
+    EIGHT_FOURTEEN = "EIGHT_FOURTEEN"
+    FIFTEEN_PLUS = "FIFTEEN_PLUS"
+
+
+class StatsTemperatureBand(StrEnum):
+    """Average temperature of a meetup's first 6 hours, in degrees Celsius. The lower bound is inclusive."""
+
+    BELOW_10 = "BELOW_10"
+    FROM_10_TO_15 = "FROM_10_TO_15"
+    FROM_15_TO_20 = "FROM_15_TO_20"
+    FROM_20_TO_25 = "FROM_20_TO_25"
+    FROM_25 = "FROM_25"
+
+
+class StatsAgeBucket(StrEnum):
+    """Age range of an attendee, from the Mazmo profile. UNKNOWN covers missing and implausible ages."""
+
+    AGE_18_24 = "AGE_18_24"
+    AGE_25_29 = "AGE_25_29"
+    AGE_30_34 = "AGE_30_34"
+    AGE_35_39 = "AGE_35_39"
+    AGE_40_49 = "AGE_40_49"
+    AGE_50_PLUS = "AGE_50_PLUS"
+    UNKNOWN = "UNKNOWN"
+
+
+class StatsFrequencyBucket(StrEnum):
+    """How many times a guest attended in the selected period."""
+
+    ONE = "ONE"
+    TWO = "TWO"
+    THREE_FIVE = "THREE_FIVE"
+    SIX_PLUS = "SIX_PLUS"
+
+
+class StatsVisitHistory(StrEnum):
+    """
+    Whether a guest had come before when they signed up for a meetup.
+
+    FIRST_TIME: no attendance at an earlier finalized meetup of the org.
+    RETURNING:  at least one.
+    """
+
+    FIRST_TIME = "FIRST_TIME"
+    RETURNING = "RETURNING"
 
 
 class GuestDisplaynameSource(StrEnum):
@@ -361,6 +445,11 @@ class Meetup(SQLModel, table=True):
 
     requires_payment: bool = Field(default=False)
 
+    # Venue, set or cleared together (see MeetupLocationUpdate).
+    location_label: str | None = Field(default=None, max_length=255)
+    latitude: float | None = Field(default=None)
+    longitude: float | None = Field(default=None)
+
     org: Organization = Relationship(back_populates="meetups")
 
     rsvps: list["MeetupRsvp"] = Relationship(
@@ -490,6 +579,46 @@ class GuestMazmoProfile(SQLModel, table=True):
     synced_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     guest: Guest = Relationship(back_populates="mazmo_profile")
+
+
+# -- Meetup Weather -----------------------------------------------------------
+
+
+class MeetupWeather(SQLModel, table=True):
+    """
+    Weather during the first 6 hours of a meetup, from Open-Meteo.
+
+    1:1 with Meetup - meetup_id IS the primary key, like GuestMazmoProfile.
+    A row is a snapshot that gets overwritten on refresh and deleted when the
+    meetup's coordinates change (it no longer describes that place).
+
+    The four float columns summarize the hours in [floor_hour(date),
+    date + 6h). NULL means the provider had no value for that series anywhere
+    in the window (avg_temperature, avg_apparent_temperature,
+    total_precipitation_mm, max_wind_kmh). rained is total_precipitation_mm >=
+    0.2, so it is NULL exactly when total_precipitation_mm is NULL: unknown is
+    not the same as dry. A row is never written when every series is empty.
+
+    hourly stores the raw hourly arrays (time, temperature_2m,
+    apparent_temperature, precipitation, wind_speed_10m) restricted to the
+    window hours used for the summary, nulls included, not the whole day the
+    provider returned. That keeps the row small and lets the summary be
+    audited against exactly the data behind it.
+    """
+
+    __tablename__ = "meetup_weather"  # type: ignore[assignment]
+
+    meetup_id: uuid.UUID = Field(foreign_key="meetups.id", primary_key=True, ondelete="CASCADE")
+    avg_temperature: float | None = Field(default=None)
+    avg_apparent_temperature: float | None = Field(default=None)
+    total_precipitation_mm: float | None = Field(default=None)
+    max_wind_kmh: float | None = Field(default=None)
+    rained: bool | None = Field(default=None)
+    hourly: dict[str, list[str | float | None]] = Field(sa_column=Column(JSON, nullable=False))
+    fetched_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    source: str = Field(max_length=64)
 
 
 # ── Event Log ─────────────────────────────────────────────────────────────────

@@ -56,3 +56,11 @@ class AddOrgMemberRequest(BaseModel):
 class OrgMemberListResponse(BaseModel):
     total: int
     members: list[OrgMemberPublic]
+
+
+class GeocodeResult(BaseModel):
+    """One address match from the geocoding search."""
+
+    label: str
+    latitude: float
+    longitude: float

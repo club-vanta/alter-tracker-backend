@@ -9,10 +9,10 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.models.models import Guest, GuestAttendanceStatus, Meetup, MeetupRsvp, Organization, OrgRole, User
-from app.services.attendance import AttendanceCounts, attendance_status, summarize_attendance
+from app.services.attendance import AttendanceCounts, attendance_status, attendance_status_expr, summarize_attendance
 from tests.conftest import make_guest, make_meetup, make_org, make_org_member, make_rsvp
 
 # -- attendance_status rule -------------------------------------------------------
@@ -111,6 +111,44 @@ def test_attendance_status_returns_upcoming_when_not_finalized():
     result = attendance_status(_rsvp(), _meetup(is_finalized=False))
 
     assert result == GuestAttendanceStatus.UPCOMING
+
+
+@pytest.mark.parametrize("has_arrived", [False, True])
+@pytest.mark.parametrize("is_walkin", [False, True])
+@pytest.mark.parametrize("cancelled_rsvp", [False, True])
+@pytest.mark.parametrize("is_finalized", [False, True])
+def test_attendance_status_expr_matches_python_rule(
+    session: Session,
+    org: Organization,
+    has_arrived: bool,
+    is_walkin: bool,
+    cancelled_rsvp: bool,
+    is_finalized: bool,
+):
+    """
+    Verify the SQL CASE and attendance_status() agree on every flag combination.
+
+    WHY: stats aggregate in SQL; the rule must not drift from the Python one.
+    """
+    meetup = make_meetup(session, org=org, is_finalized=is_finalized)
+    rsvp = make_rsvp(
+        session,
+        meetup=meetup,
+        guest=make_guest(session),
+        has_arrived=has_arrived,
+        is_walkin=is_walkin,
+        cancelled_rsvp=cancelled_rsvp,
+    )
+
+    sql_value = session.exec(
+        select(attendance_status_expr())
+        .select_from(MeetupRsvp)
+        .join(Meetup, MeetupRsvp.meetup_id == Meetup.id)  # type: ignore[arg-type]
+        .where(MeetupRsvp.meetup_id == meetup.id)  # type: ignore[arg-type]
+    ).one()
+
+    expected = attendance_status(rsvp, meetup)
+    assert sql_value == (expected.value if expected else None)
 
 
 def test_summarize_attendance_folds_walkins_into_attended():

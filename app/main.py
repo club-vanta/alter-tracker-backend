@@ -7,7 +7,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.middleware import RequestContextMiddleware
-from app.routers import auth, events, guests, meetups, meta, organizations, staff, users
+from app.routers import auth, events, guests, meetups, meta, organizations, staff, stats, users
 
 settings = get_settings()
 
@@ -140,5 +140,6 @@ app.include_router(staff.router)
 app.include_router(guests.router)
 app.include_router(meetups.router)
 app.include_router(events.router)
+app.include_router(stats.router)
 app.include_router(users.router)
 app.include_router(meta.router)

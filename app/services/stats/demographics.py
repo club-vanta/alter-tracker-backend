@@ -1,0 +1,293 @@
+"""
+Demographic statistics: gender and age of the people who attend, from their
+Mazmo profile.
+
+The unit is one audience RSVP (an attendance), not a unique guest: someone who
+came to five meetups counts five times. A guest with no profile, or a profile
+without the value, falls in the "unknown" group (gender None, age bucket
+UNKNOWN) so group totals always equal the attended total. Statuses come only
+from attendance_status_expr.
+
+demographic_counts also counts the expected and no-show RSVPs of each group,
+so the no-show statistics group people the same way.
+"""
+
+import uuid
+from collections import defaultdict
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from sqlalchemy import ColumnElement, Select, and_, case, func, select
+from sqlalchemy.orm import Mapped
+from sqlmodel import Session, col
+
+from app.models.models import (
+    GuestAttendanceStatus,
+    GuestMazmoProfile,
+    Meetup,
+    MeetupRsvp,
+    StatsAgeBucket,
+    StatsComparisonKind,
+)
+from app.services.attendance import EXPECTED_STATUSES, attendance_status_expr
+from app.services.stats.scope import (
+    AUDIENCE_GUEST_TYPES,
+    StatsPeriod,
+    finalized_meetup_conditions,
+    ratio,
+    single_meetup_conditions,
+)
+
+# Mazmo allows fake ages (3, 126); outside this range an age is treated as unknown.
+MIN_PLAUSIBLE_AGE = 18
+MAX_PLAUSIBLE_AGE = 99
+
+# Upper bound (exclusive) of each bucket, in enum order. The last known bucket is open-ended.
+_AGE_BUCKET_LIMITS: tuple[tuple[int, StatsAgeBucket], ...] = (
+    (25, StatsAgeBucket.AGE_18_24),
+    (30, StatsAgeBucket.AGE_25_29),
+    (35, StatsAgeBucket.AGE_30_34),
+    (40, StatsAgeBucket.AGE_35_39),
+    (50, StatsAgeBucket.AGE_40_49),
+)
+
+# -- Result shapes --
+
+
+@dataclass(frozen=True)
+class GenderGroup:
+    """One gender group of attendances. key is a Mazmo gender code (None: unknown)."""
+
+    key: str | None
+    attended: int
+    attended_share: float | None
+
+
+@dataclass(frozen=True)
+class AgeGroup:
+    """One age group of attendances, keyed by a StatsAgeBucket (UNKNOWN for no plausible age)."""
+
+    key: StatsAgeBucket
+    attended: int
+    attended_share: float | None
+
+
+@dataclass(frozen=True)
+class DemographicSummary:
+    attended: int
+    median_age: float | None
+    known_age_share: float | None
+
+
+@dataclass(frozen=True)
+class DemographicStats:
+    gender: list[GenderGroup]
+    age: list[AgeGroup]
+    summary: DemographicSummary
+    comparison_kind: StatsComparisonKind | None
+    comparison: DemographicSummary | None
+
+
+@dataclass(frozen=True)
+class GroupCounts:
+    """Audience RSVPs of one group: attended (walk-ins included), expected (signed up, not cancelled) and no_show."""
+
+    attended: int = 0
+    expected: int = 0
+    no_show: int = 0
+
+
+@dataclass(frozen=True)
+class DemographicCounts:
+    """
+    RSVP counts per gender key (only the keys that occur) and per age bucket
+    (every bucket, empty ones as zeros).
+    """
+
+    by_gender: dict[str | None, GroupCounts]
+    by_age: dict[StatsAgeBucket, GroupCounts]
+
+
+# -- Age buckets --
+
+
+def age_bucket(age: int | None) -> StatsAgeBucket:
+    """Bucket of an age; None and implausible ages are UNKNOWN. Twin of age_bucket_expr."""
+    if age is None or not MIN_PLAUSIBLE_AGE <= age <= MAX_PLAUSIBLE_AGE:
+        return StatsAgeBucket.UNKNOWN
+    for limit, bucket in _AGE_BUCKET_LIMITS:
+        if age < limit:
+            return bucket
+    return StatsAgeBucket.AGE_50_PLUS
+
+
+def age_bucket_expr(age: ColumnElement[int] | Mapped[int | None]) -> ColumnElement[str]:
+    """
+    SQL twin of age_bucket(): a CASE returning StatsAgeBucket values.
+
+    WHY: grouping happens in the database so thousands of RSVPs are never
+    loaded. test_age_bucket_sql_matches_python keeps the two forms in step.
+    """
+    return case(
+        (age.is_(None), StatsAgeBucket.UNKNOWN.value),
+        (~age.between(MIN_PLAUSIBLE_AGE, MAX_PLAUSIBLE_AGE), StatsAgeBucket.UNKNOWN.value),
+        *((age < limit, bucket.value) for limit, bucket in _AGE_BUCKET_LIMITS),
+        else_=StatsAgeBucket.AGE_50_PLUS.value,
+    )
+
+
+# -- Queries --
+
+
+def _gender_expr() -> ColumnElement[str | None]:
+    """Stored gender, with blank and missing values both NULL."""
+    return func.nullif(func.trim(GuestMazmoProfile.gender), "")
+
+
+def _with_audience_rsvps(query: Select, conditions: tuple[ColumnElement[bool], ...]) -> Select:
+    """
+    Meetups matching the conditions, joined to their audience RSVPs and then
+    outer-joined to each guest's Mazmo profile, so guests without one still count.
+    """
+    return (
+        query.select_from(Meetup)
+        .join(
+            MeetupRsvp,
+            and_(
+                MeetupRsvp.meetup_id == Meetup.id,  # type: ignore[arg-type]
+                MeetupRsvp.guest_type.in_(AUDIENCE_GUEST_TYPES),  # type: ignore[attr-defined]
+            ),
+        )
+        .outerjoin(GuestMazmoProfile, GuestMazmoProfile.guest_id == MeetupRsvp.guest_id)  # type: ignore[arg-type]
+        .where(*conditions)
+    )
+
+
+def _counts_query(*conditions: ColumnElement[bool]) -> Select:
+    """
+    Audience RSVP counts per (gender, age bucket). Uses SQLAlchemy's select
+    because sqlmodel's overloads stop at four columns.
+    """
+    status = attendance_status_expr()
+    walkin = GuestAttendanceStatus.WALKIN.value
+    gender = _gender_expr()
+    bucket = age_bucket_expr(col(GuestMazmoProfile.age))
+    return _with_audience_rsvps(
+        select(
+            gender,
+            bucket,
+            func.count().filter(status.in_([GuestAttendanceStatus.ATTENDED.value, walkin])),
+            func.count().filter(status.in_(EXPECTED_STATUSES)),
+            func.count().filter(status == GuestAttendanceStatus.NO_SHOW.value),
+        ),
+        conditions,
+    ).group_by(gender, bucket)
+
+
+def _median_age_query(*conditions: ColumnElement[bool]) -> Select:
+    """Median age of attended RSVPs with a plausible age (NULL when there are none)."""
+    status = attendance_status_expr()
+    return _with_audience_rsvps(
+        select(func.percentile_cont(0.5).within_group(col(GuestMazmoProfile.age))), conditions
+    ).where(
+        status.in_([GuestAttendanceStatus.ATTENDED.value, GuestAttendanceStatus.WALKIN.value]),
+        GuestMazmoProfile.age.between(MIN_PLAUSIBLE_AGE, MAX_PLAUSIBLE_AGE),  # type: ignore[union-attr]
+    )
+
+
+# -- Grouping --
+
+
+def demographic_counts(session: Session, *conditions: ColumnElement[bool]) -> DemographicCounts:
+    """Audience RSVP counts per gender and per age bucket over the meetups matching the conditions."""
+    gender_totals: defaultdict[str | None, list[int]] = defaultdict(lambda: [0, 0, 0])
+    age_totals: defaultdict[str, list[int]] = defaultdict(lambda: [0, 0, 0])
+    for gender, bucket, attended, expected, no_show in session.execute(_counts_query(*conditions)).all():
+        for totals in (gender_totals[gender], age_totals[bucket]):
+            totals[0] += attended
+            totals[1] += expected
+            totals[2] += no_show
+    return DemographicCounts(
+        by_gender={key: GroupCounts(*totals) for key, totals in gender_totals.items()},
+        by_age={bucket: GroupCounts(*age_totals.get(bucket.value, (0, 0, 0))) for bucket in StatsAgeBucket},
+    )
+
+
+@dataclass(frozen=True)
+class _Scope:
+    """Grouped counts and median age for one set of meetups."""
+
+    counts: DemographicCounts
+    median_age: float | None
+
+
+def _load_scope(session: Session, *conditions: ColumnElement[bool]) -> _Scope:
+    median = session.execute(_median_age_query(*conditions)).scalar_one()
+    return _Scope(
+        counts=demographic_counts(session, *conditions),
+        median_age=round(float(median), 1) if median is not None else None,
+    )
+
+
+def _groups[K, G](counts: dict[K, GroupCounts], build: Callable[..., G]) -> list[G]:
+    """One group per key, built with its attendances and their share of the total."""
+    total = sum(c.attended for c in counts.values())
+    return [
+        build(key=key, attended=c.attended, attended_share=ratio(c.attended, total, 4)) for key, c in counts.items()
+    ]
+
+
+def _gender_groups(scope: _Scope) -> list[GenderGroup]:
+    """Largest first, ties by code, unknown (None) last. Groups nobody attended are dropped."""
+    groups = _groups({key: c for key, c in scope.counts.by_gender.items() if c.attended}, GenderGroup)
+    return sorted(groups, key=lambda g: (g.key is None, -g.attended, g.key or ""))
+
+
+def _age_groups(scope: _Scope) -> list[AgeGroup]:
+    """All buckets in enum order, empty ones as zeros."""
+    return _groups(scope.counts.by_age, AgeGroup)
+
+
+def _summarize(scope: _Scope) -> DemographicSummary:
+    age = _age_groups(scope)
+    attended = sum(g.attended for g in age)
+    known = sum(g.attended for g in age if g.key != StatsAgeBucket.UNKNOWN)
+    return DemographicSummary(
+        attended=attended,
+        median_age=scope.median_age,
+        known_age_share=ratio(known, attended, 4),
+    )
+
+
+# -- Entry point --
+
+
+def demographic_stats(
+    session: Session, org_id: uuid.UUID, period: StatsPeriod, meetup_id: uuid.UUID | None
+) -> DemographicStats:
+    """
+    Demographics for the whole period (compared with the previous period), or
+    for one meetup (compared with the whole period). The caller guarantees
+    meetup_id is a finalized meetup of the org.
+    """
+    period_conditions = finalized_meetup_conditions(org_id, period)
+
+    if meetup_id is not None:
+        scope = _load_scope(session, *single_meetup_conditions(org_id, meetup_id))
+        comparison_kind = StatsComparisonKind.PERIOD_AVERAGE
+        comparison = _summarize(_load_scope(session, *period_conditions))
+    else:
+        scope = _load_scope(session, *period_conditions)
+        previous = period.previous()
+        comparison_kind = StatsComparisonKind.PREVIOUS_PERIOD if previous else None
+        comparison = (
+            _summarize(_load_scope(session, *finalized_meetup_conditions(org_id, previous))) if previous else None
+        )
+
+    return DemographicStats(
+        gender=_gender_groups(scope),
+        age=_age_groups(scope),
+        summary=_summarize(scope),
+        comparison_kind=comparison_kind,
+        comparison=comparison,
+    )

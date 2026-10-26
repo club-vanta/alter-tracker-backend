@@ -67,7 +67,7 @@ class Settings(BaseSettings):
 
     # Base URL of the Mazmo API. Extracted here so it can be overridden in
     # tests or if Mazmo ever changes their domain.
-    mazmo_base_url: str = "https://prod.mazmoapi.net"
+    mazmo_base_url: str = "https://api.mazmo.net"
 
     # Maximum number of user IDs sent per /users request.
     # Keeps query strings short enough to avoid 414 URI Too Long errors.
@@ -81,6 +81,24 @@ class Settings(BaseSettings):
     # Timeout in seconds for outbound HTTP calls to Mazmo.
     # If Mazmo doesn't respond within this window the request is aborted.
     mazmo_request_timeout: float = 15.0
+
+    # -- Photon geocoding API -----------------------------------------------------
+
+    # Base URL of the Photon search endpoint used for the meetup address search.
+    photon_base_url: str = "https://photon.komoot.io/api"
+
+    # Timeout in seconds for outbound HTTP calls to Photon. The address search
+    # is interactive, so a slow provider fails fast instead of hanging the form.
+    photon_request_timeout: float = 5.0
+
+    # -- Open-Meteo weather API ---------------------------------------------------
+
+    # Base URL of the Open-Meteo historical forecast API used for meetup weather.
+    open_meteo_base_url: str = "https://historical-forecast-api.open-meteo.com/v1/forecast"
+
+    # Timeout in seconds for outbound HTTP calls to Open-Meteo. Inline fetches
+    # run inside a PATCH, so a slow provider fails fast and the worker retries.
+    open_meteo_request_timeout: float = 5.0
 
     # A regex of the allowed domains
     allowed_domains_regex: str = ALLOWED_DOMAINS_REGEX
