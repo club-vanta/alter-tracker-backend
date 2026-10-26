@@ -25,8 +25,7 @@ from app.services.stats.demographics import (
     demographic_counts,
     demographic_stats,
 )
-from app.services.stats.scope import finalized_meetup_conditions
-from app.services.stats.scope import StatsPeriod
+from app.services.stats.scope import StatsPeriod, finalized_meetup_conditions
 from tests.conftest import get_auth_headers, make_guest, make_meetup, make_org, make_org_member, make_rsvp, make_user
 
 ALL_TIME = StatsPeriod(None, None)
