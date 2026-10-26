@@ -510,6 +510,7 @@ WEATHER_STATS_EXAMPLE = {
             "avg_temperature": 11.4,
             "rained": True,
             "total_precipitation_mm": 3.2,
+            "has_weather": True,
         },
         {
             "meetup_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
@@ -520,6 +521,7 @@ WEATHER_STATS_EXAMPLE = {
             "avg_temperature": 18.0,
             "rained": False,
             "total_precipitation_mm": 0.0,
+            "has_weather": True,
         },
         {
             "meetup_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
@@ -530,6 +532,7 @@ WEATHER_STATS_EXAMPLE = {
             "avg_temperature": None,
             "rained": None,
             "total_precipitation_mm": None,
+            "has_weather": False,
         },
     ],
     "rainy": {"events": 1, "avg_attended": 30.0, "no_show_rate": 0.2368},

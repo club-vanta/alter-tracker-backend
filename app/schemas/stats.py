@@ -368,6 +368,8 @@ class WeatherMeetupRowPublic(BaseModel):
     One finalized meetup with its attendance and weather. The weather fields are
     null without a value: all three when the meetup has no weather row, and
     rained and total_precipitation_mm when the provider had no precipitation data.
+    has_weather is true when the meetup has a weather row, so false exactly for
+    the meetups counted in without_weather.
     """
 
     meetup_id: uuid.UUID
@@ -378,6 +380,7 @@ class WeatherMeetupRowPublic(BaseModel):
     avg_temperature: float | None
     rained: bool | None
     total_precipitation_mm: float | None
+    has_weather: bool
 
     model_config = ConfigDict(from_attributes=True)
 

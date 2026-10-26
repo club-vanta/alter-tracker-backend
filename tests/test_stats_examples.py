@@ -94,7 +94,7 @@ def test_weather_example_is_consistent():
     assert sum(row["events"] for row in example["temperature_bands"]) == sum(
         1 for m in meetups if m["avg_temperature"] is not None
     )
-    # A meetup with no weather row has every weather field null; a row is never written with every series empty.
-    no_row = [m for m in meetups if all(m[f] is None for f in ("avg_temperature", "rained", "total_precipitation_mm"))]
+    no_row = [m for m in meetups if not m["has_weather"]]
+    assert all(m["avg_temperature"] is None for m in no_row)
     assert example["without_weather"] == len(no_row)
     assert [m["date"] for m in meetups] == sorted(m["date"] for m in meetups)

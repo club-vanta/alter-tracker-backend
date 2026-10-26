@@ -217,6 +217,7 @@ def test_weather_stats_lists_meetups_by_date_with_null_weather_fields_without_a_
         1.5,
     )
     assert (m4.avg_temperature, m4.rained, m4.total_precipitation_mm) == (17.5, None, None)
+    assert [m.has_weather for m in stats.meetups] == [True, True, True, True, True, False]
     assert (m5.avg_temperature, m5.rained) == (None, False)
     assert (m6.attended, m6.no_show_rate, m6.avg_temperature, m6.rained, m6.total_precipitation_mm) == (
         2,
@@ -435,7 +436,9 @@ def test_weather_stats_returns_the_exact_aggregate_body(
         "avg_temperature": 10.0,
         "rained": True,
         "total_precipitation_mm": 1.5,
+        "has_weather": True,
     }
+    assert [m["has_weather"] for m in body["meetups"]] == [True, True, True, True, True, False]
     assert body["meetups"][5]["avg_temperature"] is None
     assert body["meetups"][5]["rained"] is None
 

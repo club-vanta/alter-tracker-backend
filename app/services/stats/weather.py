@@ -37,7 +37,10 @@ _BAND_LOWER_BOUNDS: tuple[tuple[float, StatsTemperatureBand], ...] = (
 
 @dataclass(frozen=True)
 class WeatherMeetupRow:
-    """One finalized meetup with its attendance and weather (weather fields None without a value)."""
+    """
+    One finalized meetup with its attendance and weather (weather fields None without a value).
+    has_weather is True when a weather row exists, the same rule as without_weather.
+    """
 
     meetup_id: uuid.UUID
     name: str
@@ -47,6 +50,7 @@ class WeatherMeetupRow:
     avg_temperature: float | None
     rained: bool | None
     total_precipitation_mm: float | None
+    has_weather: bool
 
 
 @dataclass(frozen=True)
@@ -194,6 +198,7 @@ def weather_stats(
                 avg_temperature=weather.avg_temperature if weather else None,
                 rained=weather.rained if weather else None,
                 total_precipitation_mm=weather.total_precipitation_mm if weather else None,
+                has_weather=weather is not None,
             )
             for row, weather in paired
         ],
