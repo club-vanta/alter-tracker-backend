@@ -65,6 +65,7 @@ from app.schemas import (
     BanGuestRequest,
     BannedGuestListResponse,
     BannedGuestPublic,
+    CheckedInByPublic,
     GeocodeResult,
     GuestAttendanceSummary,
     GuestMazmoProfilePublic,
@@ -399,7 +400,10 @@ async def list_banned_guests(
     bans = session.exec(
         select(OrganizationBan)
         .where(OrganizationBan.org_id == org_id)
-        .options(selectinload(OrganizationBan.guest).selectinload(Guest.mazmo_profile))  # type: ignore[arg-type]
+        .options(
+            selectinload(OrganizationBan.guest).selectinload(Guest.mazmo_profile),  # type: ignore[arg-type]
+            selectinload(OrganizationBan.banned_by),  # type: ignore[arg-type]
+        )
     ).all()
 
     guests = [_to_banned_guest_public(ban.guest, ban) for ban in bans]
@@ -678,6 +682,7 @@ def _to_banned_guest_public(guest: Guest, ban: OrganizationBan) -> BannedGuestPu
         banned_at=ban.banned_at,
         banned_reason=ban.reason,
         banned_by_id=ban.banned_by_id,
+        banned_by=CheckedInByPublic.model_validate(ban.banned_by) if ban.banned_by else None,
     )
 
 

@@ -1456,7 +1456,11 @@
                           "displayname": "Persona Conflictiva",
                           "banned_at": "2024-03-20T18:30:00Z",
                           "banned_reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03",
-                          "banned_by_id": 1
+                          "banned_by_id": 1,
+                          "banned_by": {
+                            "id": 1,
+                            "username": "maria_admin"
+                          }
                         }
                       ]
                     }
@@ -1792,7 +1796,11 @@
                       "displayname": "Persona Conflictiva",
                       "banned_at": "2024-03-20T18:30:00Z",
                       "banned_reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03",
-                      "banned_by_id": 1
+                      "banned_by_id": 1,
+                      "banned_by": {
+                        "id": 1,
+                        "username": "maria_admin"
+                      }
                     }
                   }
                 }
@@ -11614,6 +11622,16 @@
               }
             ],
             "title": "Banned By Id"
+          },
+          "banned_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckedInByPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -11625,7 +11643,8 @@
           "instagram_username",
           "banned_at",
           "banned_reason",
-          "banned_by_id"
+          "banned_by_id",
+          "banned_by"
         ],
         "title": "BannedGuestPublic",
         "description": "Guest info with ban details, sourced from organization_bans.\n\nUsed in the org-scoped banned guests list endpoint. mazmo_profile\nfollows the same rules as GuestPublic.mazmo_profile."

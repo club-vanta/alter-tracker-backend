@@ -141,6 +141,7 @@ GUEST_BANNED_FULL = {
     "banned_at": TIMESTAMP_2024_03_20,
     "banned_reason": "Comportamiento agresivo con otros asistentes en el evento del 20/03",
     "banned_by_id": 1,
+    "banned_by": {"id": 1, "username": "maria_admin"},
 }
 
 # -- Organizations ------------------------------------------------------------
