@@ -240,6 +240,8 @@ class BannedGuestPublic(BaseModel):
     banned_at: datetime
     banned_reason: str
     banned_by_id: int | None
+    # None when the ban predates attribution or the admin's row is gone.
+    banned_by: CheckedInByPublic | None
 
 
 class BannedGuestListResponse(BaseModel):

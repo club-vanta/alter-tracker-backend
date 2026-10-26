@@ -605,6 +605,7 @@ def test_ban_guest_stores_audit_trail(client: TestClient, admin_headers: dict, s
     data = resp.json()
     assert data["banned_at"] is not None
     assert data["banned_by_id"] == admin_user.id
+    assert data["banned_by"] == {"id": admin_user.id, "username": admin_user.username}
     assert data["banned_reason"] == "Violated community guidelines"
 
 
@@ -954,6 +955,7 @@ class TestListBannedGuests:
         assert banned_guest["banned_reason"] == "Aggressive behavior"
         assert banned_guest["banned_at"] is not None
         assert banned_guest["banned_by_id"] == admin_user.id
+        assert banned_guest["banned_by"] == {"id": admin_user.id, "username": admin_user.username}
 
     def test_is_scoped_to_org(
         self,
