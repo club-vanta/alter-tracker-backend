@@ -9284,8 +9284,11 @@
                           "start_minute": 15,
                           "arrivals": 17
                         },
-                        "median_minutes": 33,
+                        "peak_local_time": "22:15",
+                        "mean_minutes": 34,
                         "p90_minutes": 66,
+                        "mean_local_time": "22:34",
+                        "p90_local_time": "23:06",
                         "first_hour_share": 0.8485
                       },
                       "lead_time": [
@@ -9340,9 +9343,360 @@
                           "start_minute": 15,
                           "arrivals": 12
                         },
-                        "median_minutes": 35,
+                        "peak_local_time": "22:15",
+                        "mean_minutes": 36,
                         "p90_minutes": 66,
+                        "mean_local_time": "22:36",
+                        "p90_local_time": "23:06",
                         "first_hour_share": 0.8409
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credentials",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_token": {
+                    "summary": "No token provided",
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "invalid_token": {
+                    "summary": "Invalid or expired JWT",
+                    "value": {
+                      "detail": "Could not validate credentials"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "admin_required": {
+                    "summary": "Org admin privileges needed",
+                    "value": {
+                      "detail": "Organization admin privileges required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meetup not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "meetup_not_found": {
+                    "summary": "Meetup UUID does not exist",
+                    "value": {
+                      "detail": "Meetup with id=a1b2c3d4-e5f6-7890-abcd-ef1234567890 does not exist. It may have been deleted, or the UUID is incorrect. List all meetups via GET /meetups/ to find the correct ID."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missing_required_field": {
+                    "summary": "Missing required field",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "missing",
+                          "loc": [
+                            "body",
+                            "field_name"
+                          ],
+                          "msg": "Field required",
+                          "input": {}
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/organizations/{org_id}/stats/no-shows": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Who signs up for finalized meetups and does not come",
+        "operationId": "get_no_show_stats_organizations__org_id__stats_no_shows_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "First local date to include. Omit for no lower bound.",
+              "title": "From"
+            },
+            "description": "First local date to include. Omit for no lower bound."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Local date the period ends before. Omit for no upper bound.",
+              "title": "To"
+            },
+            "description": "Local date the period ends before. Omit for no upper bound."
+          },
+          {
+            "name": "meetup_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Focus on one finalized meetup instead of the whole period.",
+              "title": "Meetup Id"
+            },
+            "description": "Focus on one finalized meetup instead of the whole period."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Who signed up for finalized meetups in the period and did not come",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoShowStatsPublic"
+                },
+                "examples": {
+                  "no_shows": {
+                    "summary": "A period compared with the previous period",
+                    "value": {
+                      "summary": {
+                        "expected": 83,
+                        "no_show": 12,
+                        "no_show_rate": 0.1446,
+                        "repeat_guests": 2
+                      },
+                      "meetups": [
+                        {
+                          "meetup_id": "8a3f5e2b-1c4d-4e6f-9a8b-7c6d5e4f3a2b",
+                          "name": "Alter #27",
+                          "date": "2026-04-04T23:00:00Z",
+                          "expected": 40,
+                          "no_show": 5,
+                          "no_show_rate": 0.125
+                        },
+                        {
+                          "meetup_id": "9b4a6f3c-2d5e-4f7a-8b9c-8d7e6f5a4b3c",
+                          "name": "Alter #28",
+                          "date": "2026-04-18T23:00:00Z",
+                          "expected": 43,
+                          "no_show": 7,
+                          "no_show_rate": 0.1628
+                        }
+                      ],
+                      "gender": [
+                        {
+                          "key": "MALE",
+                          "expected": 40,
+                          "no_show": 5,
+                          "no_show_rate": 0.125
+                        },
+                        {
+                          "key": "WOMAN_CIS",
+                          "expected": 33,
+                          "no_show": 6,
+                          "no_show_rate": 0.1818
+                        },
+                        {
+                          "expected": 10,
+                          "no_show": 1,
+                          "no_show_rate": 0.1
+                        }
+                      ],
+                      "age": [
+                        {
+                          "key": "AGE_18_24",
+                          "expected": 20,
+                          "no_show": 4,
+                          "no_show_rate": 0.2
+                        },
+                        {
+                          "key": "AGE_25_29",
+                          "expected": 22,
+                          "no_show": 2,
+                          "no_show_rate": 0.0909
+                        },
+                        {
+                          "key": "AGE_30_34",
+                          "expected": 16,
+                          "no_show": 2,
+                          "no_show_rate": 0.125
+                        },
+                        {
+                          "key": "AGE_35_39",
+                          "expected": 9,
+                          "no_show": 1,
+                          "no_show_rate": 0.1111
+                        },
+                        {
+                          "key": "AGE_40_49",
+                          "expected": 8,
+                          "no_show": 1,
+                          "no_show_rate": 0.125
+                        },
+                        {
+                          "key": "AGE_50_PLUS",
+                          "expected": 0,
+                          "no_show": 0
+                        },
+                        {
+                          "key": "UNKNOWN",
+                          "expected": 8,
+                          "no_show": 2,
+                          "no_show_rate": 0.25
+                        }
+                      ],
+                      "history": [
+                        {
+                          "key": "FIRST_TIME",
+                          "expected": 30,
+                          "no_show": 8,
+                          "no_show_rate": 0.2667
+                        },
+                        {
+                          "key": "RETURNING",
+                          "expected": 53,
+                          "no_show": 4,
+                          "no_show_rate": 0.0755
+                        }
+                      ],
+                      "lead_time": [
+                        {
+                          "bucket": "SAME_DAY",
+                          "signed_up": 14,
+                          "cancelled": 1,
+                          "no_show": 3,
+                          "no_show_rate": 0.2308
+                        },
+                        {
+                          "bucket": "ONE_DAY",
+                          "signed_up": 22,
+                          "cancelled": 2,
+                          "no_show": 3,
+                          "no_show_rate": 0.15
+                        },
+                        {
+                          "bucket": "TWO_THREE",
+                          "signed_up": 27,
+                          "cancelled": 2,
+                          "no_show": 3,
+                          "no_show_rate": 0.12
+                        },
+                        {
+                          "bucket": "FOUR_SEVEN",
+                          "signed_up": 15,
+                          "cancelled": 1,
+                          "no_show": 2,
+                          "no_show_rate": 0.1429
+                        },
+                        {
+                          "bucket": "EIGHT_FOURTEEN",
+                          "signed_up": 8,
+                          "cancelled": 1,
+                          "no_show": 1,
+                          "no_show_rate": 0.1429
+                        },
+                        {
+                          "bucket": "FIFTEEN_PLUS",
+                          "signed_up": 5,
+                          "cancelled": 1,
+                          "no_show": 0,
+                          "no_show_rate": 0.0
+                        }
+                      ],
+                      "guests": [
+                        {
+                          "guest_id": "3c9d7e1f-4a2b-4c6d-8e0f-1a2b3c4d5e6f",
+                          "displayname": "Luna",
+                          "expected": 3,
+                          "attended": 0,
+                          "no_show": 3,
+                          "last_no_show": "2026-04-18T23:00:00Z"
+                        },
+                        {
+                          "guest_id": "4d0e8f2a-5b3c-4d7e-9f1a-2b3c4d5e6f7a",
+                          "displayname": "Tomi",
+                          "expected": 4,
+                          "attended": 2,
+                          "no_show": 2,
+                          "last_no_show": "2026-04-04T23:00:00Z"
+                        }
+                      ],
+                      "guests_total": 2,
+                      "comparison_kind": "PREVIOUS_PERIOD",
+                      "comparison": {
+                        "expected": 70,
+                        "no_show": 9,
+                        "no_show_rate": 0.1286,
+                        "repeat_guests": 1
                       }
                     }
                   }
@@ -9526,102 +9880,58 @@
                         {
                           "key": "MALE",
                           "attended": 36,
-                          "expected": 42,
-                          "no_show": 7,
-                          "no_show_rate": 0.1667,
-                          "attended_share": 0.45,
-                          "expected_share": 0.4468
+                          "attended_share": 0.45
                         },
                         {
                           "key": "WOMAN_CIS",
                           "attended": 28,
-                          "expected": 33,
-                          "no_show": 6,
-                          "no_show_rate": 0.1818,
-                          "attended_share": 0.35,
-                          "expected_share": 0.3511
+                          "attended_share": 0.35
                         },
                         {
                           "key": "UNDEFINED",
                           "attended": 6,
-                          "expected": 7,
-                          "no_show": 1,
-                          "no_show_rate": 0.1429,
-                          "attended_share": 0.075,
-                          "expected_share": 0.0745
+                          "attended_share": 0.075
                         },
                         {
                           "attended": 10,
-                          "expected": 12,
-                          "no_show": 2,
-                          "no_show_rate": 0.1667,
-                          "attended_share": 0.125,
-                          "expected_share": 0.1277
+                          "attended_share": 0.125
                         }
                       ],
                       "age": [
                         {
                           "key": "AGE_18_24",
                           "attended": 16,
-                          "expected": 20,
-                          "no_show": 4,
-                          "no_show_rate": 0.2,
-                          "attended_share": 0.2,
-                          "expected_share": 0.2128
+                          "attended_share": 0.2
                         },
                         {
                           "key": "AGE_25_29",
                           "attended": 20,
-                          "expected": 23,
-                          "no_show": 4,
-                          "no_show_rate": 0.1739,
-                          "attended_share": 0.25,
-                          "expected_share": 0.2447
+                          "attended_share": 0.25
                         },
                         {
                           "key": "AGE_30_34",
                           "attended": 14,
-                          "expected": 16,
-                          "no_show": 3,
-                          "no_show_rate": 0.1875,
-                          "attended_share": 0.175,
-                          "expected_share": 0.1702
+                          "attended_share": 0.175
                         },
                         {
                           "key": "AGE_35_39",
                           "attended": 8,
-                          "expected": 9,
-                          "no_show": 1,
-                          "no_show_rate": 0.1111,
-                          "attended_share": 0.1,
-                          "expected_share": 0.0957
+                          "attended_share": 0.1
                         },
                         {
                           "key": "AGE_40_49",
                           "attended": 8,
-                          "expected": 9,
-                          "no_show": 1,
-                          "no_show_rate": 0.1111,
-                          "attended_share": 0.1,
-                          "expected_share": 0.0957
+                          "attended_share": 0.1
                         },
                         {
                           "key": "AGE_50_PLUS",
                           "attended": 4,
-                          "expected": 5,
-                          "no_show": 1,
-                          "no_show_rate": 0.2,
-                          "attended_share": 0.05,
-                          "expected_share": 0.0532
+                          "attended_share": 0.05
                         },
                         {
                           "key": "UNKNOWN",
                           "attended": 10,
-                          "expected": 12,
-                          "no_show": 2,
-                          "no_show_rate": 0.1667,
-                          "attended_share": 0.125,
-                          "expected_share": 0.1277
+                          "attended_share": 0.125
                         }
                       ],
                       "summary": {
@@ -10725,25 +11035,6 @@
             "type": "integer",
             "title": "Attended"
           },
-          "expected": {
-            "type": "integer",
-            "title": "Expected"
-          },
-          "no_show": {
-            "type": "integer",
-            "title": "No Show"
-          },
-          "no_show_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "No Show Rate"
-          },
           "attended_share": {
             "anyOf": [
               {
@@ -10754,31 +11045,16 @@
               }
             ],
             "title": "Attended Share"
-          },
-          "expected_share": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Share"
           }
         },
         "type": "object",
         "required": [
           "key",
           "attended",
-          "expected",
-          "no_show",
-          "no_show_rate",
-          "attended_share",
-          "expected_share"
+          "attended_share"
         ],
         "title": "AgeGroupPublic",
-        "description": "One age group of audience RSVPs, keyed by a StatsAgeBucket. Rates and\nshares are null with nothing to divide by."
+        "description": "One age group of attendances, keyed by a StatsAgeBucket. attended_share\nis null when nobody attended."
       },
       "ApproveUserRequest": {
         "properties": {
@@ -10896,7 +11172,18 @@
               }
             ]
           },
-          "median_minutes": {
+          "peak_local_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Local Time"
+          },
+          "mean_minutes": {
             "anyOf": [
               {
                 "type": "integer"
@@ -10905,7 +11192,7 @@
                 "type": "null"
               }
             ],
-            "title": "Median Minutes"
+            "title": "Mean Minutes"
           },
           "p90_minutes": {
             "anyOf": [
@@ -10918,7 +11205,7 @@
             ],
             "title": "P90 Minutes"
           },
-          "median_local_time": {
+          "mean_local_time": {
             "anyOf": [
               {
                 "type": "string"
@@ -10927,7 +11214,7 @@
                 "type": "null"
               }
             ],
-            "title": "Median Local Time"
+            "title": "Mean Local Time"
           },
           "p90_local_time": {
             "anyOf": [
@@ -10957,14 +11244,15 @@
           "arrivals",
           "excluded_arrivals",
           "peak",
-          "median_minutes",
+          "peak_local_time",
+          "mean_minutes",
           "p90_minutes",
-          "median_local_time",
+          "mean_local_time",
           "p90_local_time",
           "first_hour_share"
         ],
         "title": "ArrivalSummaryPublic",
-        "description": "Offsets are minutes from the meetup start. The *_local_time fields are\n\"HH:MM\" only for one meetup's own summary. arrivals counts the arrivals\nfrom 120 minutes before to 720 minutes after the start; excluded_arrivals\ncounts those outside that window, which no other field includes. The\noptional fields are null when nobody arrived inside the window."
+        "description": "*_minutes are offsets from the meetup start (negative = before);\n*_local_time are \"HH:MM\" of the local clock, counted from midnight of each\nmeetup's local date. Over several meetups the offset and clock figures are\ncomputed separately, so they need not line up when meetups start at\ndifferent hours. peak is the busiest bucket of the curve; peak_local_time\nis the start of the busiest local quarter hour. Means are rounded to the\nminute. arrivals counts the arrivals from 120 minutes before to 720\nminutes after the start; excluded_arrivals counts those outside that\nwindow, which no other field includes. The optional fields are null when\nnobody arrived inside the window."
       },
       "AttendanceStats": {
         "properties": {
@@ -11843,25 +12131,6 @@
             "type": "integer",
             "title": "Attended"
           },
-          "expected": {
-            "type": "integer",
-            "title": "Expected"
-          },
-          "no_show": {
-            "type": "integer",
-            "title": "No Show"
-          },
-          "no_show_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "No Show Rate"
-          },
           "attended_share": {
             "anyOf": [
               {
@@ -11872,31 +12141,16 @@
               }
             ],
             "title": "Attended Share"
-          },
-          "expected_share": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Share"
           }
         },
         "type": "object",
         "required": [
           "key",
           "attended",
-          "expected",
-          "no_show",
-          "no_show_rate",
-          "attended_share",
-          "expected_share"
+          "attended_share"
         ],
         "title": "GenderGroupPublic",
-        "description": "One gender group of audience RSVPs. key is a Mazmo gender code (null:\nunknown). Rates and shares are null with nothing to divide by."
+        "description": "One gender group of attendances. key is a Mazmo gender code (null:\nunknown). attended_share is null when nobody attended."
       },
       "GeocodeResult": {
         "properties": {
@@ -13020,6 +13274,332 @@
         "title": "MeetupWeatherStatusPublic",
         "description": "Weather of a meetup plus where it stands.\n\nstatus is OK (weather is set), NO_LOCATION (no coordinates), PENDING\n(located, but the window is not over plus 2 hours) or NOT_FETCHED (ready,\nno row yet). weather is null unless status is OK. ready is true when the\nmeetup has coordinates and its window ended at least 2 hours ago, whether\nor not a row exists."
       },
+      "NoShowAgeGroupPublic": {
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/StatsAgeBucket"
+          },
+          "expected": {
+            "type": "integer",
+            "title": "Expected"
+          },
+          "no_show": {
+            "type": "integer",
+            "title": "No Show"
+          },
+          "no_show_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Show Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "expected",
+          "no_show",
+          "no_show_rate"
+        ],
+        "title": "NoShowAgeGroupPublic",
+        "description": "Expected RSVPs and no-shows of one age group."
+      },
+      "NoShowGenderGroupPublic": {
+        "properties": {
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "expected": {
+            "type": "integer",
+            "title": "Expected"
+          },
+          "no_show": {
+            "type": "integer",
+            "title": "No Show"
+          },
+          "no_show_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Show Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "expected",
+          "no_show",
+          "no_show_rate"
+        ],
+        "title": "NoShowGenderGroupPublic",
+        "description": "Expected RSVPs and no-shows of one gender group. key is a Mazmo gender code (null: unknown)."
+      },
+      "NoShowGuestPublic": {
+        "properties": {
+          "guest_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Guest Id"
+          },
+          "displayname": {
+            "type": "string",
+            "title": "Displayname"
+          },
+          "expected": {
+            "type": "integer",
+            "title": "Expected"
+          },
+          "attended": {
+            "type": "integer",
+            "title": "Attended"
+          },
+          "no_show": {
+            "type": "integer",
+            "title": "No Show"
+          },
+          "last_no_show": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last No Show"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guest_id",
+          "displayname",
+          "expected",
+          "attended",
+          "no_show",
+          "last_no_show"
+        ],
+        "title": "NoShowGuestPublic",
+        "description": "One guest who missed meetups: expected RSVPs, attendances (expected = attended\n+ no_show) and the start of the last meetup they missed."
+      },
+      "NoShowHistoryGroupPublic": {
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/StatsVisitHistory"
+          },
+          "expected": {
+            "type": "integer",
+            "title": "Expected"
+          },
+          "no_show": {
+            "type": "integer",
+            "title": "No Show"
+          },
+          "no_show_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Show Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "expected",
+          "no_show",
+          "no_show_rate"
+        ],
+        "title": "NoShowHistoryGroupPublic",
+        "description": "Expected RSVPs and no-shows of guests who had, or had not, come to an earlier meetup of the org."
+      },
+      "NoShowMeetupRowPublic": {
+        "properties": {
+          "meetup_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Meetup Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date"
+          },
+          "expected": {
+            "type": "integer",
+            "title": "Expected"
+          },
+          "no_show": {
+            "type": "integer",
+            "title": "No Show"
+          },
+          "no_show_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Show Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "meetup_id",
+          "name",
+          "date",
+          "expected",
+          "no_show",
+          "no_show_rate"
+        ],
+        "title": "NoShowMeetupRowPublic",
+        "description": "Expected RSVPs and no-shows of one finalized meetup."
+      },
+      "NoShowStatsPublic": {
+        "properties": {
+          "summary": {
+            "$ref": "#/components/schemas/NoShowSummaryPublic"
+          },
+          "meetups": {
+            "items": {
+              "$ref": "#/components/schemas/NoShowMeetupRowPublic"
+            },
+            "type": "array",
+            "title": "Meetups"
+          },
+          "gender": {
+            "items": {
+              "$ref": "#/components/schemas/NoShowGenderGroupPublic"
+            },
+            "type": "array",
+            "title": "Gender"
+          },
+          "age": {
+            "items": {
+              "$ref": "#/components/schemas/NoShowAgeGroupPublic"
+            },
+            "type": "array",
+            "title": "Age"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/NoShowHistoryGroupPublic"
+            },
+            "type": "array",
+            "title": "History"
+          },
+          "lead_time": {
+            "items": {
+              "$ref": "#/components/schemas/LeadTimeRowPublic"
+            },
+            "type": "array",
+            "title": "Lead Time"
+          },
+          "guests": {
+            "items": {
+              "$ref": "#/components/schemas/NoShowGuestPublic"
+            },
+            "type": "array",
+            "title": "Guests"
+          },
+          "guests_total": {
+            "type": "integer",
+            "title": "Guests Total"
+          },
+          "comparison_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatsComparisonKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comparison": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NoShowSummaryPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary",
+          "meetups",
+          "gender",
+          "age",
+          "history",
+          "lead_time",
+          "guests",
+          "guests_total",
+          "comparison_kind",
+          "comparison"
+        ],
+        "title": "NoShowStatsPublic",
+        "description": "Who signs up and does not come, and what those RSVPs have in common.\nPeriod mode: meetups lists the period's finalized meetups and guests the\nguests with 2 or more no-shows in it. One-meetup mode: meetups is empty\nand guests lists everyone who missed that meetup, counted over all time.\nguests holds the first 50, most no-shows first; guests_total counts them all."
+      },
+      "NoShowSummaryPublic": {
+        "properties": {
+          "expected": {
+            "type": "integer",
+            "title": "Expected"
+          },
+          "no_show": {
+            "type": "integer",
+            "title": "No Show"
+          },
+          "no_show_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Show Rate"
+          },
+          "repeat_guests": {
+            "type": "integer",
+            "title": "Repeat Guests"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expected",
+          "no_show",
+          "no_show_rate",
+          "repeat_guests"
+        ],
+        "title": "NoShowSummaryPublic",
+        "description": "Expected audience RSVPs (signed up, not cancelled) and no-shows in scope.\nrepeat_guests counts the guests with 2 or more no-shows: in the period,\nor for one meetup, those of its no-shows who reach 2 over all time."
+      },
       "OperationsPaymentStatsPublic": {
         "properties": {
           "paying_events": {
@@ -13878,6 +14458,15 @@
         ],
         "title": "StatsTemperatureBand",
         "description": "Average temperature of a meetup's first 6 hours, in degrees Celsius. The lower bound is inclusive."
+      },
+      "StatsVisitHistory": {
+        "type": "string",
+        "enum": [
+          "FIRST_TIME",
+          "RETURNING"
+        ],
+        "title": "StatsVisitHistory",
+        "description": "Whether a guest had come before when they signed up for a meetup.\n\nFIRST_TIME: no attendance at an earlier finalized meetup of the org.\nRETURNING:  at least one."
       },
       "SyncResponse": {
         "properties": {
