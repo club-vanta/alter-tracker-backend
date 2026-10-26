@@ -606,6 +606,21 @@ def test_fetch_and_store_weather_writes_the_row_with_source_and_timestamp(
     assert mock_get.await_args.kwargs["params"]["latitude"] == LAT
 
 
+def test_fetch_and_store_weather_writes_the_before_summary(session: Session, org: Organization, mock_get: AsyncMock):
+    """WHY: The stats tab compares the weather before the start with the weather during it."""
+    mock_get.return_value = api_response(before_payload())
+    meetup = _located_meetup(session, org)
+
+    row = _fetch(session, meetup)
+
+    assert row.before_avg_temperature == 13.0
+    assert row.before_avg_apparent_temperature == 10.0
+    assert row.before_total_precipitation_mm == 4.1
+    assert row.before_rained is True
+    assert row.hourly["time"][0] == "2026-10-24T19:00"
+    assert row.hourly["weather_code"] == [3] * 10
+
+
 def test_fetch_and_store_weather_second_call_overwrites_and_keeps_one_row(
     session: Session, org: Organization, mock_get: AsyncMock
 ):

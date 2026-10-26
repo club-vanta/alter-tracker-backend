@@ -336,6 +336,10 @@ async def fetch_and_store_weather(session: Session, meetup: Meetup, client: Open
         total_precipitation_mm=summary.total_precipitation_mm,
         max_wind_kmh=summary.max_wind_kmh,
         rained=summary.rained,
+        before_avg_temperature=summary.before.avg_temperature,
+        before_avg_apparent_temperature=summary.before.avg_apparent_temperature,
+        before_total_precipitation_mm=summary.before.total_precipitation_mm,
+        before_rained=summary.before.rained,
         hourly=summary.hourly,
         source=SOURCE,
     )

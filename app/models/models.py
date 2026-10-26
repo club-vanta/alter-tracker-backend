@@ -586,7 +586,7 @@ class GuestMazmoProfile(SQLModel, table=True):
 
 class MeetupWeather(SQLModel, table=True):
     """
-    Weather during the first 6 hours of a meetup, from Open-Meteo.
+    Weather of a meetup from 3 hours before its start through its first 6 hours, from Open-Meteo.
 
     1:1 with Meetup - meetup_id IS the primary key, like GuestMazmoProfile.
     A row is a snapshot that gets overwritten on refresh and deleted when the
@@ -597,12 +597,15 @@ class MeetupWeather(SQLModel, table=True):
     in the window (avg_temperature, avg_apparent_temperature,
     total_precipitation_mm, max_wind_kmh). rained is total_precipitation_mm >=
     0.2, so it is NULL exactly when total_precipitation_mm is NULL: unknown is
-    not the same as dry. A row is never written when every series is empty.
+    not the same as dry. The before_* columns summarize the 3 hours
+    [floor_hour(date) - 3h, floor_hour(date)) the same way (no wind), NULL per
+    series without a value there. A row is never written when every series is
+    empty in both windows.
 
     hourly stores the raw hourly arrays (time, temperature_2m,
-    apparent_temperature, precipitation, wind_speed_10m) restricted to the
-    window hours used for the summary, nulls included, not the whole day the
-    provider returned. That keeps the row small and lets the summary be
+    apparent_temperature, precipitation, wind_speed_10m, weather_code, is_day)
+    restricted to the before and during hours, nulls included, not the whole
+    day the provider returned. That keeps the row small and lets the summary be
     audited against exactly the data behind it.
     """
 
@@ -614,6 +617,10 @@ class MeetupWeather(SQLModel, table=True):
     total_precipitation_mm: float | None = Field(default=None)
     max_wind_kmh: float | None = Field(default=None)
     rained: bool | None = Field(default=None)
+    before_avg_temperature: float | None = Field(default=None)
+    before_avg_apparent_temperature: float | None = Field(default=None)
+    before_total_precipitation_mm: float | None = Field(default=None)
+    before_rained: bool | None = Field(default=None)
     hourly: dict[str, list[str | int | float | None]] = Field(sa_column=Column(JSON, nullable=False))
     fetched_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC), sa_column=Column(DateTime(timezone=True), nullable=False)
