@@ -186,6 +186,35 @@ def test_no_shows_history_splits_first_timers_from_returning_guests(session: Ses
     ]
 
 
+def test_no_shows_history_counts_each_rsvp_once_however_often_the_guest_came(session: Session):
+    org = make_org(session)
+    regular = _guest(session)
+    for day in (10, 17, 24):
+        _came(session, _finalized_meetup(session, org, day, month=3), regular)
+    _missed(session, _finalized_meetup(session, org, 5), regular)
+
+    stats = no_show_stats(session, org.id, APRIL, None)
+
+    assert [(g.key, g.expected, g.no_show) for g in stats.history] == [
+        (StatsVisitHistory.FIRST_TIME, 0, 0),
+        (StatsVisitHistory.RETURNING, 1, 1),
+    ]
+
+
+def test_no_shows_history_needs_a_strictly_earlier_start(session: Session):
+    org = make_org(session)
+    guest = _guest(session)
+    _came(session, _finalized_meetup(session, org, 5), guest)
+    _missed(session, _finalized_meetup(session, org, 5), guest)  # same start time
+
+    stats = no_show_stats(session, org.id, APRIL, None)
+
+    assert [(g.key, g.expected, g.no_show) for g in stats.history] == [
+        (StatsVisitHistory.FIRST_TIME, 2, 1),
+        (StatsVisitHistory.RETURNING, 0, 0),
+    ]
+
+
 def test_no_shows_history_ignores_other_orgs_and_unfinalized_meetups(session: Session):
     org = make_org(session)
     other_org = make_org(session, name="Other org", slug="other-org")
@@ -285,6 +314,9 @@ def test_no_shows_one_meetup_lists_its_no_shows_over_all_time(session: Session):
     _missed(session, target, first_slip)
     _came(session, target)
     _missed(session, other)  # missed another meetup, not this one
+    came_here = _guest(session, "Came here")
+    _came(session, target, came_here)
+    _missed(session, other, came_here)  # a no-show elsewhere, but came to this one
 
     stats = no_show_stats(session, org.id, APRIL, target.id)
 
@@ -293,10 +325,10 @@ def test_no_shows_one_meetup_lists_its_no_shows_over_all_time(session: Session):
         ("First slip", 2, 1, 1),
     ]
     assert stats.guests_total == 2
-    assert stats.summary == NoShowSummary(expected=3, no_show=2, no_show_rate=0.6667, repeat_guests=1)
+    assert stats.summary == NoShowSummary(expected=4, no_show=2, no_show_rate=0.5, repeat_guests=1)
     assert stats.meetups == []
     assert stats.comparison_kind == StatsComparisonKind.PERIOD_AVERAGE
-    assert stats.comparison == NoShowSummary(expected=4, no_show=3, no_show_rate=0.75, repeat_guests=0)
+    assert stats.comparison == NoShowSummary(expected=6, no_show=4, no_show_rate=0.6667, repeat_guests=0)
 
 
 def test_no_shows_one_meetup_breakdowns_cover_only_that_meetup(session: Session):

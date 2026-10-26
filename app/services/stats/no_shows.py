@@ -31,12 +31,13 @@ from app.models.models import (
     StatsComparisonKind,
     StatsVisitHistory,
 )
-from app.services.attendance import attendance_status_expr
+from app.services.attendance import EXPECTED_STATUSES, attendance_status_expr
 from app.services.stats.arrivals import LeadTimeRow, lead_time_rows
 from app.services.stats.attendance import (
     MeetupAttendanceRow,
     meetup_attendance_rows,
     single_meetup_attendance_rows,
+    summarize_rows,
 )
 from app.services.stats.demographics import GroupCounts, demographic_counts
 from app.services.stats.retention import attendances_cte
@@ -52,8 +53,6 @@ from app.services.timeutil import as_utc
 # A guest who missed at least this many meetups in the period counts as a repeat no-show.
 REPEAT_MIN_NO_SHOWS = 2
 GUEST_LIMIT = 50
-
-_EXPECTED = (GuestAttendanceStatus.ATTENDED.value, GuestAttendanceStatus.NO_SHOW.value)
 
 # -- Result shapes --
 
@@ -156,7 +155,7 @@ def _meetup_rows(rows: list[MeetupAttendanceRow]) -> list[NoShowMeetupRow]:
             date=as_utc(row.date),
             expected=row.signed_up - row.cancelled,
             no_show=row.no_show,
-            no_show_rate=ratio(row.no_show, row.signed_up - row.cancelled, 4),
+            no_show_rate=summarize_rows([row]).no_show_rate,
         )
         for row in rows
     ]
@@ -191,7 +190,7 @@ def _audience_rsvps(query: Select, *conditions: ColumnElement[bool]) -> Select:
         .where(
             *conditions,
             MeetupRsvp.guest_type.in_(AUDIENCE_GUEST_TYPES),  # type: ignore[attr-defined]
-            attendance_status_expr().in_(_EXPECTED),
+            attendance_status_expr().in_(EXPECTED_STATUSES),
         )
     )
 
@@ -279,12 +278,11 @@ def _guests(session: Session, per_guest: Subquery, min_no_shows: int) -> tuple[l
 
 
 def _summary(rows: list[MeetupAttendanceRow], repeat_guests: int) -> NoShowSummary:
-    expected = sum(r.signed_up - r.cancelled for r in rows)
-    no_show = sum(r.no_show for r in rows)
+    totals = summarize_rows(rows)
     return NoShowSummary(
-        expected=expected,
-        no_show=no_show,
-        no_show_rate=ratio(no_show, expected, 4),
+        expected=totals.signed_up - totals.cancelled,
+        no_show=totals.no_show,
+        no_show_rate=totals.no_show_rate,
         repeat_guests=repeat_guests,
     )
 

@@ -67,6 +67,12 @@ def attendance_status(rsvp: MeetupRsvp, meetup: Meetup) -> GuestAttendanceStatus
     return GuestAttendanceStatus.UPCOMING
 
 
+# An RSVP that was expected to come: signed up and not cancelled, whether or
+# not they came. Walk-ins never signed up. Only for finalized meetups, where
+# UPCOMING no longer occurs.
+EXPECTED_STATUSES: tuple[str, ...] = (GuestAttendanceStatus.ATTENDED.value, GuestAttendanceStatus.NO_SHOW.value)
+
+
 def attendance_status_expr() -> ColumnElement[str | None]:
     """
     SQL twin of attendance_status(): a CASE returning the GuestAttendanceStatus

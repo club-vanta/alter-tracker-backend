@@ -29,7 +29,7 @@ from app.models.models import (
     StatsAgeBucket,
     StatsComparisonKind,
 )
-from app.services.attendance import attendance_status_expr
+from app.services.attendance import EXPECTED_STATUSES, attendance_status_expr
 from app.services.stats.scope import (
     AUDIENCE_GUEST_TYPES,
     StatsPeriod,
@@ -177,7 +177,7 @@ def _counts_query(*conditions: ColumnElement[bool]) -> Select:
             gender,
             bucket,
             func.count().filter(status.in_([GuestAttendanceStatus.ATTENDED.value, walkin])),
-            func.count().filter(status.is_not(None), status != walkin, status != GuestAttendanceStatus.CANCELLED.value),
+            func.count().filter(status.in_(EXPECTED_STATUSES)),
             func.count().filter(status == GuestAttendanceStatus.NO_SHOW.value),
         ),
         conditions,
