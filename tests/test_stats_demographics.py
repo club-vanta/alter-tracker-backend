@@ -18,7 +18,14 @@ from app.models.models import (
     StatsComparisonKind,
 )
 from app.services.stats.attendance import attendance_stats
-from app.services.stats.demographics import age_bucket, age_bucket_expr, demographic_stats
+from app.services.stats.demographics import (
+    GroupCounts,
+    age_bucket,
+    age_bucket_expr,
+    demographic_counts,
+    demographic_stats,
+)
+from app.services.stats.scope import finalized_meetup_conditions
 from app.services.stats.scope import StatsPeriod
 from tests.conftest import get_auth_headers, make_guest, make_meetup, make_org, make_org_member, make_rsvp, make_user
 
@@ -110,14 +117,8 @@ def test_demographics_groups_by_gender_with_unknown_last(session: Session):
 
     stats = demographic_stats(session, org.id, ALL_TIME, None)
 
-    assert [(g.key, g.attended, g.expected, g.no_show) for g in stats.gender] == [
-        ("MALE", 3, 3, 0),
-        ("FEMALE", 2, 3, 1),
-        (None, 2, 2, 0),
-    ]
-    assert stats.gender[1].no_show_rate == 0.3333
+    assert [(g.key, g.attended) for g in stats.gender] == [("MALE", 3), ("FEMALE", 2), (None, 2)]
     assert [g.attended_share for g in stats.gender] == [0.4286, 0.2857, 0.2857]
-    assert [g.expected_share for g in stats.gender] == [0.375, 0.375, 0.25]
     assert stats.summary.attended == 7
     assert {g.key: g.attended for g in stats.age}[StatsAgeBucket.UNKNOWN.value] == 7
 
@@ -133,11 +134,12 @@ def test_demographics_blank_gender_is_unknown_and_undefined_is_its_own_group(ses
     assert [(g.key, g.attended) for g in stats.gender] == [("UNDEFINED", 1), (None, 1)]
 
 
-def test_demographics_drops_gender_groups_with_nobody_attended_or_expected(session: Session):
+def test_demographics_drops_gender_groups_nobody_attended(session: Session):
     org = make_org(session)
     meetup = _finalized_meetup(session, org, APRIL)
     _rsvp(session, meetup, profile=True, gender="MALE", has_arrived=True)
     _rsvp(session, meetup, profile=True, gender="FEMALE", cancelled_rsvp=True)
+    _rsvp(session, meetup, profile=True, gender="WOMAN_TRANS")  # expected, but a no-show
     _rsvp(session, meetup, profile=True, gender="WOMAN_CIS", is_walkin=True)
 
     stats = demographic_stats(session, org.id, ALL_TIME, None)
@@ -196,23 +198,38 @@ def test_demographics_only_staff_is_empty(session: Session):
 
     assert stats.gender == []
     assert len(stats.age) == 7
-    assert all((g.attended, g.expected, g.no_show) == (0, 0, 0) for g in stats.age)
-    assert all(g.no_show_rate is None and g.attended_share is None and g.expected_share is None for g in stats.age)
+    assert all((g.attended, g.attended_share) == (0, None) for g in stats.age)
     assert stats.summary.attended == 0
     assert stats.summary.median_age is None
     assert stats.summary.known_age_share is None
 
 
-def test_demographics_walkin_counts_attended_but_not_expected(session: Session):
+# -- demographic_counts --
+
+
+def test_demographic_counts_walkin_counts_attended_but_not_expected(session: Session):
     org = make_org(session)
     meetup = _finalized_meetup(session, org, APRIL)
     _rsvp(session, meetup, profile=True, gender="MALE", has_arrived=True, is_walkin=True)
     _rsvp(session, meetup, profile=True, gender="MALE", cancelled_rsvp=True)
 
-    [group] = demographic_stats(session, org.id, ALL_TIME, None).gender
+    counts = demographic_counts(session, *finalized_meetup_conditions(org.id, ALL_TIME))
 
-    assert (group.attended, group.expected, group.no_show) == (1, 0, 0)
-    assert group.no_show_rate is None
+    assert counts.by_gender == {"MALE": GroupCounts(attended=1, expected=0, no_show=0)}
+
+
+def test_demographic_counts_lists_every_age_bucket(session: Session):
+    org = make_org(session)
+    meetup = _finalized_meetup(session, org, APRIL)
+    _rsvp(session, meetup, profile=True, age=31)
+    _rsvp(session, meetup, profile=True, age=33, has_arrived=True)
+
+    counts = demographic_counts(session, *finalized_meetup_conditions(org.id, ALL_TIME))
+
+    assert counts.by_age == {
+        bucket: GroupCounts(1, 2, 1) if bucket == StatsAgeBucket.AGE_30_34 else GroupCounts()
+        for bucket in StatsAgeBucket
+    }
 
 
 # -- comparison --
@@ -249,12 +266,15 @@ def test_demographics_totals_match_attendance_stats(session: Session):
     _rsvp(session, meetup)  # no-show without a profile
 
     demographics = demographic_stats(session, org.id, ALL_TIME, None)
+    counts = demographic_counts(session, *finalized_meetup_conditions(org.id, ALL_TIME))
     attendance = attendance_stats(session, org.id, ALL_TIME, None).totals
 
     for groups in (demographics.gender, demographics.age):
         assert sum(g.attended for g in groups) == attendance.attended == 4
-        assert sum(g.expected for g in groups) == attendance.signed_up - attendance.cancelled == 5
-        assert sum(g.no_show for g in groups) == attendance.no_show == 2
+    for by_key in (counts.by_gender.values(), counts.by_age.values()):
+        assert sum(c.attended for c in by_key) == attendance.attended
+        assert sum(c.expected for c in by_key) == attendance.signed_up - attendance.cancelled == 5
+        assert sum(c.no_show for c in by_key) == attendance.no_show == 2
     assert demographics.summary.attended == attendance.attended
 
 
@@ -375,43 +395,19 @@ def test_demographic_stats_returns_200_with_exact_aggregate_body(
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json() == {
         "gender": [
-            {
-                "key": "MALE",
-                "attended": 1,
-                "expected": 2,
-                "no_show": 1,
-                "no_show_rate": 0.5,
-                "attended_share": 0.5,
-                "expected_share": 1.0,
-            },
-            {
-                "key": None,
-                "attended": 1,
-                "expected": 0,
-                "no_show": 0,
-                "no_show_rate": None,
-                "attended_share": 0.5,
-                "expected_share": 0.0,
-            },
+            {"key": "MALE", "attended": 1, "attended_share": 0.5},
+            {"key": None, "attended": 1, "attended_share": 0.5},
         ],
         "age": [
-            {
-                "key": bucket.value,
-                "attended": attended,
-                "expected": expected,
-                "no_show": no_show,
-                "no_show_rate": no_show_rate,
-                "attended_share": attended_share,
-                "expected_share": expected_share,
-            }
-            for bucket, attended, expected, no_show, no_show_rate, attended_share, expected_share in [
-                (StatsAgeBucket.AGE_18_24, 1, 1, 0, 0.0, 0.5, 0.5),
-                (StatsAgeBucket.AGE_25_29, 0, 0, 0, None, 0.0, 0.0),
-                (StatsAgeBucket.AGE_30_34, 0, 1, 1, 1.0, 0.0, 0.5),
-                (StatsAgeBucket.AGE_35_39, 0, 0, 0, None, 0.0, 0.0),
-                (StatsAgeBucket.AGE_40_49, 0, 0, 0, None, 0.0, 0.0),
-                (StatsAgeBucket.AGE_50_PLUS, 0, 0, 0, None, 0.0, 0.0),
-                (StatsAgeBucket.UNKNOWN, 1, 0, 0, None, 0.5, 0.0),
+            {"key": bucket.value, "attended": attended, "attended_share": attended_share}
+            for bucket, attended, attended_share in [
+                (StatsAgeBucket.AGE_18_24, 1, 0.5),
+                (StatsAgeBucket.AGE_25_29, 0, 0.0),
+                (StatsAgeBucket.AGE_30_34, 0, 0.0),
+                (StatsAgeBucket.AGE_35_39, 0, 0.0),
+                (StatsAgeBucket.AGE_40_49, 0, 0.0),
+                (StatsAgeBucket.AGE_50_PLUS, 0, 0.0),
+                (StatsAgeBucket.UNKNOWN, 1, 0.5),
             ]
         ],
         "summary": {
@@ -473,18 +469,7 @@ def test_demographic_stats_returns_empty_body_for_empty_period(
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json() == {
         "gender": [],
-        "age": [
-            {
-                "key": bucket.value,
-                "attended": 0,
-                "expected": 0,
-                "no_show": 0,
-                "no_show_rate": None,
-                "attended_share": None,
-                "expected_share": None,
-            }
-            for bucket in StatsAgeBucket
-        ],
+        "age": [{"key": bucket.value, "attended": 0, "attended_share": None} for bucket in StatsAgeBucket],
         "summary": _empty_summary(),
         "comparison_kind": None,
         "comparison": None,

@@ -138,34 +138,26 @@ class ArrivalStatsPublic(BaseModel):
 
 class GenderGroupPublic(BaseModel):
     """
-    One gender group of audience RSVPs. key is a Mazmo gender code (null:
-    unknown). Rates and shares are null with nothing to divide by.
+    One gender group of attendances. key is a Mazmo gender code (null:
+    unknown). attended_share is null when nobody attended.
     """
 
     key: str | None
     attended: int
-    expected: int
-    no_show: int
-    no_show_rate: float | None
     attended_share: float | None
-    expected_share: float | None
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class AgeGroupPublic(BaseModel):
     """
-    One age group of audience RSVPs, keyed by a StatsAgeBucket. Rates and
-    shares are null with nothing to divide by.
+    One age group of attendances, keyed by a StatsAgeBucket. attended_share
+    is null when nobody attended.
     """
 
     key: StatsAgeBucket
     attended: int
-    expected: int
-    no_show: int
-    no_show_rate: float | None
     attended_share: float | None
-    expected_share: float | None
 
     model_config = ConfigDict(from_attributes=True)
 

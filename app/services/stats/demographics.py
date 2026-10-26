@@ -7,6 +7,9 @@ came to five meetups counts five times. A guest with no profile, or a profile
 without the value, falls in the "unknown" group (gender None, age bucket
 UNKNOWN) so group totals always equal the attended total. Statuses come only
 from attendance_status_expr.
+
+demographic_counts also counts the expected and no-show RSVPs of each group,
+so the no-show statistics group people the same way.
 """
 
 import uuid
@@ -53,28 +56,20 @@ _AGE_BUCKET_LIMITS: tuple[tuple[int, StatsAgeBucket], ...] = (
 
 @dataclass(frozen=True)
 class GenderGroup:
-    """One gender group. key is a Mazmo gender code (None: unknown)."""
+    """One gender group of attendances. key is a Mazmo gender code (None: unknown)."""
 
     key: str | None
     attended: int
-    expected: int
-    no_show: int
-    no_show_rate: float | None
     attended_share: float | None
-    expected_share: float | None
 
 
 @dataclass(frozen=True)
 class AgeGroup:
-    """One age group, keyed by a StatsAgeBucket (UNKNOWN for no plausible age)."""
+    """One age group of attendances, keyed by a StatsAgeBucket (UNKNOWN for no plausible age)."""
 
     key: StatsAgeBucket
     attended: int
-    expected: int
-    no_show: int
-    no_show_rate: float | None
     attended_share: float | None
-    expected_share: float | None
 
 
 @dataclass(frozen=True)
@@ -94,10 +89,23 @@ class DemographicStats:
 
 
 @dataclass(frozen=True)
-class _Counts:
+class GroupCounts:
+    """Audience RSVPs of one group: attended (walk-ins included), expected (signed up, not cancelled) and no_show."""
+
     attended: int = 0
     expected: int = 0
     no_show: int = 0
+
+
+@dataclass(frozen=True)
+class DemographicCounts:
+    """
+    RSVP counts per gender key (only the keys that occur) and per age bucket
+    (every bucket, empty ones as zeros).
+    """
+
+    by_gender: dict[str | None, GroupCounts]
+    by_age: dict[StatsAgeBucket, GroupCounts]
 
 
 # -- Age buckets --
@@ -190,16 +198,8 @@ def _median_age_query(*conditions: ColumnElement[bool]) -> Select:
 # -- Grouping --
 
 
-@dataclass(frozen=True)
-class _Scope:
-    """Raw grouped counts and median for one set of meetups."""
-
-    by_gender: dict[str | None, _Counts]
-    by_age: dict[str, _Counts]
-    median_age: float | None
-
-
-def _load_scope(session: Session, *conditions: ColumnElement[bool]) -> _Scope:
+def demographic_counts(session: Session, *conditions: ColumnElement[bool]) -> DemographicCounts:
+    """Audience RSVP counts per gender and per age bucket over the meetups matching the conditions."""
     gender_totals: defaultdict[str | None, list[int]] = defaultdict(lambda: [0, 0, 0])
     age_totals: defaultdict[str, list[int]] = defaultdict(lambda: [0, 0, 0])
     for gender, bucket, attended, expected, no_show in session.execute(_counts_query(*conditions)).all():
@@ -207,41 +207,45 @@ def _load_scope(session: Session, *conditions: ColumnElement[bool]) -> _Scope:
             totals[0] += attended
             totals[1] += expected
             totals[2] += no_show
+    return DemographicCounts(
+        by_gender={key: GroupCounts(*totals) for key, totals in gender_totals.items()},
+        by_age={bucket: GroupCounts(*age_totals.get(bucket.value, (0, 0, 0))) for bucket in StatsAgeBucket},
+    )
+
+
+@dataclass(frozen=True)
+class _Scope:
+    """Grouped counts and median age for one set of meetups."""
+
+    counts: DemographicCounts
+    median_age: float | None
+
+
+def _load_scope(session: Session, *conditions: ColumnElement[bool]) -> _Scope:
     median = session.execute(_median_age_query(*conditions)).scalar_one()
     return _Scope(
-        by_gender={key: _Counts(*totals) for key, totals in gender_totals.items()},
-        by_age={key: _Counts(*totals) for key, totals in age_totals.items()},
+        counts=demographic_counts(session, *conditions),
         median_age=round(float(median), 1) if median is not None else None,
     )
 
 
-def _groups[K, G](counts: dict[K, _Counts], build: Callable[..., G]) -> list[G]:
-    """One group per key, built with the counts and their shares of the totals."""
-    total_attended = sum(c.attended for c in counts.values())
-    total_expected = sum(c.expected for c in counts.values())
+def _groups[K, G](counts: dict[K, GroupCounts], build: Callable[..., G]) -> list[G]:
+    """One group per key, built with its attendances and their share of the total."""
+    total = sum(c.attended for c in counts.values())
     return [
-        build(
-            key=key,
-            attended=c.attended,
-            expected=c.expected,
-            no_show=c.no_show,
-            no_show_rate=ratio(c.no_show, c.expected, 4),
-            attended_share=ratio(c.attended, total_attended, 4),
-            expected_share=ratio(c.expected, total_expected, 4),
-        )
-        for key, c in counts.items()
+        build(key=key, attended=c.attended, attended_share=ratio(c.attended, total, 4)) for key, c in counts.items()
     ]
 
 
 def _gender_groups(scope: _Scope) -> list[GenderGroup]:
-    """Largest first, ties by code, unknown (None) last. Groups with nobody attended or expected are dropped."""
-    groups = _groups({key: c for key, c in scope.by_gender.items() if c.attended or c.expected}, GenderGroup)
+    """Largest first, ties by code, unknown (None) last. Groups nobody attended are dropped."""
+    groups = _groups({key: c for key, c in scope.counts.by_gender.items() if c.attended}, GenderGroup)
     return sorted(groups, key=lambda g: (g.key is None, -g.attended, g.key or ""))
 
 
 def _age_groups(scope: _Scope) -> list[AgeGroup]:
     """All buckets in enum order, empty ones as zeros."""
-    return _groups({b: scope.by_age.get(b.value, _Counts()) for b in StatsAgeBucket}, AgeGroup)
+    return _groups(scope.counts.by_age, AgeGroup)
 
 
 def _summarize(scope: _Scope) -> DemographicSummary:
