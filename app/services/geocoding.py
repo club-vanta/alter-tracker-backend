@@ -75,6 +75,17 @@ async def _wait_for_turn() -> None:
 # -- Errors -------------------------------------------------------------------
 
 
+# Shared with the geocode route so the documented messages are the real ones.
+GEOCODING_UNAVAILABLE_DETAIL = (
+    "Cannot search addresses: the address search is unavailable right now. "
+    "Try again in a moment, or enter the address later."
+)
+GEOCODING_TIMEOUT_DETAIL = (
+    "Cannot search addresses: the address search did not respond in time. "
+    "Try again in a moment, or enter the address later."
+)
+
+
 class GeocodingUnavailableError(Exception):
     """Photon failed, or returned something we cannot read."""
 

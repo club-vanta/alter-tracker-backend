@@ -11,35 +11,16 @@ Usage:
 from datetime import UTC, datetime
 from typing import Any
 
-# Shared with the geocode route so the documented messages are the real ones.
-GEOCODING_UNAVAILABLE_DETAIL = (
-    "Cannot search addresses: the address search is unavailable right now. "
-    "Try again in a moment, or enter the address later."
-)
-GEOCODING_TIMEOUT_DETAIL = (
-    "Cannot search addresses: the address search did not respond in time. "
-    "Try again in a moment, or enter the address later."
+from app.services.geocoding import GEOCODING_TIMEOUT_DETAIL, GEOCODING_UNAVAILABLE_DETAIL
+from app.services.weather import (
+    WEATHER_NO_DATA_DETAIL,
+    WEATHER_REFRESH_NO_LOCATION_DETAIL,
+    WEATHER_TIMEOUT_DETAIL,
+    WEATHER_UNAVAILABLE_DETAIL,
+    weather_too_early_detail,
 )
 
-# Shared with the weather refresh route so the documented messages are the real ones.
-WEATHER_REFRESH_NO_LOCATION_DETAIL = "Cannot refresh weather: the meetup has no location. Set a location first."
-WEATHER_NO_DATA_DETAIL = (
-    "Cannot refresh weather: the weather provider has no data for this place and time. "
-    "Check the meetup location, or try again later."
-)
-WEATHER_UNAVAILABLE_DETAIL = (
-    "Cannot refresh weather: the weather provider is unavailable right now. Try again in a moment."
-)
-WEATHER_TIMEOUT_DETAIL = "Cannot refresh weather: the weather provider did not respond in time. Try again in a moment."
 WEATHER_TOO_EARLY_EXAMPLE_READY_AT = datetime(2026, 3, 7, 7, 0, tzinfo=UTC)
-
-
-def weather_too_early_detail(ready_at: datetime) -> str:
-    """The 409 message when the weather is not available yet, naming when it will be (UTC)."""
-    return (
-        "Cannot refresh weather: it is available 8 hours after the event starts "
-        f"(from {ready_at.astimezone(UTC):%Y-%m-%dT%H:%M:%SZ}). Try again then."
-    )
 
 
 # Type alias for FastAPI responses dict

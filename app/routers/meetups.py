@@ -49,14 +49,6 @@ from app.models.models import (
     MeetupWeather,
     OrganizationBan,
     User,
-    WeatherStatus,
-)
-from app.openapi_examples._error_responses import (
-    WEATHER_NO_DATA_DETAIL,
-    WEATHER_REFRESH_NO_LOCATION_DETAIL,
-    WEATHER_TIMEOUT_DETAIL,
-    WEATHER_UNAVAILABLE_DETAIL,
-    weather_too_early_detail,
 )
 from app.openapi_examples.meetups_examples import (
     ADD_WALKIN_RESPONSES,
@@ -112,6 +104,10 @@ from app.services.mazmo import MazmoAPIError, MazmoClient, MazmoNetworkError
 from app.services.payment import PaymentStanding, payment_standing
 from app.services.sync import sync_guests
 from app.services.weather import (
+    WEATHER_NO_DATA_DETAIL,
+    WEATHER_REFRESH_NO_LOCATION_DETAIL,
+    WEATHER_TIMEOUT_DETAIL,
+    WEATHER_UNAVAILABLE_DETAIL,
     MissingLocationError,
     NoWeatherDataError,
     OpenMeteoClient,
@@ -121,6 +117,7 @@ from app.services.weather import (
     is_weather_ready,
     weather_ready_at,
     weather_status,
+    weather_too_early_detail,
 )
 
 log = structlog.get_logger(__name__)
@@ -1551,10 +1548,9 @@ async def refresh_meetup_weather(
     """
     meetup = _get_meetup_or_404_in_org(session, meetup_id, org_id)
 
-    standing = weather_status(meetup, False, datetime.now(UTC))
-    if standing is WeatherStatus.NO_LOCATION:
+    if meetup.latitude is None or meetup.longitude is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=WEATHER_REFRESH_NO_LOCATION_DETAIL)
-    if standing is WeatherStatus.PENDING:
+    if not is_weather_ready(meetup, datetime.now(UTC)):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=weather_too_early_detail(weather_ready_at(meetup))
         )

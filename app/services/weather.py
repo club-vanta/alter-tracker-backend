@@ -40,7 +40,7 @@ HTTP status or the failure type, and the caller logs it once with the meetup id.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -62,7 +62,7 @@ _HOURLY_VARIABLES = ("temperature_2m", "apparent_temperature", "precipitation", 
 _WINDOW = timedelta(hours=6)
 # The provider publishes a finished hour with some delay, so wait before the first fetch.
 _PROVIDER_DELAY = timedelta(hours=2)
-_READY_AFTER = _WINDOW + _PROVIDER_DELAY
+READY_AFTER = _WINDOW + _PROVIDER_DELAY
 _RAIN_THRESHOLD_MM = 0.2
 
 type HourlyData = dict[str, list[str | float | None]]
@@ -138,9 +138,30 @@ def summarize_weather(hourly: HourlyData, start: datetime) -> WeatherSummary | N
     )
 
 
+# Shared with the weather refresh route so the documented messages are the real ones.
+WEATHER_REFRESH_NO_LOCATION_DETAIL = "Cannot refresh weather: the meetup has no location. Set a location first."
+WEATHER_NO_DATA_DETAIL = (
+    "Cannot refresh weather: the weather provider has no data for this place and time. "
+    "Check the meetup location, or try again later."
+)
+WEATHER_UNAVAILABLE_DETAIL = (
+    "Cannot refresh weather: the weather provider is unavailable right now. Try again in a moment."
+)
+WEATHER_TIMEOUT_DETAIL = "Cannot refresh weather: the weather provider did not respond in time. Try again in a moment."
+
+
+def weather_too_early_detail(ready_at: datetime) -> str:
+    """The 409 message when the weather is not available yet, naming when it will be (UTC)."""
+    hours = READY_AFTER // timedelta(hours=1)
+    return (
+        f"Cannot refresh weather: it is available {hours} hours after the event starts "
+        f"(from {ready_at.astimezone(UTC):%Y-%m-%dT%H:%M:%SZ}). Try again then."
+    )
+
+
 def weather_ready_at(meetup: Meetup) -> datetime:
     """When the weather of the meetup becomes available: its window plus the provider delay after the start."""
-    return as_utc(meetup.date) + _READY_AFTER
+    return as_utc(meetup.date) + READY_AFTER
 
 
 def is_weather_ready(meetup: Meetup, now: datetime) -> bool:
@@ -164,7 +185,7 @@ def weather_ready_clause(now: datetime) -> ColumnElement[bool]:
     return and_(
         col(Meetup.latitude).is_not(None),
         col(Meetup.longitude).is_not(None),
-        col(Meetup.date) <= as_utc(now) - _READY_AFTER,
+        col(Meetup.date) <= as_utc(now) - READY_AFTER,
     )
 
 

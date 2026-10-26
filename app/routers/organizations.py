@@ -40,7 +40,6 @@ from app.models.models import (
     User,
     UserOrganization,
 )
-from app.openapi_examples._error_responses import GEOCODING_TIMEOUT_DETAIL, GEOCODING_UNAVAILABLE_DETAIL
 from app.openapi_examples.organizations_examples import (
     ADD_MEMBER_REQUEST_EXAMPLES,
     ADD_MEMBER_RESPONSES,
@@ -80,7 +79,13 @@ from app.schemas import (
     OrgUpdate,
 )
 from app.services.attendance import list_guest_attendance, summarize_attendance
-from app.services.geocoding import GeocodingTimeoutError, GeocodingUnavailableError, PhotonClient
+from app.services.geocoding import (
+    GEOCODING_TIMEOUT_DETAIL,
+    GEOCODING_UNAVAILABLE_DETAIL,
+    GeocodingTimeoutError,
+    GeocodingUnavailableError,
+    PhotonClient,
+)
 
 log = structlog.get_logger(__name__)
 router = APIRouter(tags=["organizations"])
