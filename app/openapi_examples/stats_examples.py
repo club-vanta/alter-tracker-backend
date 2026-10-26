@@ -4,6 +4,7 @@ OpenAPI examples for stats router endpoints.
 Endpoints:
   GET /organizations/{org_id}/stats/attendance
   GET /organizations/{org_id}/stats/arrivals
+  GET /organizations/{org_id}/stats/no-shows
   GET /organizations/{org_id}/stats/demographics
   GET /organizations/{org_id}/stats/retention
   GET /organizations/{org_id}/stats/operations
@@ -150,6 +151,100 @@ ARRIVAL_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_responses
                         "arrivals": {
                             "summary": "A period compared with the previous period",
                             "value": ARRIVAL_STATS_EXAMPLE,
+                        },
+                    }
+                }
+            },
+        }
+    },
+    error_401_invalid_credentials(),
+    error_403_admin_required(),
+    error_404_meetup(),
+    error_422_validation(),
+)
+
+
+# -- GET /organizations/{org_id}/stats/no-shows --
+
+NO_SHOW_STATS_EXAMPLE = {
+    "summary": {"expected": 83, "no_show": 12, "no_show_rate": 0.1446, "repeat_guests": 2},
+    "meetups": [
+        {
+            "meetup_id": "8a3f5e2b-1c4d-4e6f-9a8b-7c6d5e4f3a2b",
+            "name": "Alter #27",
+            "date": "2026-04-04T23:00:00Z",
+            "expected": 40,
+            "no_show": 5,
+            "no_show_rate": 0.125,
+        },
+        {
+            "meetup_id": "9b4a6f3c-2d5e-4f7a-8b9c-8d7e6f5a4b3c",
+            "name": "Alter #28",
+            "date": "2026-04-18T23:00:00Z",
+            "expected": 43,
+            "no_show": 7,
+            "no_show_rate": 0.1628,
+        },
+    ],
+    "gender": [
+        {"key": "MALE", "expected": 40, "no_show": 5, "no_show_rate": 0.125},
+        {"key": "WOMAN_CIS", "expected": 33, "no_show": 6, "no_show_rate": 0.1818},
+        {"key": None, "expected": 10, "no_show": 1, "no_show_rate": 0.1},
+    ],
+    "age": [
+        {"key": "AGE_18_24", "expected": 20, "no_show": 4, "no_show_rate": 0.2},
+        {"key": "AGE_25_29", "expected": 22, "no_show": 2, "no_show_rate": 0.0909},
+        {"key": "AGE_30_34", "expected": 16, "no_show": 2, "no_show_rate": 0.125},
+        {"key": "AGE_35_39", "expected": 9, "no_show": 1, "no_show_rate": 0.1111},
+        {"key": "AGE_40_49", "expected": 8, "no_show": 1, "no_show_rate": 0.125},
+        {"key": "AGE_50_PLUS", "expected": 0, "no_show": 0, "no_show_rate": None},
+        {"key": "UNKNOWN", "expected": 8, "no_show": 2, "no_show_rate": 0.25},
+    ],
+    "history": [
+        {"key": "FIRST_TIME", "expected": 30, "no_show": 8, "no_show_rate": 0.2667},
+        {"key": "RETURNING", "expected": 53, "no_show": 4, "no_show_rate": 0.0755},
+    ],
+    "lead_time": [
+        {"bucket": "SAME_DAY", "signed_up": 14, "cancelled": 1, "no_show": 3, "no_show_rate": 0.2308},
+        {"bucket": "ONE_DAY", "signed_up": 22, "cancelled": 2, "no_show": 3, "no_show_rate": 0.15},
+        {"bucket": "TWO_THREE", "signed_up": 27, "cancelled": 2, "no_show": 3, "no_show_rate": 0.12},
+        {"bucket": "FOUR_SEVEN", "signed_up": 15, "cancelled": 1, "no_show": 2, "no_show_rate": 0.1429},
+        {"bucket": "EIGHT_FOURTEEN", "signed_up": 8, "cancelled": 1, "no_show": 1, "no_show_rate": 0.1429},
+        {"bucket": "FIFTEEN_PLUS", "signed_up": 5, "cancelled": 1, "no_show": 0, "no_show_rate": 0.0},
+    ],
+    "guests": [
+        {
+            "guest_id": "3c9d7e1f-4a2b-4c6d-8e0f-1a2b3c4d5e6f",
+            "displayname": "Luna",
+            "expected": 3,
+            "attended": 0,
+            "no_show": 3,
+            "last_no_show": "2026-04-18T23:00:00Z",
+        },
+        {
+            "guest_id": "4d0e8f2a-5b3c-4d7e-9f1a-2b3c4d5e6f7a",
+            "displayname": "Tomi",
+            "expected": 4,
+            "attended": 2,
+            "no_show": 2,
+            "last_no_show": "2026-04-04T23:00:00Z",
+        },
+    ],
+    "guests_total": 2,
+    "comparison_kind": "PREVIOUS_PERIOD",
+    "comparison": {"expected": 70, "no_show": 9, "no_show_rate": 0.1286, "repeat_guests": 1},
+}
+
+NO_SHOW_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_responses(
+    {
+        200: {
+            "description": "Who signed up for finalized meetups in the period and did not come",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "no_shows": {
+                            "summary": "A period compared with the previous period",
+                            "value": NO_SHOW_STATS_EXAMPLE,
                         },
                     }
                 }

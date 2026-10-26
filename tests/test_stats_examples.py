@@ -7,6 +7,7 @@ from app.openapi_examples.stats_examples import (
     ARRIVAL_STATS_EXAMPLE,
     ATTENDANCE_STATS_EXAMPLE,
     DEMOGRAPHIC_STATS_EXAMPLE,
+    NO_SHOW_STATS_EXAMPLE,
     OPERATIONS_STATS_EXAMPLE,
     RETENTION_STATS_EXAMPLE,
     WEATHER_STATS_EVENT_EXAMPLE,
@@ -16,6 +17,7 @@ from app.schemas.stats import (
     ArrivalStatsPublic,
     AttendanceStatsPublic,
     DemographicStatsPublic,
+    NoShowStatsPublic,
     OperationsStatsPublic,
     RetentionStatsPublic,
     WeatherStatsPublic,
@@ -28,12 +30,13 @@ from app.schemas.stats import (
         (AttendanceStatsPublic, ATTENDANCE_STATS_EXAMPLE),
         (ArrivalStatsPublic, ARRIVAL_STATS_EXAMPLE),
         (DemographicStatsPublic, DEMOGRAPHIC_STATS_EXAMPLE),
+        (NoShowStatsPublic, NO_SHOW_STATS_EXAMPLE),
         (RetentionStatsPublic, RETENTION_STATS_EXAMPLE),
         (OperationsStatsPublic, OPERATIONS_STATS_EXAMPLE),
         (WeatherStatsPublic, WEATHER_STATS_EXAMPLE),
         (WeatherStatsPublic, WEATHER_STATS_EVENT_EXAMPLE),
     ],
-    ids=["attendance", "arrivals", "demographics", "retention", "operations", "weather", "weather-event"],
+    ids=["attendance", "arrivals", "demographics", "no-shows", "retention", "operations", "weather", "weather-event"],
 )
 def test_stats_example_matches_its_response_model(model: type[BaseModel], example: dict):
     model.model_validate(example)
@@ -46,6 +49,23 @@ def test_arrival_example_is_consistent():
 
     assert sum(b["arrivals"] for b in example["curve"]) == summary["arrivals"]
     assert summary["arrivals"] >= expected_attended
+
+
+def test_no_show_example_is_consistent():
+    example = NO_SHOW_STATS_EXAMPLE
+    summary = example["summary"]
+    totals = (summary["expected"], summary["no_show"])
+    lead_time = [(r["signed_up"] - r["cancelled"], r["no_show"]) for r in example["lead_time"]]
+
+    assert summary["no_show_rate"] == round(summary["no_show"] / summary["expected"], 4)
+    for groups in (example["meetups"], example["gender"], example["age"], example["history"]):
+        assert (sum(g["expected"] for g in groups), sum(g["no_show"] for g in groups)) == totals
+        assert all(
+            g["no_show_rate"] == (round(g["no_show"] / g["expected"], 4) if g["expected"] else None) for g in groups
+        )
+    assert (sum(e for e, _ in lead_time), sum(n for _, n in lead_time)) == totals
+    assert all(g["expected"] == g["attended"] + g["no_show"] for g in example["guests"])
+    assert summary["repeat_guests"] == example["guests_total"] == len(example["guests"])
 
 
 def test_retention_example_is_consistent():

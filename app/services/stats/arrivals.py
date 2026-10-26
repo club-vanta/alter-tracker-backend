@@ -306,6 +306,11 @@ def _lead_time_rows(rows: list[_RsvpRow]) -> list[LeadTimeRow]:
     ]
 
 
+def lead_time_rows(session: Session, *conditions: ColumnElement[bool]) -> list[LeadTimeRow]:
+    """Sign-ups, cancellations and no-shows per lead-time bucket over the meetups matching the conditions."""
+    return _lead_time_rows(_load_rows(session, *conditions))
+
+
 def _summary_of(rows: list[_RsvpRow]) -> ArrivalSummary:
     arrivals, excluded = _arrivals(rows)
     return summarize_arrivals(arrivals, arrival_curve([a.offset for a in arrivals]), excluded=excluded)

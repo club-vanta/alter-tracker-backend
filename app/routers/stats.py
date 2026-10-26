@@ -3,6 +3,7 @@ Stats router - org-scoped statistics over finalized meetups.
 
 GET /organizations/{org_id}/stats/attendance -> attendance per meetup and in total (org admin)
 GET /organizations/{org_id}/stats/arrivals   -> arrival times and sign-up lead time (org admin)
+GET /organizations/{org_id}/stats/no-shows   -> who signs up and does not come, and what they share (org admin)
 GET /organizations/{org_id}/stats/demographics -> gender and age of attendees (org admin)
 GET /organizations/{org_id}/stats/retention  -> new and returning guests, cohorts, lapsed regulars (org admin)
 GET /organizations/{org_id}/stats/operations -> guest types, payments, check-ins, busiest door slot, bans (org admin)
@@ -24,6 +25,7 @@ from app.openapi_examples.stats_examples import (
     ARRIVAL_STATS_RESPONSES,
     ATTENDANCE_STATS_RESPONSES,
     DEMOGRAPHIC_STATS_RESPONSES,
+    NO_SHOW_STATS_RESPONSES,
     OPERATIONS_STATS_RESPONSES,
     RETENTION_STATS_RESPONSES,
     WEATHER_STATS_RESPONSES,
@@ -32,6 +34,7 @@ from app.schemas import (
     ArrivalStatsPublic,
     AttendanceStatsPublic,
     DemographicStatsPublic,
+    NoShowStatsPublic,
     OperationsStatsPublic,
     RetentionStatsPublic,
     WeatherStatsPublic,
@@ -39,6 +42,7 @@ from app.schemas import (
 from app.services.stats.arrivals import arrival_stats
 from app.services.stats.attendance import attendance_stats
 from app.services.stats.demographics import demographic_stats
+from app.services.stats.no_shows import no_show_stats
 from app.services.stats.operations import operations_stats
 from app.services.stats.retention import retention_stats
 from app.services.stats.scope import InvalidStatsPeriodError, StatsPeriod, is_finalized_meetup_of_org
@@ -120,6 +124,21 @@ async def get_arrival_stats(
     _admin: User = Depends(get_org_admin),
 ) -> ArrivalStatsPublic:
     return ArrivalStatsPublic.model_validate(arrival_stats(session, org_id, scope.period, scope.meetup_id))
+
+
+@router.get(
+    "/organizations/{org_id}/stats/no-shows",
+    response_model=NoShowStatsPublic,
+    summary="Who signs up for finalized meetups and does not come",
+    responses=NO_SHOW_STATS_RESPONSES,
+)
+async def get_no_show_stats(
+    org_id: uuid.UUID,
+    scope: StatsScope = Depends(stats_scope),
+    session: Session = Depends(get_session),
+    _admin: User = Depends(get_org_admin),
+) -> NoShowStatsPublic:
+    return NoShowStatsPublic.model_validate(no_show_stats(session, org_id, scope.period, scope.meetup_id))
 
 
 @router.get(

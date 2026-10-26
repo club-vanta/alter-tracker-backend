@@ -17,6 +17,7 @@ from app.models.models import (
     StatsFrequencyBucket,
     StatsLeadTimeBucket,
     StatsTemperatureBand,
+    StatsVisitHistory,
 )
 from app.schemas.meetups import MeetupWeatherStatusPublic
 
@@ -180,6 +181,109 @@ class DemographicStatsPublic(BaseModel):
     summary: DemographicSummaryPublic
     comparison_kind: StatsComparisonKind | None
     comparison: DemographicSummaryPublic | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# -- No-shows --
+
+
+class NoShowSummaryPublic(BaseModel):
+    """
+    Expected audience RSVPs (signed up, not cancelled) and no-shows in scope.
+    repeat_guests counts the guests with 2 or more no-shows: in the period,
+    or for one meetup, those of its no-shows who reach 2 over all time.
+    """
+
+    expected: int
+    no_show: int
+    no_show_rate: float | None
+    repeat_guests: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NoShowMeetupRowPublic(BaseModel):
+    """Expected RSVPs and no-shows of one finalized meetup."""
+
+    meetup_id: uuid.UUID
+    name: str
+    date: datetime
+    expected: int
+    no_show: int
+    no_show_rate: float | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NoShowGenderGroupPublic(BaseModel):
+    """Expected RSVPs and no-shows of one gender group. key is a Mazmo gender code (null: unknown)."""
+
+    key: str | None
+    expected: int
+    no_show: int
+    no_show_rate: float | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NoShowAgeGroupPublic(BaseModel):
+    """Expected RSVPs and no-shows of one age group."""
+
+    key: StatsAgeBucket
+    expected: int
+    no_show: int
+    no_show_rate: float | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NoShowHistoryGroupPublic(BaseModel):
+    """Expected RSVPs and no-shows of guests who had, or had not, come to an earlier meetup of the org."""
+
+    key: StatsVisitHistory
+    expected: int
+    no_show: int
+    no_show_rate: float | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NoShowGuestPublic(BaseModel):
+    """
+    One guest who missed meetups: expected RSVPs, attendances (expected = attended
+    + no_show) and the start of the last meetup they missed.
+    """
+
+    guest_id: uuid.UUID
+    displayname: str
+    expected: int
+    attended: int
+    no_show: int
+    last_no_show: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NoShowStatsPublic(BaseModel):
+    """
+    Who signs up and does not come, and what those RSVPs have in common.
+    Period mode: meetups lists the period's finalized meetups and guests the
+    guests with 2 or more no-shows in it. One-meetup mode: meetups is empty
+    and guests lists everyone who missed that meetup, counted over all time.
+    guests holds the first 50, most no-shows first; guests_total counts them all.
+    """
+
+    summary: NoShowSummaryPublic
+    meetups: list[NoShowMeetupRowPublic]
+    gender: list[NoShowGenderGroupPublic]
+    age: list[NoShowAgeGroupPublic]
+    history: list[NoShowHistoryGroupPublic]
+    lead_time: list[LeadTimeRowPublic]
+    guests: list[NoShowGuestPublic]
+    guests_total: int
+    comparison_kind: StatsComparisonKind | None
+    comparison: NoShowSummaryPublic | None
 
     model_config = ConfigDict(from_attributes=True)
 

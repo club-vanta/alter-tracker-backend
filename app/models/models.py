@@ -173,6 +173,18 @@ class StatsFrequencyBucket(StrEnum):
     SIX_PLUS = "SIX_PLUS"
 
 
+class StatsVisitHistory(StrEnum):
+    """
+    Whether a guest had come before when they signed up for a meetup.
+
+    FIRST_TIME: no attendance at an earlier finalized meetup of the org.
+    RETURNING:  at least one.
+    """
+
+    FIRST_TIME = "FIRST_TIME"
+    RETURNING = "RETURNING"
+
+
 class GuestDisplaynameSource(StrEnum):
     """
     Origin of a recorded guest displayname value.

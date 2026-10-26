@@ -131,7 +131,7 @@ def frequency_bucket(attendances: int) -> StatsFrequencyBucket:
 # -- Attendances --
 
 
-def _attendances(org_id: uuid.UUID) -> CTE:
+def attendances_cte(org_id: uuid.UUID) -> CTE:
     """
     Every audience attendance of the org's finalized meetups of all time, with
     is_first (the guest's earliest attendance, by date then meetup id, so two
@@ -323,7 +323,7 @@ def retention_stats(
     the cohort months and defaults to the current Buenos Aires date. The
     caller guarantees meetup_id is a finalized meetup of the org.
     """
-    att = _attendances(org_id)
+    att = attendances_cte(org_id)
 
     if meetup_id is not None:
         return RetentionStats(
