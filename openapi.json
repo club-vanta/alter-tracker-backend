@@ -9277,6 +9277,48 @@
                           "arrivals": 1
                         }
                       ],
+                      "clock_curve": [
+                        {
+                          "start_minute": 1305,
+                          "local_time": "21:45",
+                          "arrivals": 3
+                        },
+                        {
+                          "start_minute": 1320,
+                          "local_time": "22:00",
+                          "arrivals": 10
+                        },
+                        {
+                          "start_minute": 1335,
+                          "local_time": "22:15",
+                          "arrivals": 17
+                        },
+                        {
+                          "start_minute": 1350,
+                          "local_time": "22:30",
+                          "arrivals": 15
+                        },
+                        {
+                          "start_minute": 1365,
+                          "local_time": "22:45",
+                          "arrivals": 11
+                        },
+                        {
+                          "start_minute": 1380,
+                          "local_time": "23:00",
+                          "arrivals": 6
+                        },
+                        {
+                          "start_minute": 1395,
+                          "local_time": "23:15",
+                          "arrivals": 3
+                        },
+                        {
+                          "start_minute": 1410,
+                          "local_time": "23:30",
+                          "arrivals": 1
+                        }
+                      ],
                       "summary": {
                         "arrivals": 66,
                         "excluded_arrivals": 2,
@@ -11078,17 +11120,6 @@
             "type": "integer",
             "title": "Start Minute"
           },
-          "local_time": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Local Time"
-          },
           "arrivals": {
             "type": "integer",
             "title": "Arrivals"
@@ -11097,11 +11128,10 @@
         "type": "object",
         "required": [
           "start_minute",
-          "local_time",
           "arrivals"
         ],
         "title": "ArrivalBucketPublic",
-        "description": "Arrivals in one 15 minute bucket starting start_minute minutes from the\nmeetup start (negative = before). local_time is \"HH:MM\" for one meetup, null otherwise."
+        "description": "Arrivals in one 15 minute bucket starting start_minute minutes from the\nmeetup start (negative = before). clock_curve has the same arrivals by the local clock."
       },
       "ArrivalStatsPublic": {
         "properties": {
@@ -11111,6 +11141,13 @@
             },
             "type": "array",
             "title": "Curve"
+          },
+          "clock_curve": {
+            "items": {
+              "$ref": "#/components/schemas/ClockBucketPublic"
+            },
+            "type": "array",
+            "title": "Clock Curve"
           },
           "summary": {
             "$ref": "#/components/schemas/ArrivalSummaryPublic"
@@ -11146,6 +11183,7 @@
         "type": "object",
         "required": [
           "curve",
+          "clock_curve",
           "summary",
           "lead_time",
           "comparison_kind",
@@ -11746,6 +11784,30 @@
         ],
         "title": "CheckedInByPublic",
         "description": "Minimal staff representation for check-in attribution."
+      },
+      "ClockBucketPublic": {
+        "properties": {
+          "start_minute": {
+            "type": "integer",
+            "title": "Start Minute"
+          },
+          "local_time": {
+            "type": "string",
+            "title": "Local Time"
+          },
+          "arrivals": {
+            "type": "integer",
+            "title": "Arrivals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start_minute",
+          "local_time",
+          "arrivals"
+        ],
+        "title": "ClockBucketPublic",
+        "description": "Arrivals in one quarter hour of the local clock, summed over the meetups in scope.\nstart_minute counts from the local midnight starting the night (00:15 after midnight\nis 1455); local_time is its \"HH:MM\"."
       },
       "CohortRowPublic": {
         "properties": {
