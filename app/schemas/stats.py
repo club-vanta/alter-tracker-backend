@@ -343,11 +343,13 @@ class LapsedRegularPublic(BaseModel):
 class RetentionSummaryPublic(BaseModel):
     """
     Unique guests in scope. new_share and first_timer_return_rate are null with nothing to
-    divide by; the return rate counts later attendances even after the period ends.
+    divide by. came_back is how many new guests attended again later and, like the return
+    rate, counts attendances even after the period ends.
     """
 
     attendees: int
     new_guests: int
+    came_back: int
     returning: int
     new_share: float | None
     first_timer_return_rate: float | None

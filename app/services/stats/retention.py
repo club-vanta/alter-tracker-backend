@@ -95,12 +95,14 @@ class LapsedRegular:
 @dataclass(frozen=True)
 class RetentionSummary:
     """
-    Unique guests in scope. first_timer_return_rate is the share of the new
-    guests who attended again later, even after the period ends.
+    Unique guests in scope. came_back is how many of the new guests attended
+    again later, even after the period ends, and first_timer_return_rate is
+    their share of the new guests.
     """
 
     attendees: int
     new_guests: int
+    came_back: int
     returning: int
     new_share: float | None
     first_timer_return_rate: float | None
@@ -182,6 +184,7 @@ def _summary(session: Session, att: CTE, scope: list[ColumnElement[bool]]) -> Re
     return RetentionSummary(
         attendees=attendees,
         new_guests=new_guests,
+        came_back=came_back,
         returning=attendees - new_guests,
         new_share=ratio(new_guests, attendees, 4),
         first_timer_return_rate=ratio(came_back, new_guests, 4),
