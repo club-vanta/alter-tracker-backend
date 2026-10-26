@@ -11,9 +11,11 @@ from app.models.models import GuestType, Meetup, Organization, OrgRole, StatsCom
 from app.services.stats.arrivals import (
     Arrival,
     ArrivalBucket,
+    ClockBucket,
     LeadTimeRow,
     arrival_curve,
     arrival_stats,
+    clock_curve,
     lead_time_bucket,
     summarize_arrivals,
 )
@@ -88,6 +90,28 @@ def test_arrival_curve_clock_buckets_floor_to_the_quarter_hour():
     assert curve == [ArrivalBucket(-10, "22:00", 2), ArrivalBucket(5, "22:15", 1)]
 
 
+def test_clock_curve_buckets_local_quarter_hours_across_midnight():
+    # 23:50, 00:05 and 00:22 of one night, in minutes from its local midnight.
+    assert clock_curve([1430, 1445, 1462]) == [
+        ClockBucket(1425, "23:45", 1),
+        ClockBucket(1440, "00:00", 1),
+        ClockBucket(1455, "00:15", 1),
+    ]
+
+
+def test_clock_curve_fills_the_gaps():
+    assert clock_curve([1320, 1365]) == [
+        ClockBucket(1320, "22:00", 1),
+        ClockBucket(1335, "22:15", 0),
+        ClockBucket(1350, "22:30", 0),
+        ClockBucket(1365, "22:45", 1),
+    ]
+
+
+def test_clock_curve_empty():
+    assert clock_curve([]) == []
+
+
 def test_summarize_arrivals_mean_p90_peak_and_first_hour():
     summary = summarize_arrivals(_at(ELEVEN_PM, OFFSETS), arrival_curve(OFFSETS))
 
@@ -153,6 +177,31 @@ def test_lead_time_bucket_edges():
 
 
 # -- arrival_stats --
+
+
+def test_arrival_stats_sums_meetups_by_local_clock(session: Session):
+    org = make_org(session)
+    early = _finalized_meetup(session, org, datetime(2026, 4, 5, 20, 0, tzinfo=STATS_TZ).astimezone(UTC))
+    late = _finalized_meetup(session, org, datetime(2026, 4, 12, 22, 0, tzinfo=STATS_TZ).astimezone(UTC))
+    _arrived(session, early, 130)  # 22:10
+    _arrived(session, late, 5)  # 22:05
+    _arrived(session, late, 140)  # 00:20
+
+    stats = arrival_stats(session, org.id, ALL_TIME, None)
+
+    assert [(b.local_time, b.arrivals) for b in stats.clock_curve] == [
+        ("22:00", 2),
+        ("22:15", 0),
+        ("22:30", 0),
+        ("22:45", 0),
+        ("23:00", 0),
+        ("23:15", 0),
+        ("23:30", 0),
+        ("23:45", 0),
+        ("00:00", 0),
+        ("00:15", 1),
+    ]
+    assert stats.clock_curve[-1].start_minute == 1455
 
 
 def test_arrival_stats_one_event_uses_clock_time_across_midnight(session: Session):
@@ -474,6 +523,12 @@ def test_arrival_stats_returns_200_with_exact_aggregate_body(
             {"start_minute": 15, "local_time": None, "arrivals": 1},
             {"start_minute": 30, "local_time": None, "arrivals": 1},
         ],
+        "clock_curve": [
+            {"start_minute": 1125, "local_time": "18:45", "arrivals": 1},
+            {"start_minute": 1140, "local_time": "19:00", "arrivals": 1},
+            {"start_minute": 1155, "local_time": "19:15", "arrivals": 1},
+            {"start_minute": 1170, "local_time": "19:30", "arrivals": 1},
+        ],
         "summary": {
             "arrivals": 4,
             "excluded_arrivals": 0,
@@ -508,6 +563,7 @@ def test_arrival_stats_returns_200_for_one_meetup_in_clock_time(
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json() == {
         "curve": [{"start_minute": 0, "local_time": "19:00", "arrivals": 1}],
+        "clock_curve": [{"start_minute": 1140, "local_time": "19:00", "arrivals": 1}],
         "summary": {
             "arrivals": 1,
             "excluded_arrivals": 0,
@@ -557,6 +613,7 @@ def test_arrival_stats_returns_empty_body_for_empty_period(client: TestClient, o
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json() == {
         "curve": [],
+        "clock_curve": [],
         "summary": {
             "arrivals": 0,
             "excluded_arrivals": 0,
@@ -588,6 +645,7 @@ def test_arrival_stats_returns_200_with_exact_previous_period_body(
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json() == {
         "curve": [{"start_minute": 0, "local_time": None, "arrivals": 1}],
+        "clock_curve": [{"start_minute": 1140, "local_time": "19:00", "arrivals": 1}],
         "summary": {
             "arrivals": 1,
             "excluded_arrivals": 0,

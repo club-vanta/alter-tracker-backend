@@ -83,6 +83,20 @@ class ArrivalBucketPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ClockBucketPublic(BaseModel):
+    """
+    Arrivals in one quarter hour of the local clock, summed over the meetups in scope.
+    start_minute counts from the local midnight starting the night (00:15 after midnight
+    is 1455); local_time is its "HH:MM".
+    """
+
+    start_minute: int
+    local_time: str
+    arrivals: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ArrivalSummaryPublic(BaseModel):
     """
     *_minutes are offsets from the meetup start (negative = before);
@@ -127,6 +141,7 @@ class ArrivalStatsPublic(BaseModel):
     """When people arrive and how far ahead they signed up, with the figures to compare against."""
 
     curve: list[ArrivalBucketPublic]
+    clock_curve: list[ClockBucketPublic]
     summary: ArrivalSummaryPublic
     lead_time: list[LeadTimeRowPublic]
     comparison_kind: StatsComparisonKind | None

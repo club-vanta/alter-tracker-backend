@@ -108,6 +108,16 @@ ARRIVAL_STATS_EXAMPLE = {
         {"start_minute": 75, "local_time": None, "arrivals": 3},
         {"start_minute": 90, "local_time": None, "arrivals": 1},
     ],
+    "clock_curve": [
+        {"start_minute": 1305, "local_time": "21:45", "arrivals": 3},
+        {"start_minute": 1320, "local_time": "22:00", "arrivals": 10},
+        {"start_minute": 1335, "local_time": "22:15", "arrivals": 17},
+        {"start_minute": 1350, "local_time": "22:30", "arrivals": 15},
+        {"start_minute": 1365, "local_time": "22:45", "arrivals": 11},
+        {"start_minute": 1380, "local_time": "23:00", "arrivals": 6},
+        {"start_minute": 1395, "local_time": "23:15", "arrivals": 3},
+        {"start_minute": 1410, "local_time": "23:30", "arrivals": 1},
+    ],
     "summary": {
         "arrivals": 66,
         "excluded_arrivals": 2,

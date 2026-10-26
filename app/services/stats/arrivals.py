@@ -80,6 +80,19 @@ class ArrivalBucket:
 
 
 @dataclass(frozen=True)
+class ClockBucket:
+    """
+    Arrivals in one quarter hour of the local clock, summed over the meetups in
+    scope. start_minute counts from the local midnight starting the night, so
+    00:15 after midnight is 1455; local_time is its "HH:MM".
+    """
+
+    start_minute: int
+    local_time: str
+    arrivals: int
+
+
+@dataclass(frozen=True)
 class Arrival:
     """One arrival: minutes from its meetup's start, and minutes from local midnight of the meetup's date."""
 
@@ -121,6 +134,7 @@ class LeadTimeRow:
 @dataclass(frozen=True)
 class ArrivalStats:
     curve: list[ArrivalBucket]
+    clock_curve: list[ClockBucket]
     summary: ArrivalSummary
     lead_time: list[LeadTimeRow]
     comparison_kind: StatsComparisonKind | None
@@ -163,6 +177,21 @@ def arrival_curve(offsets: list[int], *, local_start: datetime | None = None) ->
             local_time=_clock(local_start, minute) if local_start is not None else None,
             arrivals=counts.get(minute, 0),
         )
+        for minute in range(min(counts), max(counts) + 1, BUCKET_MINUTES)
+    ]
+
+
+def clock_curve(clocks: list[int]) -> list[ClockBucket]:
+    """
+    Arrivals per quarter hour of the local clock, with the empty quarters
+    between the first and last arrival. Clocks run past 1440 after midnight,
+    so a night crossing it stays in order.
+    """
+    if not clocks:
+        return []
+    counts = Counter(clock // BUCKET_MINUTES * BUCKET_MINUTES for clock in clocks)
+    return [
+        ClockBucket(start_minute=minute, local_time=format_clock(minute), arrivals=counts.get(minute, 0))
         for minute in range(min(counts), max(counts) + 1, BUCKET_MINUTES)
     ]
 
@@ -346,6 +375,7 @@ def arrival_stats(
     curve = arrival_curve([a.offset for a in arrivals], local_start=local_start)
     return ArrivalStats(
         curve=curve,
+        clock_curve=clock_curve([a.clock for a in arrivals]),
         summary=summarize_arrivals(arrivals, curve, excluded=excluded),
         lead_time=_lead_time_rows(rows),
         comparison_kind=kind,
