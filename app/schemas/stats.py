@@ -391,16 +391,14 @@ class NightGuestPublic(BaseModel):
 
 class AfterwardsMeetupPublic(BaseModel):
     """
-    A finalized meetup after the one meetup. back and back_new are how many of the one
-    meetup's attendees, and of its first-timers, had come back by this meetup: they
-    attended it or an earlier one of the list.
+    A finalized meetup after the one meetup, with which of the one meetup's attendees came
+    to it, in the order of RetentionNightPublic.guests.
     """
 
     meetup_id: uuid.UUID
     name: str
     date: datetime
-    back: int
-    back_new: int
+    guest_ids: list[uuid.UUID]
 
     model_config = ConfigDict(from_attributes=True)
 

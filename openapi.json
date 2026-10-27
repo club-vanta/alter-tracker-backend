@@ -10395,15 +10395,17 @@
                             "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567804",
                             "name": "Alter Abril",
                             "date": "2026-04-04T22:00:00Z",
-                            "back": 1,
-                            "back_new": 1
+                            "guest_ids": [
+                              "b2c3d4e5-f6a7-8901-bcde-f12345678905"
+                            ]
                           },
                           {
                             "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567805",
                             "name": "Alter Mayo",
                             "date": "2026-05-09T22:00:00Z",
-                            "back": 2,
-                            "back_new": 1
+                            "guest_ids": [
+                              "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+                            ]
                           }
                         ]
                       }
@@ -11216,13 +11218,13 @@
             "format": "date-time",
             "title": "Date"
           },
-          "back": {
-            "type": "integer",
-            "title": "Back"
-          },
-          "back_new": {
-            "type": "integer",
-            "title": "Back New"
+          "guest_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Guest Ids"
           }
         },
         "type": "object",
@@ -11230,11 +11232,10 @@
           "meetup_id",
           "name",
           "date",
-          "back",
-          "back_new"
+          "guest_ids"
         ],
         "title": "AfterwardsMeetupPublic",
-        "description": "A finalized meetup after the one meetup. back and back_new are how many of the one\nmeetup's attendees, and of its first-timers, had come back by this meetup: they\nattended it or an earlier one of the list."
+        "description": "A finalized meetup after the one meetup, with which of the one meetup's attendees came\nto it, in the order of RetentionNightPublic.guests."
       },
       "AgeGroupPublic": {
         "properties": {
