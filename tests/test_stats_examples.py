@@ -9,6 +9,7 @@ from app.openapi_examples.stats_examples import (
     DEMOGRAPHIC_STATS_EXAMPLE,
     NO_SHOW_STATS_EXAMPLE,
     OPERATIONS_STATS_EXAMPLE,
+    RETENTION_STATS_EVENT_EXAMPLE,
     RETENTION_STATS_EXAMPLE,
     WEATHER_STATS_EVENT_EXAMPLE,
     WEATHER_STATS_EXAMPLE,
@@ -32,11 +33,22 @@ from app.schemas.stats import (
         (DemographicStatsPublic, DEMOGRAPHIC_STATS_EXAMPLE),
         (NoShowStatsPublic, NO_SHOW_STATS_EXAMPLE),
         (RetentionStatsPublic, RETENTION_STATS_EXAMPLE),
+        (RetentionStatsPublic, RETENTION_STATS_EVENT_EXAMPLE),
         (OperationsStatsPublic, OPERATIONS_STATS_EXAMPLE),
         (WeatherStatsPublic, WEATHER_STATS_EXAMPLE),
         (WeatherStatsPublic, WEATHER_STATS_EVENT_EXAMPLE),
     ],
-    ids=["attendance", "arrivals", "demographics", "no-shows", "retention", "operations", "weather", "weather-event"],
+    ids=[
+        "attendance",
+        "arrivals",
+        "demographics",
+        "no-shows",
+        "retention",
+        "retention-event",
+        "operations",
+        "weather",
+        "weather-event",
+    ],
 )
 def test_stats_example_matches_its_response_model(model: type[BaseModel], example: dict):
     model.model_validate(example)
@@ -82,6 +94,21 @@ def test_retention_example_is_consistent():
     assert len(example["lapsed"]) <= example["lapsed_total"]
 
 
+def test_retention_event_example_is_consistent():
+    example = RETENTION_STATS_EVENT_EXAMPLE
+    summary, guests = example["summary"], example["night"]["guests"]
+    new = [g for g in guests if g["visit"] == 1]
+
+    assert len(guests) == summary["attendees"]
+    assert len(new) == summary["new_guests"]
+    assert sum(g["came_back"] for g in new) == summary["came_back"]
+    assert [g["visit"] for g in guests] == sorted((g["visit"] for g in guests), reverse=True)
+    assert all((g["days_since_previous"] is None) == (g["visit"] == 1) for g in guests)
+    backs = [(m["back"], m["back_new"]) for m in example["night"]["afterwards"]]
+    assert backs == sorted(backs)
+    assert all(back <= sum(g["came_back"] for g in guests) for back, _ in backs)
+
+
 def test_operations_example_is_consistent():
     example = OPERATIONS_STATS_EXAMPLE
     summary, payments = example["summary"], example["payments"]
@@ -101,20 +128,16 @@ def test_operations_example_is_consistent():
 def test_weather_example_is_consistent():
     example = WEATHER_STATS_EXAMPLE
     meetups = example["meetups"]
-    grouped = example["rainy"]["events"] + example["dry"]["events"]
+    bands = ["BELOW_10", "FROM_10_TO_15", "FROM_15_TO_20", "FROM_20_TO_25", "FROM_25"]
 
-    assert [row["band"] for row in example["temperature_bands"]] == [
-        "BELOW_10",
-        "FROM_10_TO_15",
-        "FROM_15_TO_20",
-        "FROM_20_TO_25",
-        "FROM_25",
-    ]
-    assert grouped == sum(1 for m in meetups if m["rained"] is not None)
+    assert [row["band"] for row in example["temperature_bands"]] == bands
+    assert [row["band"] for row in example["temperature_bands_before"]] == bands
     assert sum(row["events"] for row in example["temperature_bands"]) == sum(
         1 for m in meetups if m["avg_temperature"] is not None
     )
+    assert sum(row["events"] for row in example["temperature_bands_before"]) == sum(
+        1 for m in meetups if m["before_avg_temperature"] is not None
+    )
     no_row = [m for m in meetups if not m["has_weather"]]
-    assert all(m["avg_temperature"] is None for m in no_row)
-    assert example["without_weather"] == len(no_row)
+    assert all(m["avg_temperature"] is None and m["before_avg_temperature"] is None for m in no_row)
     assert [m["date"] for m in meetups] == sorted(m["date"] for m in meetups)

@@ -11,6 +11,7 @@ from sqlmodel import Session
 
 from app.models.models import (
     Guest,
+    GuestMazmoProfile,
     GuestType,
     Meetup,
     Organization,
@@ -19,10 +20,13 @@ from app.models.models import (
     StatsFrequencyBucket,
 )
 from app.services.stats.retention import (
+    NIGHT_AFTERWARDS,
+    AfterwardsMeetup,
     CohortRow,
     FrequencyRow,
     LapsedRegular,
     MeetupNewReturning,
+    NightGuest,
     RetentionSummary,
     frequency_bucket,
     retention_stats,
@@ -450,6 +454,117 @@ def test_retention_one_event_ignores_period_bounds(session: Session):
     assert stats.comparison == RetentionSummary(0, 0, 0, 0, None, None)
 
 
+def test_retention_one_event_night_guests(session: Session):
+    """
+    Every attendee of the night with which visit it was for them.
+
+    WHY: the one-event chart draws one dot per person, grouped by visit.
+    """
+    org = make_org(session)
+    january, february, march, may = (_meetup(session, org, m) for m in (1, 2, 3, 5))
+    regular, newcomer, back_after_gap = _guest(session), _guest(session), _guest(session)
+    _attend(session, regular, january, february, march, may)
+    _attend(session, newcomer, march)
+    _attend(session, back_after_gap, january, march)
+    # Staff work is not an attendance.
+    _attend(session, _guest(session), march, guest_type=GuestType.STAFF.value)
+
+    night = _stats(session, org, ALL_TIME, march.id).night
+
+    assert night is not None
+    assert night.guests == [
+        NightGuest(regular.id, regular.displayname, None, visit=3, days_since_previous=28, came_back=True),
+        NightGuest(
+            back_after_gap.id, back_after_gap.displayname, None, visit=2, days_since_previous=59, came_back=False
+        ),
+        NightGuest(newcomer.id, newcomer.displayname, None, visit=1, days_since_previous=None, came_back=False),
+    ]
+
+
+def test_retention_one_event_night_guests_have_their_mazmo_avatar(session: Session):
+    org = make_org(session)
+    march = _meetup(session, org, 3)
+    with_photo, without = _guest(session), _guest(session)
+    session.add(GuestMazmoProfile(guest_id=with_photo.id, avatar_url="https://cdn.mazmo.net/a.jpg"))
+    session.flush()
+    _attend(session, with_photo, march)
+    _attend(session, without, march)
+
+    night = _stats(session, org, ALL_TIME, march.id).night
+
+    assert night is not None
+    assert {g.guest_id: g.avatar_url for g in night.guests} == {
+        with_photo.id: "https://cdn.mazmo.net/a.jpg",
+        without.id: None,
+    }
+
+
+def test_retention_one_event_afterwards_is_cumulative(session: Session):
+    """
+    How many of the night had come back by each later meetup.
+
+    WHY: someone who returns at the 1st later meetup still counts as back at the 2nd.
+    """
+    org = make_org(session)
+    march, april, may, june = (_meetup(session, org, m) for m in (3, 4, 5, 6))
+    early, late, never, regular = _guest(session), _guest(session), _guest(session), _guest(session)
+    _attend(session, regular, _meetup(session, org, 1), march, june)
+    _attend(session, early, march, april)
+    _attend(session, late, march, may)
+    _attend(session, never, march)
+    # Not part of the night, so not counted.
+    _attend(session, _guest(session), april)
+
+    night = _stats(session, org, ALL_TIME, march.id).night
+
+    assert night is not None
+    assert night.afterwards == [
+        AfterwardsMeetup(april.id, april.name, datetime(2026, 4, 5, 22, tzinfo=UTC), back=1, back_new=1),
+        AfterwardsMeetup(may.id, may.name, datetime(2026, 5, 5, 22, tzinfo=UTC), back=2, back_new=2),
+        AfterwardsMeetup(june.id, june.name, datetime(2026, 6, 5, 22, tzinfo=UTC), back=3, back_new=2),
+    ]
+
+
+def test_retention_one_event_afterwards_takes_the_next_finalized_meetups(session: Session):
+    org = make_org(session)
+    march = _meetup(session, org, 3)
+    later = [_meetup(session, org, 4, day) for day in range(1, NIGHT_AFTERWARDS + 2)]
+    make_meetup(
+        session,
+        org=org,
+        name="Open",
+        mazmo_meetup_url="https://mazmo.net/test/open",
+        date=datetime(2026, 3, 20, 22, tzinfo=UTC),
+        is_finalized=False,
+    )
+    _meetup(session, make_org(session, name="Other", slug="other"), 3, 20)
+    _meetup(session, org, 2)
+    _attend(session, _guest(session), march)
+
+    night = _stats(session, org, ALL_TIME, march.id).night
+
+    assert night is not None
+    assert [m.meetup_id for m in night.afterwards] == [m.id for m in later[:NIGHT_AFTERWARDS]]
+
+
+def test_retention_one_event_with_nothing_after(session: Session):
+    org = make_org(session)
+    march = _meetup(session, org, 3)
+    _attend(session, _guest(session), march)
+
+    night = _stats(session, org, ALL_TIME, march.id).night
+
+    assert night is not None
+    assert night.afterwards == []
+
+
+def test_retention_aggregate_has_no_night(session: Session):
+    org = make_org(session)
+    _attend(session, _guest(session), _meetup(session, org, 3))
+
+    assert _stats(session, org, MARCH).night is None
+
+
 def test_retention_aggregate_compares_with_previous_period(session: Session):
     org = make_org(session)
     february, march = _meetup(session, org, 2), _meetup(session, org, 3)
@@ -604,6 +719,7 @@ def test_retention_stats_returns_200_with_exact_aggregate_body(
             "new_share": None,
             "first_timer_return_rate": None,
         },
+        "night": None,
     }
 
 
@@ -644,6 +760,35 @@ def test_retention_stats_returns_200_for_one_meetup(
             "returning": 1,
             "new_share": 0.5,
             "first_timer_return_rate": 1.0,
+        },
+        "night": {
+            "guests": [
+                {
+                    "guest_id": str(a.id),
+                    "displayname": a.displayname,
+                    "avatar_url": None,
+                    "visit": 2,
+                    "days_since_previous": 59,
+                    "came_back": False,
+                },
+                {
+                    "guest_id": str(b.id),
+                    "displayname": b.displayname,
+                    "avatar_url": None,
+                    "visit": 1,
+                    "days_since_previous": None,
+                    "came_back": True,
+                },
+            ],
+            "afterwards": [
+                {
+                    "meetup_id": str(may.id),
+                    "name": may.name,
+                    "date": "2026-05-05T22:00:00Z",
+                    "back": 1,
+                    "back_new": 1,
+                }
+            ],
         },
     }
 
@@ -706,6 +851,7 @@ def test_retention_stats_returns_empty_body_for_empty_period(
             "new_share": None,
             "first_timer_return_rate": None,
         },
+        "night": None,
     }
 
 

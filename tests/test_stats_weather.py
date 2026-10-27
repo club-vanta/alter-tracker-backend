@@ -25,6 +25,15 @@ ALL_TIME = StatsPeriod(None, None)
 RSVP_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 _ids = count(1000)
 _UNSET = object()
+HOURLY_KEYS = (
+    "time",
+    "temperature_2m",
+    "apparent_temperature",
+    "precipitation",
+    "wind_speed_10m",
+    "weather_code",
+    "is_day",
+)
 
 
 def _meetup(
@@ -39,6 +48,8 @@ def _meetup(
     temperature: float | None = None,
     rained: bool | None = None,
     precipitation: float | None | object = _UNSET,
+    before_temperature: float | None = None,
+    hourly: dict | None = None,
     located: bool = False,
     finalized: bool = True,
 ) -> Meetup:
@@ -77,7 +88,8 @@ def _meetup(
                 total_precipitation_mm=precipitation,  # type: ignore[arg-type]
                 max_wind_kmh=12.0,
                 rained=rained,
-                hourly={},
+                before_avg_temperature=before_temperature,
+                hourly=hourly if hourly is not None else {name: [] for name in HOURLY_KEYS},
                 fetched_at=RSVP_TIME,
                 source="open-meteo-historical-forecast",
             )
@@ -160,22 +172,6 @@ def test_band_for_temperature_includes_the_lower_bound(temperature: float, band:
 # -- weather_stats: aggregate --
 
 
-def test_weather_stats_groups_rainy_and_dry_with_pooled_no_show(session: Session):
-    org = make_org(session)
-    _seed_aggregate(session, org)
-
-    stats = weather_stats(session, org.id, ALL_TIME, None)
-
-    # rainy: m1 (1 attended, 1/2 no-show) + m3 (9 attended, 1/10 no-show)
-    # attended (1 + 9) / 2 = 5.0; pooled no-show (1 + 1) / (2 + 10) = 2/12 = 0.1667 (mean of rates would be 0.3)
-    assert stats.rainy is not None
-    assert (stats.rainy.events, stats.rainy.avg_attended, stats.rainy.no_show_rate) == (2, 5.0, 0.1667)
-    # dry: m2 (3 attended, 1/4 no-show) + m5 (2 attended, 6/8 no-show)
-    # attended (3 + 2) / 2 = 2.5; pooled no-show (1 + 6) / (4 + 8) = 7/12 = 0.5833 (mean of rates would be 0.5)
-    assert stats.dry is not None
-    assert (stats.dry.events, stats.dry.avg_attended, stats.dry.no_show_rate) == (2, 2.5, 0.5833)
-
-
 def test_weather_stats_lists_all_five_bands_in_order(session: Session):
     org = make_org(session)
     _seed_aggregate(session, org)
@@ -189,16 +185,6 @@ def test_weather_stats_lists_all_five_bands_in_order(session: Session):
         (StatsTemperatureBand.FROM_20_TO_25, 0, None, None),
         (StatsTemperatureBand.FROM_25, 1, 9.0, 0.1),
     ]
-
-
-def test_weather_stats_counts_only_meetups_without_a_row_as_without_weather(session: Session):
-    org = make_org(session)
-    _seed_aggregate(session, org)
-
-    stats = weather_stats(session, org.id, ALL_TIME, None)
-
-    # m6 has no row; m4 (rained null) and m5 (temperature null) have a row and are not counted here.
-    assert stats.without_weather == 1
 
 
 def test_weather_stats_lists_meetups_by_date_with_null_weather_fields_without_a_row(session: Session):
@@ -228,6 +214,61 @@ def test_weather_stats_lists_meetups_by_date_with_null_weather_fields_without_a_
     )
 
 
+def test_weather_stats_bands_before_use_the_before_average(session: Session):
+    org = make_org(session)
+    # Cold before (8.0) but mild during (16.0), and the reverse.
+    _meetup(
+        session,
+        org,
+        datetime(2026, 4, 5, 22, tzinfo=UTC),
+        attended=2,
+        weather=True,
+        temperature=16.0,
+        before_temperature=8.0,
+        rained=False,
+    )
+    _meetup(
+        session,
+        org,
+        datetime(2026, 4, 12, 22, tzinfo=UTC),
+        attended=6,
+        weather=True,
+        temperature=9.0,
+        before_temperature=21.0,
+        rained=False,
+    )
+
+    stats = weather_stats(session, org.id, ALL_TIME, None)
+
+    assert [(b.band, b.events, b.avg_attended) for b in stats.temperature_bands if b.events] == [
+        (StatsTemperatureBand.BELOW_10, 1, 6.0),
+        (StatsTemperatureBand.FROM_15_TO_20, 1, 2.0),
+    ]
+    assert [(b.band, b.events, b.avg_attended) for b in stats.temperature_bands_before if b.events] == [
+        (StatsTemperatureBand.BELOW_10, 1, 2.0),
+        (StatsTemperatureBand.FROM_20_TO_25, 1, 6.0),
+    ]
+    assert [b.band for b in stats.temperature_bands_before] == list(StatsTemperatureBand)
+
+
+def test_weather_stats_rows_carry_before_avg_temperature(session: Session):
+    org = make_org(session)
+    _meetup(
+        session,
+        org,
+        datetime(2026, 4, 5, 22, tzinfo=UTC),
+        weather=True,
+        temperature=16.0,
+        before_temperature=8.0,
+        rained=False,
+    )
+    _meetup(session, org, datetime(2026, 4, 12, 22, tzinfo=UTC))
+
+    stats = weather_stats(session, org.id, ALL_TIME, None)
+
+    assert [m.before_avg_temperature for m in stats.meetups] == [8.0, None]
+
+
 def test_weather_stats_empty_groups_have_null_figures(session: Session):
     org = make_org(session)
 
@@ -237,12 +278,10 @@ def test_weather_stats_empty_groups_have_null_figures(session: Session):
     assert stats.event is None
     assert stats.comparison_kind is None
     assert stats.comparison is None
-    assert stats.without_weather == 0
-    assert stats.rainy is not None
-    assert (stats.rainy.events, stats.rainy.avg_attended, stats.rainy.no_show_rate) == (0, None, None)
     assert [(b.band, b.events, b.avg_attended, b.no_show_rate) for b in stats.temperature_bands] == [
         (band, 0, None, None) for band in StatsTemperatureBand
     ]
+    assert stats.temperature_bands_before == stats.temperature_bands
 
 
 def test_weather_stats_respects_the_period_and_skips_unfinalized_meetups(session: Session):
@@ -268,15 +307,10 @@ def test_weather_stats_respects_the_period_and_skips_unfinalized_meetups(session
     stats = weather_stats(session, org.id, StatsPeriod(date(2026, 4, 1), date(2026, 5, 1)), None)
 
     assert [m.meetup_id for m in stats.meetups] == [inside.id]
-    # The unfinalized meetup's row (30.0 degrees, rained) reaches no group, band or count.
-    assert stats.rainy is not None
-    assert stats.rainy.events == 0
-    assert stats.dry is not None
-    assert stats.dry.events == 1
+    # The unfinalized meetup's row (30.0 degrees) reaches no band.
     assert [(b.band, b.events) for b in stats.temperature_bands if b.events] == [
         (StatsTemperatureBand.FROM_10_TO_15, 1)
     ]
-    assert stats.without_weather == 0
 
 
 def test_weather_stats_audience_only(session: Session):
@@ -305,13 +339,14 @@ def test_weather_stats_audience_only(session: Session):
 
     [row] = stats.meetups
     assert (row.attended, row.no_show_rate) == (1, 0.5)
-    assert (stats.dry.events, stats.dry.avg_attended, stats.dry.no_show_rate) == (1, 1.0, 0.5)  # type: ignore[union-attr]
+    [band] = [b for b in stats.temperature_bands if b.events]
+    assert (band.events, band.avg_attended, band.no_show_rate) == (1, 1.0, 0.5)
 
 
 # -- weather_stats: one event --
 
 
-def test_weather_stats_one_event_returns_the_status_with_its_attendance(session: Session):
+def test_weather_stats_one_event_returns_the_status_with_its_weather(session: Session):
     org = make_org(session)
     seed = _seed_aggregate(session, org)
 
@@ -322,14 +357,103 @@ def test_weather_stats_one_event_returns_the_status_with_its_attendance(session:
     assert stats.event.ready is True
     assert stats.event.weather is not None
     assert (stats.event.weather.avg_temperature, stats.event.weather.rained) == (10.0, True)
-    assert (stats.event.attended, stats.event.no_show_rate) == (1, 0.5)
     assert stats.meetups == []
-    assert stats.rainy is None
-    assert stats.dry is None
     assert stats.temperature_bands == []
-    assert stats.without_weather == 0
+    assert stats.temperature_bands_before == []
     assert stats.comparison_kind is None
     assert stats.comparison is None
+
+
+def _half_past_hourly() -> dict[str, list]:
+    """The stored window of a 22:30 UTC meetup: 19:00 through 04:00 (10 hours)."""
+    first = datetime(2026, 4, 5, 19, 0)
+    times = [(first + timedelta(hours=i)).strftime("%Y-%m-%dT%H:%M") for i in range(10)]
+    return {
+        "time": times,
+        "temperature_2m": [14.0, 13.0, 12.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0],
+        "apparent_temperature": [11.0, 10.0, 9.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0],
+        "precipitation": [1.5, 2.0, 0.6, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, None],
+        "wind_speed_10m": [30.0] * 10,
+        "weather_code": [63, 63, 51, 3, 2, 0, 0, 0, 0, None],
+        "is_day": [1, 0, 0, 0, 0, 0, 0, 0, 0, None],
+    }
+
+
+def test_weather_stats_one_event_returns_before_and_hours_with_offsets(session: Session):
+    org = make_org(session)
+    meetup = _meetup(
+        session,
+        org,
+        datetime(2026, 4, 5, 22, 30, tzinfo=UTC),
+        attended=1,
+        weather=True,
+        temperature=16.0,
+        rained=False,
+        hourly=_half_past_hourly(),
+    )
+    row = session.get_one(MeetupWeather, meetup.id)
+    row.before_avg_temperature = 13.0
+    row.before_avg_apparent_temperature = 10.0
+    row.before_total_precipitation_mm = 4.1
+    row.before_rained = True
+    session.flush()
+
+    stats = weather_stats(session, org.id, ALL_TIME, meetup.id)
+
+    assert stats.event is not None
+    before = stats.event.before
+    assert before is not None
+    assert (before.avg_temperature, before.avg_apparent_temperature, before.total_precipitation_mm, before.rained) == (
+        13.0,
+        10.0,
+        4.1,
+        True,
+    )
+    hours = stats.event.hours
+    assert [h.offset_minutes for h in hours] == [-210, -150, -90, -30, 30, 90, 150, 210, 270, 330]
+    first, last = hours[0], hours[-1]
+    assert first.time == datetime(2026, 4, 5, 19, 0, tzinfo=UTC)
+    assert (first.temperature, first.apparent_temperature, first.precipitation_mm) == (14.0, 11.0, 1.5)
+    assert (first.weather_code, first.is_day) == (63, True)
+    assert (hours[1].is_day, hours[3].weather_code) == (False, 3)
+    assert (last.precipitation_mm, last.weather_code, last.is_day) == (None, None, None)
+
+
+def test_weather_stats_one_event_reads_a_row_stored_before_weather_codes(session: Session):
+    """WHY: An old worker can write a row without weather_code or is_day during a deploy; the tab must still load."""
+    hourly = _half_past_hourly()
+    del hourly["weather_code"], hourly["is_day"]
+    org = make_org(session)
+    meetup = _meetup(session, org, datetime(2026, 4, 5, 22, 30, tzinfo=UTC), weather=True, hourly=hourly)
+
+    stats = weather_stats(session, org.id, ALL_TIME, meetup.id)
+
+    assert stats.event is not None
+    assert [(h.weather_code, h.is_day) for h in stats.event.hours] == [(None, None)] * 10
+    assert stats.event.hours[0].temperature == 14.0
+
+
+def test_weather_stats_one_event_offsets_ignore_seconds_in_the_start(session: Session):
+    """WHY: A start at 22:30:15 still puts the 19:00 hour at -210, not -211."""
+    org = make_org(session)
+    meetup = _meetup(
+        session, org, datetime(2026, 4, 5, 22, 30, 15, tzinfo=UTC), weather=True, hourly=_half_past_hourly()
+    )
+
+    stats = weather_stats(session, org.id, ALL_TIME, meetup.id)
+
+    assert stats.event is not None
+    assert stats.event.hours[0].offset_minutes == -210
+
+
+def test_weather_stats_one_event_without_a_row_has_no_before_and_no_hours(session: Session):
+    org = make_org(session)
+    meetup = _meetup(session, org, datetime(2026, 4, 5, 22, tzinfo=UTC), attended=1, located=True)
+
+    stats = weather_stats(session, org.id, ALL_TIME, meetup.id)
+
+    assert stats.event is not None
+    assert (stats.event.before, stats.event.hours) == (None, [])
 
 
 def test_weather_stats_one_event_ignores_period_bounds(session: Session):
@@ -339,7 +463,7 @@ def test_weather_stats_one_event_ignores_period_bounds(session: Session):
     stats = weather_stats(session, org.id, StatsPeriod(date(2030, 1, 1), date(2030, 2, 1)), seed["m1"].id)
 
     assert stats.event is not None
-    assert stats.event.attended == 1
+    assert stats.event.status is WeatherStatus.OK
 
 
 def test_weather_stats_one_event_without_location(session: Session):
@@ -350,7 +474,6 @@ def test_weather_stats_one_event_without_location(session: Session):
 
     assert stats.event is not None
     assert (stats.event.status, stats.event.weather, stats.event.ready) == (WeatherStatus.NO_LOCATION, None, False)
-    assert (stats.event.attended, stats.event.no_show_rate) == (3, 0.25)
 
 
 def test_weather_stats_one_event_located_without_a_row_is_not_fetched(session: Session):
@@ -417,9 +540,10 @@ def test_weather_stats_returns_the_exact_aggregate_body(
     assert body["event"] is None
     assert body["comparison_kind"] is None
     assert body["comparison"] is None
-    assert body["without_weather"] == 1
-    assert body["rainy"] == {"events": 2, "avg_attended": 5.0, "no_show_rate": 0.1667}
-    assert body["dry"] == {"events": 2, "avg_attended": 2.5, "no_show_rate": 0.5833}
+    assert "rainy" not in body
+    assert "dry" not in body
+    assert "without_weather" not in body
+    assert [b["events"] for b in body["temperature_bands_before"]] == [0, 0, 0, 0, 0]
     assert body["temperature_bands"] == [
         {"band": "BELOW_10", "events": 1, "avg_attended": 3.0, "no_show_rate": 0.25},
         {"band": "FROM_10_TO_15", "events": 1, "avg_attended": 1.0, "no_show_rate": 0.5},
@@ -436,6 +560,7 @@ def test_weather_stats_returns_the_exact_aggregate_body(
         "avg_temperature": 10.0,
         "rained": True,
         "total_precipitation_mm": 1.5,
+        "before_avg_temperature": None,
         "has_weather": True,
     }
     assert [m["has_weather"] for m in body["meetups"]] == [True, True, True, True, True, False]
@@ -464,14 +589,17 @@ def test_weather_stats_returns_the_event_in_one_event_mode(
             "source": "open-meteo-historical-forecast",
         },
         "ready": True,
-        "attended": 9,
-        "no_show_rate": 0.1,
+        "before": {
+            "avg_temperature": None,
+            "avg_apparent_temperature": None,
+            "total_precipitation_mm": None,
+            "rained": None,
+        },
+        "hours": [],
     }
     assert body["meetups"] == []
-    assert body["rainy"] is None
-    assert body["dry"] is None
     assert body["temperature_bands"] == []
-    assert body["without_weather"] == 0
+    assert body["temperature_bands_before"] == []
     assert body["comparison_kind"] is None
 
 
@@ -513,6 +641,5 @@ def test_weather_stats_returns_empty_aggregate_for_empty_period(
     assert resp.status_code == status.HTTP_200_OK
     body = resp.json()
     assert body["meetups"] == []
-    assert body["rainy"] == {"events": 0, "avg_attended": None, "no_show_rate": None}
     assert len(body["temperature_bands"]) == 5
-    assert body["without_weather"] == 0
+    assert len(body["temperature_bands_before"]) == 5

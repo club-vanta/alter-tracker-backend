@@ -59,6 +59,8 @@ class FakeClient:
             "apparent_temperature": [14.0] * 6,
             "precipitation": [0.0] * 6,
             "wind_speed_10m": [10.0] * 6,
+            "weather_code": [0] * 6,
+            "is_day": [0] * 6,
         }
 
 

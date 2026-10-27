@@ -212,7 +212,8 @@ class MeetupWeatherPublic(BaseModel):
       total_precipitation_mm is null: unknown is not the same as dry.
 
     fetched_at is when the snapshot was taken; source names the provider
-    dataset. The raw hourly arrays are stored but not returned.
+    dataset. The raw hourly arrays are not returned here; the weather stats
+    return them for one meetup.
     """
 
     model_config = ConfigDict(from_attributes=True)

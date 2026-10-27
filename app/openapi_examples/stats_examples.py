@@ -462,6 +462,88 @@ RETENTION_STATS_EXAMPLE = {
         "new_share": 0.3529,
         "first_timer_return_rate": 0.5,
     },
+    "night": None,
+}
+
+# One meetup, Alter Marzo, with 5 attendees: 2 had their first time there, one of whom
+# came back at the next meetup; Lucia was back at the one after. The lists of the period
+# view are empty and the comparison is the whole period.
+RETENTION_STATS_EVENT_EXAMPLE = {
+    "summary": {
+        "attendees": 5,
+        "new_guests": 2,
+        "came_back": 1,
+        "returning": 3,
+        "new_share": 0.4,
+        "first_timer_return_rate": 0.5,
+    },
+    "meetups": [],
+    "cohorts": [],
+    "frequency": [],
+    "lapsed": [],
+    "lapsed_total": None,
+    "comparison_kind": "PERIOD_AVERAGE",
+    "comparison": RETENTION_STATS_EXAMPLE["summary"],
+    "night": {
+        "guests": [
+            {
+                "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+                "displayname": "Lucia",
+                "avatar_url": "https://cdn.mazmo.net/avatars/lucia.jpg",
+                "visit": 9,
+                "days_since_previous": 28,
+                "came_back": True,
+            },
+            {
+                "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678903",
+                "displayname": "Tomas",
+                "avatar_url": None,
+                "visit": 4,
+                "days_since_previous": 210,
+                "came_back": False,
+            },
+            {
+                "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678904",
+                "displayname": "Valen",
+                "avatar_url": None,
+                "visit": 2,
+                "days_since_previous": 35,
+                "came_back": False,
+            },
+            {
+                "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678905",
+                "displayname": "Sol",
+                "avatar_url": "https://cdn.mazmo.net/avatars/sol.jpg",
+                "visit": 1,
+                "days_since_previous": None,
+                "came_back": True,
+            },
+            {
+                "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678906",
+                "displayname": "Nico",
+                "avatar_url": None,
+                "visit": 1,
+                "days_since_previous": None,
+                "came_back": False,
+            },
+        ],
+        "afterwards": [
+            {
+                "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567804",
+                "name": "Alter Abril",
+                "date": "2026-04-04T22:00:00Z",
+                "back": 1,
+                "back_new": 1,
+            },
+            {
+                "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567805",
+                "name": "Alter Mayo",
+                "date": "2026-05-09T22:00:00Z",
+                "back": 2,
+                "back_new": 1,
+            },
+        ],
+    },
 }
 
 RETENTION_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_responses(
@@ -474,6 +556,10 @@ RETENTION_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_respons
                         "retention": {
                             "summary": "A period compared with the previous period",
                             "value": RETENTION_STATS_EXAMPLE,
+                        },
+                        "event": {
+                            "summary": "One meetup (meetup_id): who came that night and who came back after",
+                            "value": RETENTION_STATS_EVENT_EXAMPLE,
                         },
                     }
                 }
@@ -575,6 +661,7 @@ WEATHER_STATS_EXAMPLE = {
             "avg_temperature": 11.4,
             "rained": True,
             "total_precipitation_mm": 3.2,
+            "before_avg_temperature": 12.6,
             "has_weather": True,
         },
         {
@@ -586,6 +673,7 @@ WEATHER_STATS_EXAMPLE = {
             "avg_temperature": 18.0,
             "rained": False,
             "total_precipitation_mm": 0.0,
+            "before_avg_temperature": 21.3,
             "has_weather": True,
         },
         {
@@ -597,11 +685,10 @@ WEATHER_STATS_EXAMPLE = {
             "avg_temperature": None,
             "rained": None,
             "total_precipitation_mm": None,
+            "before_avg_temperature": None,
             "has_weather": False,
         },
     ],
-    "rainy": {"events": 1, "avg_attended": 30.0, "no_show_rate": 0.2368},
-    "dry": {"events": 1, "avg_attended": 31.0, "no_show_rate": 0.1143},
     "temperature_bands": [
         {"band": "BELOW_10", "events": 0, "avg_attended": None, "no_show_rate": None},
         {"band": "FROM_10_TO_15", "events": 1, "avg_attended": 30.0, "no_show_rate": 0.2368},
@@ -609,7 +696,13 @@ WEATHER_STATS_EXAMPLE = {
         {"band": "FROM_20_TO_25", "events": 0, "avg_attended": None, "no_show_rate": None},
         {"band": "FROM_25", "events": 0, "avg_attended": None, "no_show_rate": None},
     ],
-    "without_weather": 1,
+    "temperature_bands_before": [
+        {"band": "BELOW_10", "events": 0, "avg_attended": None, "no_show_rate": None},
+        {"band": "FROM_10_TO_15", "events": 1, "avg_attended": 30.0, "no_show_rate": 0.2368},
+        {"band": "FROM_15_TO_20", "events": 0, "avg_attended": None, "no_show_rate": None},
+        {"band": "FROM_20_TO_25", "events": 1, "avg_attended": 31.0, "no_show_rate": 0.1143},
+        {"band": "FROM_25", "events": 0, "avg_attended": None, "no_show_rate": None},
+    ],
     "comparison_kind": None,
     "comparison": None,
 }
@@ -627,14 +720,37 @@ WEATHER_STATS_EVENT_EXAMPLE = {
             "source": "open-meteo-historical-forecast",
         },
         "ready": True,
-        "attended": 30,
-        "no_show_rate": 0.2368,
+        "before": {
+            "avg_temperature": 12.6,
+            "avg_apparent_temperature": 10.9,
+            "total_precipitation_mm": 4.1,
+            "rained": True,
+        },
+        # Abbreviated: a 22:00 meetup has 9 hours, from 19:00 (-180) through 03:00 (+300).
+        "hours": [
+            {
+                "time": "2026-04-05T19:00:00Z",
+                "offset_minutes": -180,
+                "temperature": 13.1,
+                "apparent_temperature": 11.2,
+                "precipitation_mm": 1.5,
+                "weather_code": 63,
+                "is_day": False,
+            },
+            {
+                "time": "2026-04-05T22:00:00Z",
+                "offset_minutes": 0,
+                "temperature": 12.0,
+                "apparent_temperature": 10.1,
+                "precipitation_mm": 0.0,
+                "weather_code": 3,
+                "is_day": False,
+            },
+        ],
     },
     "meetups": [],
-    "rainy": None,
-    "dry": None,
     "temperature_bands": [],
-    "without_weather": 0,
+    "temperature_bands_before": [],
     "comparison_kind": None,
     "comparison": None,
 }
@@ -642,16 +758,16 @@ WEATHER_STATS_EVENT_EXAMPLE = {
 WEATHER_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_responses(
     {
         200: {
-            "description": "Weather against the attendance of finalized meetups",
+            "description": "Temperature against the attendance of finalized meetups, or the weather of one",
             "content": {
                 "application/json": {
                     "examples": {
                         "aggregate": {
-                            "summary": "A period: rainy and dry groups, temperature bands, meetups without weather",
+                            "summary": "A period: temperature bands during and before the meetups, and each meetup",
                             "value": WEATHER_STATS_EXAMPLE,
                         },
                         "event": {
-                            "summary": "One meetup (meetup_id): its weather and attendance",
+                            "summary": "One meetup (meetup_id): its weather before and during, hour by hour",
                             "value": WEATHER_STATS_EVENT_EXAMPLE,
                         },
                     }

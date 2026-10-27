@@ -189,7 +189,7 @@ async def get_operations_stats(
 @router.get(
     "/organizations/{org_id}/stats/weather",
     response_model=WeatherStatsPublic,
-    summary="Rain and temperature against the attendance of finalized meetups",
+    summary="Temperature against attendance, or the hourly weather of one meetup",
     responses=WEATHER_STATS_RESPONSES,
 )
 async def get_weather_stats(
