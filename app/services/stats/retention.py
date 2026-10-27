@@ -131,17 +131,12 @@ class NightGuest:
 
 @dataclass(frozen=True)
 class AfterwardsMeetup:
-    """
-    A meetup after the night. back and back_new are how many of the night's
-    attendees, and of its first-timers, attended it or an earlier one of the
-    meetups after the night.
-    """
+    """A meetup after the night and which of the night's attendees came to it, in the night's order."""
 
     meetup_id: uuid.UUID
     name: str
     date: datetime
-    back: int
-    back_new: int
+    guest_ids: list[uuid.UUID]
 
 
 @dataclass(frozen=True)
@@ -398,7 +393,7 @@ def _afterwards(
 ) -> list[AfterwardsMeetup]:
     """
     The NIGHT_AFTERWARDS finalized meetups after the night, in the same date
-    then id order as visits, with how many of its guests had come back by each.
+    then id order as visits, each with the night's guests who came to it.
     """
     night = aliased(Meetup)
     later = session.execute(
@@ -412,25 +407,23 @@ def _afterwards(
         .order_by(Meetup.date, Meetup.id)  # type: ignore[arg-type]
         .limit(NIGHT_AFTERWARDS)
     ).all()
-    position = {later_id: i for i, (later_id, _, _) in enumerate(later)}
-    first_back: dict[uuid.UUID, int] = {}
+    came: defaultdict[uuid.UUID, set[uuid.UUID]] = defaultdict(set)
     for guest_id, later_id in session.execute(
         select(att.c.guest_id, att.c.meetup_id).where(
-            att.c.meetup_id.in_(position), att.c.guest_id.in_([g.guest_id for g in guests])
+            att.c.meetup_id.in_([later_id for later_id, _, _ in later]),
+            att.c.guest_id.in_([g.guest_id for g in guests]),
         )
     ).all():
-        first_back[guest_id] = min(first_back.get(guest_id, NIGHT_AFTERWARDS), position[later_id])
+        came[later_id].add(guest_id)
 
-    new_guests = {g.guest_id for g in guests if g.visit == 1}
     return [
         AfterwardsMeetup(
             meetup_id=later_id,
             name=name,
             date=as_utc(when),
-            back=sum(1 for p in first_back.values() if p <= i),
-            back_new=sum(1 for g, p in first_back.items() if p <= i and g in new_guests),
+            guest_ids=[g.guest_id for g in guests if g.guest_id in came[later_id]],
         )
-        for i, (later_id, name, when) in enumerate(later)
+        for later_id, name, when in later
     ]
 
 

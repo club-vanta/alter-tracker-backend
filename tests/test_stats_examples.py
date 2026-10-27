@@ -104,9 +104,10 @@ def test_retention_event_example_is_consistent():
     assert sum(g["came_back"] for g in new) == summary["came_back"]
     assert [g["visit"] for g in guests] == sorted((g["visit"] for g in guests), reverse=True)
     assert all((g["days_since_previous"] is None) == (g["visit"] == 1) for g in guests)
-    backs = [(m["back"], m["back_new"]) for m in example["night"]["afterwards"]]
-    assert backs == sorted(backs)
-    assert all(back <= sum(g["came_back"] for g in guests) for back, _ in backs)
+    came_back = [g["guest_id"] for g in guests if g["came_back"]]
+    for meetup in example["night"]["afterwards"]:
+        # Only people who came back, in the order of the night's guests.
+        assert meetup["guest_ids"] == [g for g in came_back if g in meetup["guest_ids"]]
 
 
 def test_operations_example_is_consistent():

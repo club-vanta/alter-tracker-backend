@@ -499,17 +499,17 @@ def test_retention_one_event_night_guests_have_their_mazmo_avatar(session: Sessi
     }
 
 
-def test_retention_one_event_afterwards_is_cumulative(session: Session):
+def test_retention_one_event_afterwards_lists_who_of_the_night_came(session: Session):
     """
-    How many of the night had come back by each later meetup.
+    Which of the night's attendees came to each later meetup, in the night's order.
 
-    WHY: someone who returns at the 1st later meetup still counts as back at the 2nd.
+    WHY: the one-event view shows the faces of the night at every meetup after it.
     """
     org = make_org(session)
     march, april, may, june = (_meetup(session, org, m) for m in (3, 4, 5, 6))
     early, late, never, regular = _guest(session), _guest(session), _guest(session), _guest(session)
-    _attend(session, regular, _meetup(session, org, 1), march, june)
-    _attend(session, early, march, april)
+    _attend(session, regular, _meetup(session, org, 1), march, april, june)
+    _attend(session, early, march, april, june)
     _attend(session, late, march, may)
     _attend(session, never, march)
     # Not part of the night, so not counted.
@@ -519,9 +519,9 @@ def test_retention_one_event_afterwards_is_cumulative(session: Session):
 
     assert night is not None
     assert night.afterwards == [
-        AfterwardsMeetup(april.id, april.name, datetime(2026, 4, 5, 22, tzinfo=UTC), back=1, back_new=1),
-        AfterwardsMeetup(may.id, may.name, datetime(2026, 5, 5, 22, tzinfo=UTC), back=2, back_new=2),
-        AfterwardsMeetup(june.id, june.name, datetime(2026, 6, 5, 22, tzinfo=UTC), back=3, back_new=2),
+        AfterwardsMeetup(april.id, april.name, datetime(2026, 4, 5, 22, tzinfo=UTC), [regular.id, early.id]),
+        AfterwardsMeetup(may.id, may.name, datetime(2026, 5, 5, 22, tzinfo=UTC), [late.id]),
+        AfterwardsMeetup(june.id, june.name, datetime(2026, 6, 5, 22, tzinfo=UTC), [regular.id, early.id]),
     ]
 
 
@@ -785,8 +785,7 @@ def test_retention_stats_returns_200_for_one_meetup(
                     "meetup_id": str(may.id),
                     "name": may.name,
                     "date": "2026-05-05T22:00:00Z",
-                    "back": 1,
-                    "back_new": 1,
+                    "guest_ids": [str(b.id)],
                 }
             ],
         },
