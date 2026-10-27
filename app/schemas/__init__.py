@@ -83,6 +83,7 @@ from app.schemas.organizations import (
     OrgUpdate,
 )
 from app.schemas.stats import (
+    AfterwardsMeetupPublic,
     AgeGroupPublic,
     ArrivalBucketPublic,
     ArrivalStatsPublic,
@@ -102,6 +103,7 @@ from app.schemas.stats import (
     LeadTimeRowPublic,
     MeetupAttendanceRowPublic,
     MeetupNewReturningPublic,
+    NightGuestPublic,
     NoShowAgeGroupPublic,
     NoShowGenderGroupPublic,
     NoShowGuestPublic,
@@ -112,6 +114,7 @@ from app.schemas.stats import (
     OperationsPaymentStatsPublic,
     OperationsStatsPublic,
     OperationsSummaryPublic,
+    RetentionNightPublic,
     RetentionStatsPublic,
     RetentionSummaryPublic,
     StaffCheckinsPublic,
@@ -127,6 +130,7 @@ from app.schemas.users import UserSearchResult
 __all__ = [
     "MAZMO_URL_PATTERN",
     "AddOrgMemberRequest",
+    "AfterwardsMeetupPublic",
     "AgeGroupPublic",
     "ApproveUserRequest",
     "ArrivalBucketPublic",
@@ -189,6 +193,7 @@ __all__ = [
     "MeetupStatsPublic",
     "MeetupWeatherPublic",
     "MeetupWeatherStatusPublic",
+    "NightGuestPublic",
     "NoShowAgeGroupPublic",
     "NoShowGenderGroupPublic",
     "NoShowGuestPublic",
@@ -211,6 +216,7 @@ __all__ = [
     "RecoveryCodeResponse",
     "ResetPasswordRequest",
     "ResetPasswordResponse",
+    "RetentionNightPublic",
     "RetentionStatsPublic",
     "RetentionSummaryPublic",
     "RolePublic",

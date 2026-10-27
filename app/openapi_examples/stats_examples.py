@@ -462,6 +462,88 @@ RETENTION_STATS_EXAMPLE = {
         "new_share": 0.3529,
         "first_timer_return_rate": 0.5,
     },
+    "night": None,
+}
+
+# One meetup, Alter Marzo, with 5 attendees: 2 had their first time there, one of whom
+# came back at the next meetup; Lucia was back at the one after. The lists of the period
+# view are empty and the comparison is the whole period.
+RETENTION_STATS_EVENT_EXAMPLE = {
+    "summary": {
+        "attendees": 5,
+        "new_guests": 2,
+        "came_back": 1,
+        "returning": 3,
+        "new_share": 0.4,
+        "first_timer_return_rate": 0.5,
+    },
+    "meetups": [],
+    "cohorts": [],
+    "frequency": [],
+    "lapsed": [],
+    "lapsed_total": None,
+    "comparison_kind": "PERIOD_AVERAGE",
+    "comparison": RETENTION_STATS_EXAMPLE["summary"],
+    "night": {
+        "guests": [
+            {
+                "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+                "displayname": "Lucia",
+                "avatar_url": "https://cdn.mazmo.net/avatars/lucia.jpg",
+                "visit": 9,
+                "days_since_previous": 28,
+                "came_back": True,
+            },
+            {
+                "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678903",
+                "displayname": "Tomas",
+                "avatar_url": None,
+                "visit": 4,
+                "days_since_previous": 210,
+                "came_back": False,
+            },
+            {
+                "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678904",
+                "displayname": "Valen",
+                "avatar_url": None,
+                "visit": 2,
+                "days_since_previous": 35,
+                "came_back": False,
+            },
+            {
+                "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678905",
+                "displayname": "Sol",
+                "avatar_url": "https://cdn.mazmo.net/avatars/sol.jpg",
+                "visit": 1,
+                "days_since_previous": None,
+                "came_back": True,
+            },
+            {
+                "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678906",
+                "displayname": "Nico",
+                "avatar_url": None,
+                "visit": 1,
+                "days_since_previous": None,
+                "came_back": False,
+            },
+        ],
+        "afterwards": [
+            {
+                "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567804",
+                "name": "Alter Abril",
+                "date": "2026-04-04T22:00:00Z",
+                "back": 1,
+                "back_new": 1,
+            },
+            {
+                "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567805",
+                "name": "Alter Mayo",
+                "date": "2026-05-09T22:00:00Z",
+                "back": 2,
+                "back_new": 1,
+            },
+        ],
+    },
 }
 
 RETENTION_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_responses(
@@ -474,6 +556,10 @@ RETENTION_STATS_RESPONSES: dict[int | str, dict[str, Any]] = merge_error_respons
                         "retention": {
                             "summary": "A period compared with the previous period",
                             "value": RETENTION_STATS_EXAMPLE,
+                        },
+                        "event": {
+                            "summary": "One meetup (meetup_id): who came that night and who came back after",
+                            "value": RETENTION_STATS_EVENT_EXAMPLE,
                         },
                     }
                 }

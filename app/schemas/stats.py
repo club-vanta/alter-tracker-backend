@@ -371,11 +371,55 @@ class RetentionSummaryPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class NightGuestPublic(BaseModel):
+    """
+    An attendee of the one meetup, with their Mazmo avatar when known. visit is which of
+    their attendances it was (1 is their first time), days_since_previous the Buenos Aires
+    days since the one before (null on a first time), and came_back whether they attended
+    a later meetup.
+    """
+
+    guest_id: uuid.UUID
+    displayname: str
+    avatar_url: str | None
+    visit: int
+    days_since_previous: int | None
+    came_back: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AfterwardsMeetupPublic(BaseModel):
+    """
+    A finalized meetup after the one meetup. back and back_new are how many of the one
+    meetup's attendees, and of its first-timers, had come back by this meetup: they
+    attended it or an earlier one of the list.
+    """
+
+    meetup_id: uuid.UUID
+    name: str
+    date: datetime
+    back: int
+    back_new: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RetentionNightPublic(BaseModel):
+    """The one meetup's attendees, most visits first, and the next finalized meetups after it, oldest first."""
+
+    guests: list[NightGuestPublic]
+    afterwards: list[AfterwardsMeetupPublic]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class RetentionStatsPublic(BaseModel):
     """
     New and returning guests, cohorts, frequency and lapsed regulars, with the figures to
-    compare against. For one meetup the lists are empty and lapsed_total is null; for a
-    period without a start, lapsed is empty and lapsed_total is null.
+    compare against. For one meetup the lists are empty, lapsed_total is null and night is
+    set; for a period night is null, and without a start lapsed is empty and lapsed_total
+    is null.
     """
 
     summary: RetentionSummaryPublic
@@ -386,6 +430,7 @@ class RetentionStatsPublic(BaseModel):
     lapsed_total: int | None
     comparison_kind: StatsComparisonKind | None
     comparison: RetentionSummaryPublic | None
+    night: RetentionNightPublic | None
 
     model_config = ConfigDict(from_attributes=True)
 

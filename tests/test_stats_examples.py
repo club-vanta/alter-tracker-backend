@@ -9,6 +9,7 @@ from app.openapi_examples.stats_examples import (
     DEMOGRAPHIC_STATS_EXAMPLE,
     NO_SHOW_STATS_EXAMPLE,
     OPERATIONS_STATS_EXAMPLE,
+    RETENTION_STATS_EVENT_EXAMPLE,
     RETENTION_STATS_EXAMPLE,
     WEATHER_STATS_EVENT_EXAMPLE,
     WEATHER_STATS_EXAMPLE,
@@ -32,11 +33,22 @@ from app.schemas.stats import (
         (DemographicStatsPublic, DEMOGRAPHIC_STATS_EXAMPLE),
         (NoShowStatsPublic, NO_SHOW_STATS_EXAMPLE),
         (RetentionStatsPublic, RETENTION_STATS_EXAMPLE),
+        (RetentionStatsPublic, RETENTION_STATS_EVENT_EXAMPLE),
         (OperationsStatsPublic, OPERATIONS_STATS_EXAMPLE),
         (WeatherStatsPublic, WEATHER_STATS_EXAMPLE),
         (WeatherStatsPublic, WEATHER_STATS_EVENT_EXAMPLE),
     ],
-    ids=["attendance", "arrivals", "demographics", "no-shows", "retention", "operations", "weather", "weather-event"],
+    ids=[
+        "attendance",
+        "arrivals",
+        "demographics",
+        "no-shows",
+        "retention",
+        "retention-event",
+        "operations",
+        "weather",
+        "weather-event",
+    ],
 )
 def test_stats_example_matches_its_response_model(model: type[BaseModel], example: dict):
     model.model_validate(example)
@@ -80,6 +92,21 @@ def test_retention_example_is_consistent():
     assert sum(c["size"] for c in example["cohorts"]) == summary["new_guests"]
     assert all(len(c["retention"]) <= 12 for c in example["cohorts"])
     assert len(example["lapsed"]) <= example["lapsed_total"]
+
+
+def test_retention_event_example_is_consistent():
+    example = RETENTION_STATS_EVENT_EXAMPLE
+    summary, guests = example["summary"], example["night"]["guests"]
+    new = [g for g in guests if g["visit"] == 1]
+
+    assert len(guests) == summary["attendees"]
+    assert len(new) == summary["new_guests"]
+    assert sum(g["came_back"] for g in new) == summary["came_back"]
+    assert [g["visit"] for g in guests] == sorted((g["visit"] for g in guests), reverse=True)
+    assert all((g["days_since_previous"] is None) == (g["visit"] == 1) for g in guests)
+    backs = [(m["back"], m["back_new"]) for m in example["night"]["afterwards"]]
+    assert backs == sorted(backs)
+    assert all(back <= sum(g["came_back"] for g in guests) for back, _ in backs)
 
 
 def test_operations_example_is_consistent():

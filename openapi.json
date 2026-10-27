@@ -10327,6 +10327,87 @@
                         "first_timer_return_rate": 0.5
                       }
                     }
+                  },
+                  "event": {
+                    "summary": "One meetup (meetup_id): who came that night and who came back after",
+                    "value": {
+                      "summary": {
+                        "attendees": 5,
+                        "new_guests": 2,
+                        "came_back": 1,
+                        "returning": 3,
+                        "new_share": 0.4,
+                        "first_timer_return_rate": 0.5
+                      },
+                      "meetups": [],
+                      "cohorts": [],
+                      "frequency": [],
+                      "lapsed": [],
+                      "comparison_kind": "PERIOD_AVERAGE",
+                      "comparison": {
+                        "attendees": 40,
+                        "new_guests": 16,
+                        "came_back": 10,
+                        "returning": 24,
+                        "new_share": 0.4,
+                        "first_timer_return_rate": 0.625
+                      },
+                      "night": {
+                        "guests": [
+                          {
+                            "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+                            "displayname": "Lucia",
+                            "avatar_url": "https://cdn.mazmo.net/avatars/lucia.jpg",
+                            "visit": 9,
+                            "days_since_previous": 28,
+                            "came_back": true
+                          },
+                          {
+                            "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678903",
+                            "displayname": "Tomas",
+                            "visit": 4,
+                            "days_since_previous": 210,
+                            "came_back": false
+                          },
+                          {
+                            "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678904",
+                            "displayname": "Valen",
+                            "visit": 2,
+                            "days_since_previous": 35,
+                            "came_back": false
+                          },
+                          {
+                            "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678905",
+                            "displayname": "Sol",
+                            "avatar_url": "https://cdn.mazmo.net/avatars/sol.jpg",
+                            "visit": 1,
+                            "came_back": true
+                          },
+                          {
+                            "guest_id": "b2c3d4e5-f6a7-8901-bcde-f12345678906",
+                            "displayname": "Nico",
+                            "visit": 1,
+                            "came_back": false
+                          }
+                        ],
+                        "afterwards": [
+                          {
+                            "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567804",
+                            "name": "Alter Abril",
+                            "date": "2026-04-04T22:00:00Z",
+                            "back": 1,
+                            "back_new": 1
+                          },
+                          {
+                            "meetup_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567805",
+                            "name": "Alter Mayo",
+                            "date": "2026-05-09T22:00:00Z",
+                            "back": 2,
+                            "back_new": 1
+                          }
+                        ]
+                      }
+                    }
                   }
                 }
               }
@@ -11118,6 +11199,42 @@
         ],
         "title": "AddOrgMemberRequest",
         "description": "Request body to add a user to an organization."
+      },
+      "AfterwardsMeetupPublic": {
+        "properties": {
+          "meetup_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Meetup Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date"
+          },
+          "back": {
+            "type": "integer",
+            "title": "Back"
+          },
+          "back_new": {
+            "type": "integer",
+            "title": "Back New"
+          }
+        },
+        "type": "object",
+        "required": [
+          "meetup_id",
+          "name",
+          "date",
+          "back",
+          "back_new"
+        ],
+        "title": "AfterwardsMeetupPublic",
+        "description": "A finalized meetup after the one meetup. back and back_new are how many of the one\nmeetup's attendees, and of its first-timers, had come back by this meetup: they\nattended it or an earlier one of the list."
       },
       "AgeGroupPublic": {
         "properties": {
@@ -13398,6 +13515,60 @@
         "title": "MeetupWeatherStatusPublic",
         "description": "Weather of a meetup plus where it stands.\n\nstatus is OK (weather is set), NO_LOCATION (no coordinates), PENDING\n(located, but the window is not over plus 2 hours) or NOT_FETCHED (ready,\nno row yet). weather is null unless status is OK. ready is true when the\nmeetup has coordinates and its window ended at least 2 hours ago, whether\nor not a row exists."
       },
+      "NightGuestPublic": {
+        "properties": {
+          "guest_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Guest Id"
+          },
+          "displayname": {
+            "type": "string",
+            "title": "Displayname"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "visit": {
+            "type": "integer",
+            "title": "Visit"
+          },
+          "days_since_previous": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Since Previous"
+          },
+          "came_back": {
+            "type": "boolean",
+            "title": "Came Back"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guest_id",
+          "displayname",
+          "avatar_url",
+          "visit",
+          "days_since_previous",
+          "came_back"
+        ],
+        "title": "NightGuestPublic",
+        "description": "An attendee of the one meetup, with their Mazmo avatar when known. visit is which of\ntheir attendances it was (1 is their first time), days_since_previous the Buenos Aires\ndays since the one before (null on a first time), and came_back whether they attended\na later meetup."
+      },
       "NoShowAgeGroupPublic": {
         "properties": {
           "key": {
@@ -14192,6 +14363,31 @@
         ],
         "title": "ResetPasswordResponse"
       },
+      "RetentionNightPublic": {
+        "properties": {
+          "guests": {
+            "items": {
+              "$ref": "#/components/schemas/NightGuestPublic"
+            },
+            "type": "array",
+            "title": "Guests"
+          },
+          "afterwards": {
+            "items": {
+              "$ref": "#/components/schemas/AfterwardsMeetupPublic"
+            },
+            "type": "array",
+            "title": "Afterwards"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guests",
+          "afterwards"
+        ],
+        "title": "RetentionNightPublic",
+        "description": "The one meetup's attendees, most visits first, and the next finalized meetups after it, oldest first."
+      },
       "RetentionStatsPublic": {
         "properties": {
           "summary": {
@@ -14255,6 +14451,16 @@
                 "type": "null"
               }
             ]
+          },
+          "night": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetentionNightPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -14266,10 +14472,11 @@
           "lapsed",
           "lapsed_total",
           "comparison_kind",
-          "comparison"
+          "comparison",
+          "night"
         ],
         "title": "RetentionStatsPublic",
-        "description": "New and returning guests, cohorts, frequency and lapsed regulars, with the figures to\ncompare against. For one meetup the lists are empty and lapsed_total is null; for a\nperiod without a start, lapsed is empty and lapsed_total is null."
+        "description": "New and returning guests, cohorts, frequency and lapsed regulars, with the figures to\ncompare against. For one meetup the lists are empty, lapsed_total is null and night is\nset; for a period night is null, and without a start lapsed is empty and lapsed_total\nis null."
       },
       "RetentionSummaryPublic": {
         "properties": {

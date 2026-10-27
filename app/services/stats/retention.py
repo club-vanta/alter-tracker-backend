@@ -16,12 +16,14 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from sqlalchemy import CTE, ColumnElement, func, select
+from sqlalchemy import CTE, ColumnElement, func, select, tuple_
+from sqlalchemy.orm import aliased
 from sqlmodel import Session, col
 
 from app.models.models import (
     Guest,
     GuestAttendanceStatus,
+    GuestMazmoProfile,
     Meetup,
     MeetupRsvp,
     StatsComparisonKind,
@@ -41,6 +43,8 @@ from app.services.timeutil import as_utc
 COHORT_MONTHS = 12
 LAPSED_MIN_ATTENDANCES = 3
 LAPSED_LIMIT = 50
+# Later meetups the one-event view follows the night's attendees through.
+NIGHT_AFTERWARDS = 6
 
 # Upper attendance bound (inclusive) of each frequency bucket; the last one is open.
 _FREQUENCY_LIMITS: tuple[tuple[int, StatsFrequencyBucket], ...] = (
@@ -109,8 +113,48 @@ class RetentionSummary:
 
 
 @dataclass(frozen=True)
+class NightGuest:
+    """
+    An attendee of the one meetup, with their Mazmo avatar when known. visit
+    is which of their attendances it was (1 is their first time),
+    days_since_previous the Buenos Aires days since the one before (None on a
+    first time), and came_back whether they attended a later meetup.
+    """
+
+    guest_id: uuid.UUID
+    displayname: str
+    avatar_url: str | None
+    visit: int
+    days_since_previous: int | None
+    came_back: bool
+
+
+@dataclass(frozen=True)
+class AfterwardsMeetup:
+    """
+    A meetup after the night. back and back_new are how many of the night's
+    attendees, and of its first-timers, attended it or an earlier one of the
+    meetups after the night.
+    """
+
+    meetup_id: uuid.UUID
+    name: str
+    date: datetime
+    back: int
+    back_new: int
+
+
+@dataclass(frozen=True)
+class RetentionNight:
+    """The one meetup's attendees, most visits first, and the meetups after it."""
+
+    guests: list[NightGuest]
+    afterwards: list[AfterwardsMeetup]
+
+
+@dataclass(frozen=True)
 class RetentionStats:
-    """In one-event mode the lists are empty and lapsed_total is None."""
+    """In one-event mode the lists are empty and lapsed_total is None; night is set only then."""
 
     summary: RetentionSummary
     meetups: list[MeetupNewReturning]
@@ -120,6 +164,7 @@ class RetentionStats:
     lapsed_total: int | None
     comparison_kind: StatsComparisonKind | None
     comparison: RetentionSummary | None
+    night: RetentionNight | None
 
 
 def frequency_bucket(attendances: int) -> StatsFrequencyBucket:
@@ -136,19 +181,22 @@ def frequency_bucket(attendances: int) -> StatsFrequencyBucket:
 def attendances_cte(org_id: uuid.UUID) -> CTE:
     """
     Every audience attendance of the org's finalized meetups of all time, with
-    is_first (the guest's earliest attendance, by date then meetup id, so two
-    meetups at the same start time still give one first time), the date of that
-    first attendance, and the guest's total attendances.
+    visit (which of the guest's attendances it is, by date then meetup id, so
+    two meetups at the same start time still give one first time), is_first
+    (visit 1), the date of the guest's previous and first attendances, and the
+    guest's total attendances.
     """
     guest = col(MeetupRsvp.guest_id)
+    in_order = [col(Meetup.date), col(Meetup.id)]
+    visit = func.row_number().over(partition_by=guest, order_by=in_order)
     return (
         select(
             col(MeetupRsvp.guest_id).label("guest_id"),
             col(Meetup.id).label("meetup_id"),
             col(Meetup.date).label("date"),
-            (func.row_number().over(partition_by=guest, order_by=[col(Meetup.date), col(Meetup.id)]) == 1).label(
-                "is_first"
-            ),
+            visit.label("visit"),
+            (visit == 1).label("is_first"),
+            func.lag(Meetup.date).over(partition_by=guest, order_by=in_order).label("previous_date"),
             func.min(Meetup.date).over(partition_by=guest).label("first_date"),
             func.count().over(partition_by=guest).label("total"),
         )
@@ -309,6 +357,88 @@ def _lapsed(session: Session, att: CTE, period: StatsPeriod) -> tuple[list[Lapse
     return lapsed, rows[0].lapsed_total if rows else 0
 
 
+# -- One event --
+
+
+def _local_days_between(earlier: datetime, later: datetime) -> int:
+    return (as_utc(later).astimezone(STATS_TZ).date() - as_utc(earlier).astimezone(STATS_TZ).date()).days
+
+
+def _night_guests(session: Session, att: CTE, meetup_id: uuid.UUID) -> list[NightGuest]:
+    rows = session.execute(
+        select(
+            att.c.guest_id,
+            col(Guest.displayname),
+            col(GuestMazmoProfile.avatar_url),
+            att.c.visit,
+            att.c.date,
+            att.c.previous_date,
+            att.c.total,
+        )
+        .join(Guest, Guest.id == att.c.guest_id)  # type: ignore[arg-type]
+        .outerjoin(GuestMazmoProfile, GuestMazmoProfile.guest_id == att.c.guest_id)  # type: ignore[arg-type]
+        .where(att.c.meetup_id == meetup_id)
+        .order_by(att.c.visit.desc(), att.c.guest_id)
+    ).all()
+    return [
+        NightGuest(
+            guest_id=guest_id,
+            displayname=displayname,
+            avatar_url=avatar_url,
+            visit=visit,
+            days_since_previous=None if previous is None else _local_days_between(previous, when),
+            came_back=visit < total,
+        )
+        for guest_id, displayname, avatar_url, visit, when, previous, total in rows
+    ]
+
+
+def _afterwards(
+    session: Session, att: CTE, org_id: uuid.UUID, meetup_id: uuid.UUID, guests: list[NightGuest]
+) -> list[AfterwardsMeetup]:
+    """
+    The NIGHT_AFTERWARDS finalized meetups after the night, in the same date
+    then id order as visits, with how many of its guests had come back by each.
+    """
+    night = aliased(Meetup)
+    later = session.execute(
+        select(col(Meetup.id), col(Meetup.name), col(Meetup.date))
+        .select_from(Meetup)
+        .join(night, night.id == meetup_id)  # type: ignore[arg-type]
+        .where(
+            *finalized_meetup_conditions(org_id, StatsPeriod(None, None)),
+            tuple_(col(Meetup.date), col(Meetup.id)) > tuple_(col(night.date), col(night.id)),
+        )
+        .order_by(Meetup.date, Meetup.id)  # type: ignore[arg-type]
+        .limit(NIGHT_AFTERWARDS)
+    ).all()
+    position = {later_id: i for i, (later_id, _, _) in enumerate(later)}
+    first_back: dict[uuid.UUID, int] = {}
+    for guest_id, later_id in session.execute(
+        select(att.c.guest_id, att.c.meetup_id).where(
+            att.c.meetup_id.in_(position), att.c.guest_id.in_([g.guest_id for g in guests])
+        )
+    ).all():
+        first_back[guest_id] = min(first_back.get(guest_id, NIGHT_AFTERWARDS), position[later_id])
+
+    new_guests = {g.guest_id for g in guests if g.visit == 1}
+    return [
+        AfterwardsMeetup(
+            meetup_id=later_id,
+            name=name,
+            date=as_utc(when),
+            back=sum(1 for p in first_back.values() if p <= i),
+            back_new=sum(1 for g, p in first_back.items() if p <= i and g in new_guests),
+        )
+        for i, (later_id, name, when) in enumerate(later)
+    ]
+
+
+def _night(session: Session, att: CTE, org_id: uuid.UUID, meetup_id: uuid.UUID) -> RetentionNight:
+    guests = _night_guests(session, att, meetup_id)
+    return RetentionNight(guests=guests, afterwards=_afterwards(session, att, org_id, meetup_id, guests))
+
+
 # -- Entry point --
 
 
@@ -322,7 +452,8 @@ def retention_stats(
 ) -> RetentionStats:
     """
     Retention for the whole period (compared with the previous period), or for
-    one meetup (compared with the whole period; no breakdowns). today bounds
+    one meetup (compared with the whole period; its night instead of the
+    breakdowns). today bounds
     the cohort months and defaults to the current Buenos Aires date. The
     caller guarantees meetup_id is a finalized meetup of the org.
     """
@@ -338,6 +469,7 @@ def retention_stats(
             lapsed_total=None,
             comparison_kind=StatsComparisonKind.PERIOD_AVERAGE,
             comparison=_summary(session, att, _scope(att, period, None)),
+            night=_night(session, att, org_id, meetup_id),
         )
 
     previous = period.previous()
@@ -351,4 +483,5 @@ def retention_stats(
         lapsed_total=lapsed_total,
         comparison_kind=StatsComparisonKind.PREVIOUS_PERIOD if previous else None,
         comparison=_summary(session, att, _scope(att, previous, None)) if previous else None,
+        night=None,
     )
