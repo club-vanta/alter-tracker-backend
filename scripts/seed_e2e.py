@@ -34,6 +34,7 @@ from urllib.parse import urlparse
 from sqlmodel import Session, col, create_engine, delete, select
 
 from app.core.config import get_settings
+from app.core.database import UTC_SESSION
 from app.core.security import get_password_hash
 from app.models.models import (
     EventLog,
@@ -175,5 +176,5 @@ if __name__ == "__main__":
     e2e_password = os.environ.get("E2E_PASSWORD")
     if not e2e_password:
         sys.exit("Set E2E_PASSWORD (15+ characters) to the password the smoke suite logs in with.")
-    with Session(create_engine(settings.database_url)) as db_session:
+    with Session(create_engine(settings.database_url, connect_args=UTC_SESSION)) as db_session:
         print(json.dumps(seed_e2e(db_session, e2e_password)))

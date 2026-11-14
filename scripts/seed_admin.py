@@ -17,6 +17,7 @@ import structlog
 from sqlmodel import Session, create_engine, select
 
 from app.core.config import get_settings
+from app.core.database import UTC_SESSION
 from app.core.security import get_password_hash
 from app.models.models import PossibleRoles, Role, User
 
@@ -31,7 +32,7 @@ def seed_admin() -> bool:
         True if admin was created, False if already exists.
     """
     settings = get_settings()
-    engine = create_engine(settings.database_url)
+    engine = create_engine(settings.database_url, connect_args=UTC_SESSION)
 
     username = os.environ["ADMIN_USERNAME"]
     password = os.environ["ADMIN_PASSWORD"]

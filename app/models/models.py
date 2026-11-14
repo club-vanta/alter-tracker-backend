@@ -253,7 +253,7 @@ class User(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     is_disabled: bool = Field(default=False)
-    disabled_at: datetime | None = Field(default=None)
+    disabled_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     disabled_by_id: int | None = Field(default=None, foreign_key="users.id")
     disabled_reason: str | None = Field(default=None, max_length=500)
 
@@ -293,7 +293,9 @@ class Organization(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     name: str = Field(unique=True, max_length=128)
     slug: str = Field(unique=True, max_length=64)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
     created_by_id: int | None = Field(default=None, foreign_key="users.id")
 
     memberships: list["UserOrganization"] = Relationship(back_populates="org")
@@ -355,11 +357,11 @@ class MeetupRsvp(SQLModel, table=True):
     # guest" (the guest profile attendance list) could not use it.
     guest_id: uuid.UUID = Field(foreign_key="guests.id", primary_key=True, index=True)
 
-    rsvp_time: datetime
+    rsvp_time: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
     cancelled_rsvp: bool = Field(default=False)
 
     has_arrived: bool = Field(default=False, index=True)
-    arrival_time: datetime | None = None
+    arrival_time: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     arrival_order: int | None = Field(default=None)
 
     is_walkin: bool = Field(default=False)
@@ -369,7 +371,7 @@ class MeetupRsvp(SQLModel, table=True):
     # Payment tracking - only relevant when the parent meetup.requires_payment
     # is True. Set manually by an org admin, never by Mazmo sync.
     has_paid: bool = Field(default=False, index=True)
-    paid_at: datetime | None = None
+    paid_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     paid_by_id: int | None = Field(default=None, foreign_key="users.id")
 
     # Guest category for this specific meetup - only relevant for the
@@ -441,10 +443,10 @@ class Meetup(SQLModel, table=True):
     org_id: uuid.UUID = Field(foreign_key="organizations.id", index=True)
     mazmo_meetup_url: str = Field(unique=True)
     name: str = Field(index=True)
-    date: datetime
+    date: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
 
     is_finalized: bool = Field(default=False)
-    finalized_at: datetime | None = Field(default=None)
+    finalized_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
 
     requires_payment: bool = Field(default=False)
 
@@ -484,7 +486,9 @@ class OrganizationBan(SQLModel, table=True):
     org_id: uuid.UUID = Field(foreign_key="organizations.id", index=True)
     guest_id: uuid.UUID = Field(foreign_key="guests.id", index=True)
     banned_by_id: int | None = Field(default=None, foreign_key="users.id")
-    banned_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    banned_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
     reason: str = Field(max_length=500)
 
     org: Organization = Relationship(back_populates="bans")
@@ -521,7 +525,9 @@ class GuestDisplaynameHistory(SQLModel, table=True):
     displayname: str
     source: str = Field(max_length=16)
     actor_id: int | None = Field(default=None, foreign_key="users.id")
-    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    recorded_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
 
     guest: Guest = Relationship(back_populates="displayname_history")
     actor: Optional["User"] = Relationship()
@@ -579,7 +585,9 @@ class GuestMazmoProfile(SQLModel, table=True):
     mazmo_suspended: bool = Field(default=False)
     mazmo_banned: bool = Field(default=False)
     mazmo_deleted: bool = Field(default=False)
-    synced_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    synced_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
 
     guest: Guest = Relationship(back_populates="mazmo_profile")
 
@@ -647,7 +655,9 @@ class EventLog(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     event_type: str = Field(max_length=32, index=True)
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC), index=True)
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), sa_column=Column(DateTime(timezone=True), index=True, nullable=False)
+    )
 
     org_id: uuid.UUID | None = Field(default=None, foreign_key="organizations.id", index=True)
     actor_id: int | None = Field(default=None, foreign_key="users.id")

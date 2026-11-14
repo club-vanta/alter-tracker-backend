@@ -15,6 +15,7 @@ from uuid import UUID
 import pytest
 from sqlmodel import Session, select
 
+from app.core.database import UTC_SESSION
 from app.jobs import weather_worker
 from app.jobs.weather_worker import BATCH_SIZE, RunSummary, run_once
 from app.models.models import Meetup, MeetupWeather, Organization
@@ -430,7 +431,7 @@ def test_main_creates_an_engine_that_pings_pooled_connections(main_patches: Magi
     with patch.object(weather_worker, "create_engine") as create_engine:
         assert weather_worker.main(["--once"]) == 0
 
-    assert create_engine.call_args.kwargs == {"pool_pre_ping": True}
+    assert create_engine.call_args.kwargs == {"pool_pre_ping": True, "connect_args": UTC_SESSION}
 
 
 def test_main_installs_stop_handlers_and_loops_until_stopped(main_patches: MagicMock):
