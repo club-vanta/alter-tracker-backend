@@ -255,7 +255,7 @@ def test_attendance_stats_returns_200_with_exact_totals(
         {
             "meetup_id": str(meetup.id),
             "name": meetup.name,
-            "date": "2026-04-05T22:00:00",
+            "date": "2026-04-05T22:00:00Z",
             "signed_up": 6,
             "cancelled": 1,
             "attended": 4,
@@ -307,7 +307,7 @@ def test_attendance_stats_returns_200_for_one_meetup_compared_with_period_averag
             {
                 "meetup_id": str(selected.id),
                 "name": selected.name,
-                "date": "2026-04-05T22:00:00",
+                "date": "2026-04-05T22:00:00Z",
                 "signed_up": 6,
                 "cancelled": 1,
                 "attended": 4,

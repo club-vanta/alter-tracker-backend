@@ -554,7 +554,7 @@ def test_weather_stats_returns_the_exact_aggregate_body(
     assert body["meetups"][0] == {
         "meetup_id": str(seed["m1"].id),
         "name": seed["m1"].name,
-        "date": "2026-04-05T22:00:00",
+        "date": "2026-04-05T22:00:00Z",
         "attended": 1,
         "no_show_rate": 0.5,
         "avg_temperature": 10.0,

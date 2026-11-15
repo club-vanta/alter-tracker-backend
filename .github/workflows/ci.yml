@@ -17,6 +17,10 @@ jobs:
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: alter_event_tracker
+          # The server runs in the club's zone, like a developer machine, so a
+          # test that only passes when Postgres is in UTC fails here.
+          TZ: America/Argentina/Buenos_Aires
+          PGTZ: America/Argentina/Buenos_Aires
         ports:
           - 5432:5432
         options: >-
@@ -28,6 +32,8 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/alter_event_tracker
       JWT_SIGNING_KEY: ci-signing-key-not-used-in-production
+      # Tests run in the club's zone (UTC-3), not the runner's UTC.
+      TZ: America/Argentina/Buenos_Aires
 
     steps:
       - uses: actions/checkout@v4

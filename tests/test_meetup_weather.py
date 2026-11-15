@@ -255,7 +255,7 @@ def test_set_location_returns_200_with_the_saved_body_when_the_inline_fetch_hits
         "id": str(meetup.id),
         "name": "Test Meetup",
         "mazmo_meetup_url": meetup.mazmo_meetup_url,
-        "date": meetup.date.isoformat(),
+        "date": meetup.date.isoformat().replace("+00:00", "Z"),
         "is_finalized": False,
         "finalized_at": None,
         "requires_payment": False,

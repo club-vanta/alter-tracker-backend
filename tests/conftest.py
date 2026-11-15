@@ -25,7 +25,7 @@ from sqlalchemy import create_engine, text
 from sqlmodel import Session, SQLModel
 
 from app.core.config import get_settings
-from app.core.database import get_session, get_session_factory
+from app.core.database import UTC_SESSION, get_session, get_session_factory
 from app.core.security import get_password_hash
 from app.domain_types import MazmoUserId
 from app.main import app
@@ -51,7 +51,7 @@ TEST_DATABASE_URL = settings.database_url.replace("/alter_event_tracker", "/alte
 ADMIN_DATABASE_URL = settings.database_url.replace("/alter_event_tracker", "/postgres")
 
 # -- Engine (module-level, created once) --------------------------------------
-test_engine = create_engine(TEST_DATABASE_URL, echo=False)
+test_engine = create_engine(TEST_DATABASE_URL, echo=False, connect_args=UTC_SESSION)
 
 
 def _ensure_test_database_exists() -> None:
