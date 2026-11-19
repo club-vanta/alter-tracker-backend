@@ -7,7 +7,7 @@ All routes are org-scoped: /organizations/{org_id}/meetups/...
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -2250,3 +2250,103 @@ def test_meetup_guest_list_does_not_trigger_n_plus_1_for_mazmo_profile(
     assert resp.status_code == status.HTTP_200_OK
     profile_statements = [s for s in statements if "guest_mazmo_profile" in s.lower()]
     assert len(profile_statements) == 1
+
+
+# -- Prior visits -------------------------------------------------------------
+
+
+def _attended_earlier(session: Session, org: Organization, guest, *, days: int) -> None:
+    """The guest arrived at a finalized meetup of the org `days` days ago."""
+    earlier = make_meetup(
+        session,
+        org=org,
+        mazmo_meetup_url=f"https://mazmo.net/test-community/earlier-{uuid.uuid4().hex[:8]}",
+        date=datetime.now(UTC) - timedelta(days=days),
+        is_finalized=True,
+    )
+    make_rsvp(session, meetup=earlier, guest=guest, has_arrived=True)
+
+
+def test_list_meetup_guests_includes_prior_visits(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    org: Organization,
+    meetup,
+    org_staff_member,
+):
+    """
+    Verify each guest carries prior_visits, the earlier finalized meetups of
+    the org they attended, so the door can tell newcomers (0) apart.
+    """
+    newcomer = make_guest(session, mazmo_user_id=901, mazmo_handle="newcomer")
+    regular = make_guest(session, mazmo_user_id=902, mazmo_handle="regular")
+    _attended_earlier(session, org, regular, days=30)
+    make_rsvp(session, meetup=meetup, guest=newcomer)
+    make_rsvp(session, meetup=meetup, guest=regular)
+
+    resp = client.get(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    visits = {g["guest"]["mazmo_handle"]: g["prior_visits"] for g in resp.json()["guests"]}
+    assert visits == {"newcomer": 0, "regular": 1}
+
+
+def test_list_meetup_guests_counts_prior_visits_in_one_query(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    org: Organization,
+    meetup,
+    org_staff_member,
+):
+    """Verify prior visits come from one query for the whole list, not one per guest."""
+    for i in range(910, 914):
+        guest = make_guest(session, mazmo_user_id=i, mazmo_handle=f"visits{i}")
+        _attended_earlier(session, org, guest, days=i - 900)
+        make_rsvp(session, meetup=meetup, guest=guest)
+    session.flush()
+
+    statements: list[str] = []
+
+    def _listener(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    engine = session.get_bind().engine
+    event.listen(engine, "before_cursor_execute", _listener)
+    try:
+        resp = client.get(
+            f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests",
+            headers=staff_headers,
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", _listener)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert [g["prior_visits"] for g in resp.json()["guests"]] == [1, 1, 1, 1]
+    assert len([s for s in statements if "attendances" in s.lower()]) == 1
+
+
+def test_add_walkin_returns_prior_visits(
+    client: TestClient,
+    staff_headers: dict,
+    session: Session,
+    org: Organization,
+    meetup,
+    org_staff_member,
+):
+    """Verify the walk-in response carries the guest's real prior_visits, so the badge does not flicker."""
+    guest = make_guest(session, mazmo_user_id=920, mazmo_handle="walkin_regular")
+    _attended_earlier(session, org, guest, days=30)
+    _attended_earlier(session, org, guest, days=60)
+
+    resp = client.post(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/add-walkin",
+        headers=staff_headers,
+    )
+
+    assert resp.status_code == status.HTTP_201_CREATED
+    assert resp.json()["prior_visits"] == 2

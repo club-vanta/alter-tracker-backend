@@ -103,6 +103,7 @@ from app.schemas import (
 from app.services.mazmo import MazmoAPIError, MazmoClient, MazmoNetworkError
 from app.services.payment import PaymentStanding, payment_standing
 from app.services.sync import sync_guests
+from app.services.visits import prior_visits_by_guest
 from app.services.weather import (
     WEATHER_NO_DATA_DETAIL,
     WEATHER_REFRESH_NO_LOCATION_DETAIL,
@@ -184,6 +185,23 @@ def _refetch_guest_or_500(session: Session, guest_id: uuid.UUID, *, action: str)
             ),
         )
     return guest
+
+
+def _meetup_guest_public(rsvp: MeetupRsvp, guest: Guest, *, is_banned: bool, prior_visits: int) -> MeetupGuestPublic:
+    """One guest at a meetup as every guest endpoint returns it."""
+    return MeetupGuestPublic(
+        guest=GuestWithBanPublic(
+            id=guest.id,
+            mazmo_user_id=guest.mazmo_user_id,
+            mazmo_handle=guest.mazmo_handle,
+            displayname=guest.displayname,
+            instagram_username=guest.instagram_username,
+            is_banned=is_banned,
+            mazmo_profile=GuestMazmoProfilePublic.model_validate(guest.mazmo_profile) if guest.mazmo_profile else None,
+        ),
+        rsvp=RsvpPublic.model_validate(rsvp),
+        prior_visits=prior_visits,
+    )
 
 
 # -- Create meetup ------------------------------------------------------------
@@ -401,7 +419,7 @@ async def list_meetup_guests(
     _staff: User = Depends(get_org_member),
 ) -> MeetupGuestListResponse:
     """List all guests who have RSVPed to this meetup with their RSVP state and org ban status."""
-    _get_meetup_or_404_in_org(session, meetup_id, org_id)
+    meetup = _get_meetup_or_404_in_org(session, meetup_id, org_id)
 
     rsvps = session.exec(
         select(MeetupRsvp)
@@ -421,20 +439,14 @@ async def list_meetup_guests(
         ).all()
         banned_ids = {ban.guest_id for ban in bans}
 
+    prior_visits = prior_visits_by_guest(session, meetup, guest_ids)
+
     guests = [
-        MeetupGuestPublic(
-            guest=GuestWithBanPublic(
-                id=rsvp.guest.id,
-                mazmo_user_id=rsvp.guest.mazmo_user_id,
-                mazmo_handle=rsvp.guest.mazmo_handle,
-                displayname=rsvp.guest.displayname,
-                instagram_username=rsvp.guest.instagram_username,
-                is_banned=rsvp.guest_id in banned_ids,
-                mazmo_profile=GuestMazmoProfilePublic.model_validate(rsvp.guest.mazmo_profile)
-                if rsvp.guest.mazmo_profile
-                else None,
-            ),
-            rsvp=RsvpPublic.model_validate(rsvp),
+        _meetup_guest_public(
+            rsvp,
+            rsvp.guest,
+            is_banned=rsvp.guest_id in banned_ids,
+            prior_visits=prior_visits[rsvp.guest_id],
         )
         for rsvp in rsvps
     ]
@@ -631,17 +643,11 @@ async def add_walkin_guest(
         select(OrganizationBan).where(OrganizationBan.org_id == org_id).where(OrganizationBan.guest_id == guest_id)
     ).first()
 
-    return MeetupGuestPublic(
-        guest=GuestWithBanPublic(
-            id=guest.id,
-            mazmo_user_id=guest.mazmo_user_id,
-            mazmo_handle=guest.mazmo_handle,
-            displayname=guest.displayname,
-            instagram_username=guest.instagram_username,
-            is_banned=ban is not None,
-            mazmo_profile=GuestMazmoProfilePublic.model_validate(guest.mazmo_profile) if guest.mazmo_profile else None,
-        ),
-        rsvp=RsvpPublic.model_validate(rsvp),
+    return _meetup_guest_public(
+        rsvp,
+        guest,
+        is_banned=ban is not None,
+        prior_visits=prior_visits_by_guest(session, meetup, [guest_id])[guest_id],
     )
 
 
@@ -931,17 +937,11 @@ async def update_guest_type(
         new_guest_type=new_guest_type,
     )
 
-    return MeetupGuestPublic(
-        guest=GuestWithBanPublic(
-            id=guest.id,
-            mazmo_user_id=guest.mazmo_user_id,
-            mazmo_handle=guest.mazmo_handle,
-            displayname=guest.displayname,
-            instagram_username=guest.instagram_username,
-            is_banned=ban is not None,
-            mazmo_profile=GuestMazmoProfilePublic.model_validate(guest.mazmo_profile) if guest.mazmo_profile else None,
-        ),
-        rsvp=RsvpPublic.model_validate(rsvp),
+    return _meetup_guest_public(
+        rsvp,
+        guest,
+        is_banned=ban is not None,
+        prior_visits=prior_visits_by_guest(session, meetup, [guest_id])[guest_id],
     )
 
 

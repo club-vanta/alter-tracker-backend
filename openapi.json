@@ -5196,7 +5196,8 @@
                             "is_walkin": false,
                             "has_paid": false,
                             "guest_type": "NORMAL"
-                          }
+                          },
+                          "prior_visits": 4
                         },
                         {
                           "guest": {
@@ -5213,7 +5214,8 @@
                             "is_walkin": false,
                             "has_paid": false,
                             "guest_type": "NORMAL"
-                          }
+                          },
+                          "prior_visits": 0
                         }
                       ]
                     }
@@ -5242,7 +5244,8 @@
                             "is_walkin": false,
                             "has_paid": false,
                             "guest_type": "NORMAL"
-                          }
+                          },
+                          "prior_visits": 4
                         },
                         {
                           "guest": {
@@ -5259,7 +5262,8 @@
                             "is_walkin": false,
                             "has_paid": false,
                             "guest_type": "NORMAL"
-                          }
+                          },
+                          "prior_visits": 2
                         }
                       ]
                     }
@@ -5562,7 +5566,8 @@
                         "is_walkin": true,
                         "has_paid": false,
                         "guest_type": "NORMAL"
-                      }
+                      },
+                      "prior_visits": 0
                     }
                   }
                 }
@@ -6113,7 +6118,8 @@
                         "is_walkin": false,
                         "has_paid": false,
                         "guest_type": "VENDOR"
-                      }
+                      },
+                      "prior_visits": 3
                     }
                   }
                 }
@@ -13179,12 +13185,19 @@
           },
           "rsvp": {
             "$ref": "#/components/schemas/RsvpPublic"
+          },
+          "prior_visits": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Prior Visits",
+            "description": "Finalized meetups of the org, started before this one, that the guest attended as an audience guest (NORMAL or INVITED). 0 means this is their first time: the same rule as the stats FIRST_TIME visit history."
           }
         },
         "type": "object",
         "required": [
           "guest",
-          "rsvp"
+          "rsvp",
+          "prior_visits"
         ],
         "title": "MeetupGuestPublic",
         "description": "Combined view of a guest at a specific meetup.\n\nguest includes ban status for this org (is_banned) so the frontend\ncan render warnings at the door."
