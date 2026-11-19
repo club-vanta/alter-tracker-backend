@@ -130,6 +130,14 @@ class MeetupGuestPublic(BaseModel):
 
     guest: GuestWithBanPublic
     rsvp: RsvpPublic
+    prior_visits: int = Field(
+        ge=0,
+        description=(
+            "Finalized meetups of the org, started before this one, that the guest attended as an "
+            "audience guest (NORMAL or INVITED). 0 means this is their first time: the same rule as "
+            "the stats FIRST_TIME visit history."
+        ),
+    )
 
 
 class MeetupGuestListResponse(BaseModel):

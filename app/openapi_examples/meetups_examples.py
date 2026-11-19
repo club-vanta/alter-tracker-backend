@@ -213,8 +213,12 @@ LIST_MEETUP_GUESTS_RESPONSES: dict[int | str, dict[str, Any]] = {
                         "value": {
                             "total": 2,
                             "guests": [
-                                {"guest": GUEST_IN_ORG_NOT_BANNED, "rsvp": RSVP_ARRIVED},
-                                {"guest": {**GUEST_NORMAL_2, "is_banned": False}, "rsvp": RSVP_NOT_ARRIVED},
+                                {"guest": GUEST_IN_ORG_NOT_BANNED, "rsvp": RSVP_ARRIVED, "prior_visits": 4},
+                                {
+                                    "guest": {**GUEST_NORMAL_2, "is_banned": False},
+                                    "rsvp": RSVP_NOT_ARRIVED,
+                                    "prior_visits": 0,
+                                },
                             ],
                         },
                     },
@@ -224,8 +228,8 @@ LIST_MEETUP_GUESTS_RESPONSES: dict[int | str, dict[str, Any]] = {
                         "value": {
                             "total": 2,
                             "guests": [
-                                {"guest": GUEST_IN_ORG_NOT_BANNED, "rsvp": RSVP_ARRIVED},
-                                {"guest": GUEST_IN_ORG_BANNED, "rsvp": RSVP_NOT_ARRIVED},
+                                {"guest": GUEST_IN_ORG_NOT_BANNED, "rsvp": RSVP_ARRIVED, "prior_visits": 4},
+                                {"guest": GUEST_IN_ORG_BANNED, "rsvp": RSVP_NOT_ARRIVED, "prior_visits": 2},
                             ],
                         },
                     },

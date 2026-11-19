@@ -322,6 +322,7 @@ MEETUP_GUEST_WALKIN = {
         "is_banned": False,
     },
     "rsvp": RSVP_WALKIN,
+    "prior_visits": 0,
 }
 
 MEETUP_GUEST_VENDOR_EXAMPLE = {
@@ -344,6 +345,7 @@ MEETUP_GUEST_VENDOR_EXAMPLE = {
         "paid_at": None,
         "guest_type": "VENDOR",
     },
+    "prior_visits": 3,
 }
 
 MEETUP_STATS_EXAMPLE = {

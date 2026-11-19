@@ -10,7 +10,7 @@ Event-log filter regression test lives in test_events.py (TestEventFiltering).
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi import status
@@ -1039,3 +1039,32 @@ def test_update_guest_type_response_includes_mazmo_profile_when_linked_and_synce
     assert profile["age"] == 28
     assert profile["gender"] == "nonbinary"
     assert profile["pronoun"] == "they/them"
+
+
+def test_update_guest_type_returns_prior_visits(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    org: Organization,
+    meetup,
+):
+    """Verify the response carries the guest's real prior_visits, so the badge does not flicker."""
+    guest = make_guest(session, mazmo_user_id=530, mazmo_handle="type_regular")
+    earlier = make_meetup(
+        session,
+        org=org,
+        mazmo_meetup_url="https://mazmo.net/test-community/earlier-type",
+        date=datetime.now(UTC) - timedelta(days=30),
+        is_finalized=True,
+    )
+    make_rsvp(session, meetup=earlier, guest=guest, has_arrived=True)
+    make_rsvp(session, meetup=meetup, guest=guest)
+
+    resp = client.patch(
+        f"/organizations/{meetup.org_id}/meetups/{meetup.id}/guests/{guest.id}/type",
+        headers=admin_headers,
+        json={"guest_type": "INVITED"},
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["prior_visits"] == 1
