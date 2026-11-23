@@ -13,7 +13,7 @@ from app.core.config import get_settings
 from app.domain_types import MazmoUserId
 from app.models.models import EventLog, EventType, Guest, GuestDisplaynameHistory, GuestDisplaynameSource
 from app.schemas import MazmoRsvpEntry, MazmoUserEntry
-from app.services.mazmo import MazmoNetworkError
+from app.services.mazmo import MazmoAPIError, MazmoNetworkError
 from app.services.mazmo_event import MazmoEventDetails
 from app.services.sync import GuestSyncer
 from tests.conftest import make_guest, make_meetup, make_org, make_rsvp
@@ -224,6 +224,7 @@ async def test_sync_returns_skipped_count_when_all_user_details_missing(session:
             MazmoUserId(702): MazmoRsvpEntry(userId=702, joinedAt=now),
         }
         mock_instance.fetch_users.return_value = {}  # No user details at all
+        mock_instance.fetch_event_details.return_value = MazmoEventDetails(now, None, None)
         mock_instance.__aenter__.return_value = mock_instance
         mock_instance.__aexit__.return_value = None
         MockClient.return_value = mock_instance
@@ -298,6 +299,60 @@ async def test_sync_keeps_cover_when_event_details_fail(session: Session):
     assert result.inserted == 1
     session.refresh(meetup)
     assert meetup.cover_url == "https://prod.mazmocdn.com/old.jpeg"
+
+
+@pytest.mark.asyncio
+async def test_sync_keeps_event_details_when_mazmo_response_is_malformed(session: Session):
+    """
+    Verify that a MazmoAPIError from the event details fetch leaves cover, excerpt and date as they were.
+
+    WHY: fetch_event_details raises MazmoAPIError for a 200 with a bad body; the RSVP sync must still succeed.
+    """
+    org = make_org(session, name="Org 10", slug="org-10")
+    old_date = datetime(2026, 5, 1, tzinfo=UTC)
+    meetup = make_meetup(session, org=org, mazmo_meetup_url="https://mazmo.net/test/bad-body", date=old_date)
+    meetup.cover_url = "https://prod.mazmocdn.com/old.jpeg"
+    meetup.excerpt = "Viejo"
+    session.add(meetup)
+    session.flush()
+    patcher, mock = _patched_mazmo(datetime.now(UTC))
+    mock.fetch_event_details.side_effect = MazmoAPIError("Unexpected Mazmo thread response")
+    try:
+        result = await GuestSyncer(session, get_settings(), meetup).sync()
+    finally:
+        patcher.stop()
+
+    assert result.inserted == 1
+    session.refresh(meetup)
+    assert meetup.cover_url == "https://prod.mazmocdn.com/old.jpeg"
+    assert meetup.excerpt == "Viejo"
+    assert meetup.date == old_date
+
+
+@pytest.mark.asyncio
+async def test_sync_refreshes_cover_when_thread_has_zero_rsvps(session: Session):
+    """
+    Verify that the event details refresh also runs when Mazmo returns no RSVPs.
+
+    WHY: The public site reads cover, excerpt and date; a meetup with no RSVPs must not stay stale.
+    """
+    org = make_org(session, name="Org 11", slug="org-11")
+    meetup = make_meetup(session, org=org, mazmo_meetup_url="https://mazmo.net/test/zero-rsvps")
+    patcher, mock = _patched_mazmo(datetime.now(UTC))
+    mock.fetch_rsvps.return_value = {}
+    mock.fetch_users.return_value = {}
+    mock.fetch_event_details.return_value = MazmoEventDetails(
+        datetime(2026, 12, 1, 22, 0, tzinfo=UTC), "https://prod.mazmocdn.com/z.jpeg", "Cero"
+    )
+    try:
+        result = await GuestSyncer(session, get_settings(), meetup).sync()
+    finally:
+        patcher.stop()
+
+    assert result.inserted == 0
+    session.refresh(meetup)
+    assert meetup.cover_url == "https://prod.mazmocdn.com/z.jpeg"
+    assert meetup.excerpt == "Cero"
 
 
 # ── _upsert_guests (atomic upsert + history/event writes) ───────────────────

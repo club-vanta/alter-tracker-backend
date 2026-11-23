@@ -90,7 +90,13 @@ class GuestSyncer:
     # ── Public entry point ────────────────────────────────────────────────────
 
     async def sync(self) -> SyncResponse:
-        """Run the full sync pipeline and return a summary."""
+        """Run the full sync pipeline, refresh the event details and return a summary."""
+        result = await self._sync_rsvps()
+        await self._refresh_event_details()
+        return result
+
+    async def _sync_rsvps(self) -> SyncResponse:
+        """Fetch RSVPs and users from Mazmo and upsert guests and RSVPs."""
         rsvps, user_details = await self._fetch_from_mazmo()
 
         if not rsvps:
@@ -120,7 +126,6 @@ class GuestSyncer:
         rsvps_to_upsert = self._build_rsvps(rsvps, user_details, guest_id_map)
         inserted = self._upsert_rsvps(rsvps_to_upsert)
         self._update_cancelled_rsvps(guest_id_map)
-        await self._refresh_event_details()
 
         total = self._count_rsvps()
 

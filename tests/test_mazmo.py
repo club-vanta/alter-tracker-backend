@@ -303,6 +303,34 @@ async def test_fetch_event_details_raises_api_error_on_http_error():
                 await client.fetch_event_details("https://mazmo.net/test/meetup-123")
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [ValueError("not json"), {"other": 1}, {"event": {}}, {"event": {"date": "garbage"}}],
+    ids=["non-json", "no-event", "no-date", "bad-date"],
+)
+async def test_fetch_event_details_raises_api_error_on_unexpected_body(body: object):
+    """
+    Verify that a 200 with a non-JSON or malformed body becomes MazmoAPIError.
+
+    WHY: A WAF HTML page with status 200 must not escape as JSONDecodeError or KeyError.
+    """
+    settings = get_settings()
+
+    with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock) as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        if isinstance(body, Exception):
+            mock_resp.json.side_effect = body
+        else:
+            mock_resp.json.return_value = body
+        mock_get.return_value = mock_resp
+
+        async with MazmoClient(settings) as client:
+            with pytest.raises(MazmoAPIError, match="Unexpected Mazmo thread response"):
+                await client.fetch_event_details("https://mazmo.net/test/meetup-123")
+
+
 # -- MazmoUserEntry profile fields -----------------------------------------------
 
 
