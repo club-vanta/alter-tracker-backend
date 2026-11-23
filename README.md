@@ -311,6 +311,22 @@ This will:
 deploy.sh
 ```
 
+**Backfill meetup covers and excerpts (once, after deploying this version):**
+
+Meetups created before covers and excerpts existed have both fields empty, so
+the public site shows no cover for past alters. Fill them from Mazmo once, from
+an SSM session on the instance:
+
+```bash
+docker exec -e PYTHONPATH=/app ec2-user-app-1 python scripts/backfill_meetup_event_details.py
+```
+
+The script only touches meetups without a cover, never changes dates, and
+commits each meetup on its own. It logs how many were `updated` and how many
+`failed`. If `failed` is greater than 0, Mazmo was unreachable or returned an
+error for those meetups (each failure is logged with its `meetup_id`): run the
+script again. It is idempotent, so meetups already filled are skipped.
+
 ---
 
 ### Starting/stopping the instance for meetups
