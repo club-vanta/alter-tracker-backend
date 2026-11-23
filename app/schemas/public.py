@@ -2,13 +2,11 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 
 class PublicAlter(BaseModel):
     """One alter as shown on the public site. Never includes venue or attendee data."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     short_name: str
     title: str

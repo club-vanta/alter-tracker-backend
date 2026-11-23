@@ -259,9 +259,10 @@ class MazmoClient:
             body: RawThreadResponse = response.json()
             return parse_event_details(body["event"])
         except (ValueError, KeyError, TypeError) as exc:
-            # JSONDecodeError and fromisoformat errors are ValueError subclasses.
+            # JSONDecodeError and pydantic ValidationError are ValueError subclasses.
             raise MazmoAPIError(
-                f"Unexpected Mazmo thread response for API URL {api_url}: could not read event.date ({exc!r})"
+                f"Unexpected Mazmo thread response for API URL {api_url}: "
+                f"expected JSON with an 'event' object holding a valid 'date' ({exc!r})"
             ) from exc
         except httpx.RequestError as exc:
             raise MazmoNetworkError(f"Cannot reach Mazmo: {exc}") from exc

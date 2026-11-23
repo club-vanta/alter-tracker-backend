@@ -2,8 +2,9 @@
 
 from collections.abc import Iterator
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from sqlmodel import Session
 
@@ -87,3 +88,30 @@ async def test_backfill_counts_failures_and_continues(session: Session, mock_maz
     session.refresh(fine)
     assert broken.cover_url is None
     assert fine.cover_url == "https://cdn.example/b.jpg"
+
+
+@pytest.mark.asyncio
+async def test_backfill_counts_unexpected_mazmo_body_as_failed_and_continues(session: Session):
+    """WHY: A 200 with a malformed event (null date) must not abort the whole backfill."""
+    org = make_org(session)
+    bad = make_meetup(session, org=org, name="Bad", mazmo_meetup_url=URL_A)
+    good = make_meetup(session, org=org, name="Good", mazmo_meetup_url=URL_B)
+    bodies = {
+        "alter-a-1": {"event": {"date": None, "cover": {"url": "x"}}},
+        "alter-b-2": {"event": {"date": "2026-05-01T22:00:00.000Z", "cover": "https://cdn.example/b.jpg"}},
+    }
+
+    async def fake_get(self: httpx.AsyncClient, url: str, *args: object, **kwargs: object) -> MagicMock:
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = next(body for key, body in bodies.items() if key in url)
+        return resp
+
+    with patch.object(httpx.AsyncClient, "get", fake_get):
+        result = await backfill(session, get_settings())
+
+    assert result == BackfillResult(updated=1, failed=1)
+    session.refresh(bad)
+    session.refresh(good)
+    assert bad.cover_url is None
+    assert good.cover_url == "https://cdn.example/b.jpg"

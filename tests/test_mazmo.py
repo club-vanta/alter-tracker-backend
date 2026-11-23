@@ -306,8 +306,15 @@ async def test_fetch_event_details_raises_api_error_on_http_error():
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "body",
-    [ValueError("not json"), {"other": 1}, {"event": {}}, {"event": {"date": "garbage"}}],
-    ids=["non-json", "no-event", "no-date", "bad-date"],
+    [
+        ValueError("not json"),
+        {"other": 1},
+        {"event": {}},
+        {"event": {"date": "garbage"}},
+        {"event": {"date": None}},
+        {"event": "text"},
+    ],
+    ids=["non-json", "no-event", "no-date", "bad-date", "null-date", "event-not-object"],
 )
 async def test_fetch_event_details_raises_api_error_on_unexpected_body(body: object):
     """
@@ -329,6 +336,25 @@ async def test_fetch_event_details_raises_api_error_on_unexpected_body(body: obj
         async with MazmoClient(settings) as client:
             with pytest.raises(MazmoAPIError, match="Unexpected Mazmo thread response"):
                 await client.fetch_event_details("https://mazmo.net/test/meetup-123")
+
+
+@pytest.mark.asyncio
+async def test_fetch_event_details_drops_invalid_cover_but_keeps_date():
+    """WHY: A cover that is not an https string of at most 512 chars must never reach the DB."""
+    settings = get_settings()
+    body = {"event": {"date": "2026-04-15T19:00:00.000Z", "cover": {"url": "x"}}}
+
+    with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock) as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = body
+        mock_get.return_value = mock_resp
+
+        async with MazmoClient(settings) as client:
+            result = await client.fetch_event_details("https://mazmo.net/test/meetup-123")
+
+    assert result.cover_url is None
+    assert result.date == datetime(2026, 4, 15, 19, 0, 0, tzinfo=UTC)
 
 
 # -- MazmoUserEntry profile fields -----------------------------------------------

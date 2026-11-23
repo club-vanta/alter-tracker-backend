@@ -11196,6 +11196,7 @@
           "public"
         ],
         "summary": "List the public alters",
+        "description": "List the alters of the one organization named in `PUBLIC_ALTERS_ORG_SLUG`.\n\nNo authentication. Newest first. Never includes venue or attendee data.\nThe response carries `Cache-Control: public, max-age=300`.",
         "operationId": "list_alters_public_alters_get",
         "responses": {
           "200": {

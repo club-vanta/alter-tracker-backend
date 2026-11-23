@@ -25,6 +25,7 @@ def _get_public_org_or_404(session: Session, settings: Settings) -> Organization
     """Resolve the one organization exposed publicly, or raise an actionable 404."""
     slug = settings.public_alters_org_slug
     if not slug:
+        log.warning("Public alters requested but PUBLIC_ALTERS_ORG_SLUG is not set", slug=slug)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
@@ -34,6 +35,7 @@ def _get_public_org_or_404(session: Session, settings: Settings) -> Organization
         )
     org = session.exec(select(Organization).where(Organization.slug == slug)).first()
     if not org:
+        log.warning("PUBLIC_ALTERS_ORG_SLUG points to a missing organization", slug=slug)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
@@ -55,6 +57,12 @@ async def list_alters(
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> PublicAltersResponse:
+    """
+    List the alters of the one organization named in `PUBLIC_ALTERS_ORG_SLUG`.
+
+    No authentication. Newest first. Never includes venue or attendee data.
+    The response carries `Cache-Control: public, max-age=300`.
+    """
     org = _get_public_org_or_404(session, settings)
     response.headers["Cache-Control"] = CACHE_CONTROL
     return PublicAltersResponse(alters=list_public_alters(session, org))

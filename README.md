@@ -325,14 +325,17 @@ The script only touches meetups without a cover, never changes dates, and
 commits each meetup on its own. It logs how many were `updated` and how many
 `failed`. If `failed` is greater than 0, Mazmo was unreachable or returned an
 error for those meetups (each failure is logged with its `meetup_id`): run the
-script again. It is idempotent, so meetups already filled are skipped.
+script again. It is idempotent, so meetups already filled are skipped. A
+meetup whose Mazmo thread was deleted (404) can never be filled, so it shows up
+as `failed` on every run; that is expected and safe to ignore.
 
 ---
 
-### Starting/stopping the instance for meetups
+### Starting/stopping the instance
 
-The instance only needs to be running during meetups — stopping it saves
-~$7.50/month in compute costs.
+The instance is kept running all the time. The workflows below exist to start
+and stop it by hand (for example to save compute costs), but they are not used
+day to day.
 
 Use the GitHub Actions manual workflows — triggerable from the GitHub UI or the GitHub mobile app:
 
