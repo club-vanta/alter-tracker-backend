@@ -11189,6 +11189,65 @@
           }
         }
       }
+    },
+    "/public/alters": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "summary": "List the public alters",
+        "operationId": "list_alters_public_alters_get",
+        "responses": {
+          "200": {
+            "description": "Alters of the configured organization, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicAltersResponse"
+                },
+                "examples": {
+                  "alters": {
+                    "summary": "One alter",
+                    "value": {
+                      "alters": [
+                        {
+                          "short_name": "Discreet",
+                          "title": "Alter San Telmo - D I S C R E E T",
+                          "date": "2026-12-12T22:00:00Z",
+                          "mazmo_url": "https://mazmo.net/club-vanta/alter-san-telmo-d-i-s-c-r-e-e-t-123456",
+                          "cover_url": "https://cdn.mazmo.net/covers/discreet.jpg",
+                          "excerpt": "Una noche para charlar sin apuro, con la discrecion de siempre."
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Public alters org not configured or not found",
+            "content": {
+              "application/json": {
+                "examples": {
+                  "setting_unset": {
+                    "summary": "PUBLIC_ALTERS_ORG_SLUG is not set",
+                    "value": {
+                      "detail": "Cannot list alters: PUBLIC_ALTERS_ORG_SLUG is not set on the server. Set it to the slug of the organization to expose and restart the backend."
+                    }
+                  },
+                  "slug_not_found": {
+                    "summary": "Configured slug matches no organization",
+                    "value": {
+                      "detail": "Cannot list alters: no organization with slug 'club-vanta' exists, but PUBLIC_ALTERS_ORG_SLUG points to it. Fix the setting or create the organization."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -13345,6 +13404,28 @@
             "type": "boolean",
             "title": "Requires Payment"
           },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url"
+          },
+          "excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excerpt"
+          },
           "location_label": {
             "anyOf": [
               {
@@ -13388,6 +13469,8 @@
           "is_finalized",
           "finalized_at",
           "requires_payment",
+          "cover_url",
+          "excerpt",
           "location_label",
           "latitude",
           "longitude"
@@ -14320,6 +14403,76 @@
         ],
         "title": "PossibleRoles",
         "description": "Global roles stored in user_roles / users.role_id.\n\nUSER:       Regular approved account. Actual capabilities come from\n            user_organizations.role (per-org STAFF or ADMIN).\nSITE_ADMIN: Superadmin. Bypasses all org membership checks, can create\n            and manage organizations."
+      },
+      "PublicAlter": {
+        "properties": {
+          "short_name": {
+            "type": "string",
+            "title": "Short Name"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date"
+          },
+          "mazmo_url": {
+            "type": "string",
+            "title": "Mazmo Url"
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url"
+          },
+          "excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excerpt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "short_name",
+          "title",
+          "date",
+          "mazmo_url",
+          "cover_url",
+          "excerpt"
+        ],
+        "title": "PublicAlter",
+        "description": "One alter as shown on the public site. Never includes venue or attendee data."
+      },
+      "PublicAltersResponse": {
+        "properties": {
+          "alters": {
+            "items": {
+              "$ref": "#/components/schemas/PublicAlter"
+            },
+            "type": "array",
+            "title": "Alters"
+          }
+        },
+        "type": "object",
+        "required": [
+          "alters"
+        ],
+        "title": "PublicAltersResponse"
       },
       "RecoveryCodeResponse": {
         "properties": {

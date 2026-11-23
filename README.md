@@ -64,6 +64,7 @@ Server runs at http://localhost:8000/docs
 | `DB_USER`                     | Yes*     | -                           | PostgreSQL username. Used by docker-compose. Set automatically by `deploy.sh` from AWS Secrets Manager (local: `devenv.nix`)       |
 | `DB_PASSWORD`                 | Yes*     | -                           | PostgreSQL password. Used by docker-compose. Set automatically by `deploy.sh` from AWS Secrets Manager (local: `devenv.nix`)       |
 | `ALGORITHM`                   | No       | `HS256`                     | JWT signing algorithm                                                                                                              |
+| `PUBLIC_ALTERS_ORG_SLUG`      | No       | -                           | Slug of the one org exposed by the public `GET /public/alters`. Unset means that endpoint answers 404. Set to `club-vanta` in production |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | No       | `720`                       | JWT token lifetime (12 hours)                                                                                                      |
 | `JSON_LOGS`                   | No       | `false`                     | Set `true` for JSON output (CloudWatch)                                                                                            |
 | `LOG_LEVEL`                   | No       | `INFO`                      | Minimum log level: DEBUG, INFO, WARNING, ERROR                                                                                     |

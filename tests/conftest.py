@@ -317,6 +317,8 @@ def make_meetup(
     date: datetime | None = None,
     requires_payment: bool = False,
     is_finalized: bool = False,
+    cover_url: str | None = None,
+    excerpt: str | None = None,
 ) -> Meetup:
     """Helper to create a Meetup directly in the test session."""
     meetup = Meetup(
@@ -326,6 +328,8 @@ def make_meetup(
         date=date or datetime.now(UTC),
         requires_payment=requires_payment,
         is_finalized=is_finalized,
+        cover_url=cover_url,
+        excerpt=excerpt,
     )
     session.add(meetup)
     session.flush()
