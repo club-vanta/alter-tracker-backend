@@ -492,6 +492,89 @@ format         # ruff format
 
 ---
 
+## Produccion: la instancia EC2
+
+El README tiene la guia para humanos (sesion interactiva, primer deploy, acceso a la DB). Esta seccion es para agentes: todo se hace con comandos no interactivos.
+
+### Datos fijos
+
+| Que | Valor |
+|-----|-------|
+| Instancia | `i-054c0dd0cd6c37dc5`, `us-east-1`, `t4g.small` (arm64) |
+| Estado normal | **Siempre prendida.** Los workflows `start-instance.yml` / `stop-instance.yml` existen pero no se usan en el dia a dia. |
+| API publica | `https://api-alter-tracker.club-vanta.com` (Cloudflare proxied, SSL flexible -> la instancia escucha en `:80`) |
+| Archivos en el server | `/home/ec2-user/deploy.sh`, `/home/ec2-user/docker-compose.yml` |
+| Contenedores | `ec2-user-app-1`, `ec2-user-db-1`, `ec2-user-weather-worker-1`, `ec2-user-backup-1` |
+| Secrets | Secrets Manager `alter-tracker-backend/secrets`, los lee `deploy.sh` con el rol de la instancia. Nunca leerlos desde afuera. |
+| Logs | CloudWatch, grupo `/alter-tracker-backend`, un stream por servicio (`app`, `db`, `migrate`, `seed`) |
+| Organizaciones | Club Vanta tiene slug `club-vanta`. La base es multi-organizacion: hay otras orgs que no se exponen en nada publico. |
+
+### Credenciales
+
+Hace falta un perfil de AWS con permisos de SSM sobre la instancia. En la maquina del mantenedor es el perfil `base` de `~/.aws/credentials`: exportar `AWS_PROFILE=base` (no hay perfil `default`). Verificar con:
+
+```bash
+aws ssm describe-instance-information --region us-east-1 \
+  --query 'InstanceInformationList[].{id:InstanceId,ping:PingStatus}' --output text
+# i-054c0dd0cd6c37dc5   Online
+```
+
+### Correr un comando en la instancia (no interactivo)
+
+`aws ssm start-session` necesita una terminal y el plugin de Session Manager: no sirve para agentes. Usar `send-command` y leer el resultado. Los comandos corren como `root`.
+
+```bash
+CID=$(aws ssm send-command --region us-east-1 \
+  --instance-ids i-054c0dd0cd6c37dc5 \
+  --document-name AWS-RunShellScript \
+  --comment "que hace este comando" \
+  --parameters 'commands=["docker ps --format {{.Names}}"]' \
+  --query Command.CommandId --output text)
+sleep 5
+aws ssm get-command-invocation --region us-east-1 \
+  --command-id "$CID" --instance-id i-054c0dd0cd6c37dc5 \
+  --query '[Status,StandardOutputContent,StandardErrorContent]' --output text
+```
+
+Si `Status` es `InProgress`, esperar y volver a pedir la invocacion. Para comandos con comillas, el JSON de `commands` se vuelve dificil de escapar: escribir el script en un archivo y pasarlo con `--parameters file://params.json`.
+
+### Consultas a la base (solo lectura)
+
+El contenedor `db` tiene `POSTGRES_USER` en su entorno, asi que no hace falta tocar los secrets:
+
+```bash
+docker exec ec2-user-db-1 sh -c \
+  'psql -U "$POSTGRES_USER" -d alter_event_tracker -At -c "select name, slug from organizations"'
+```
+
+Nunca correr `UPDATE`, `DELETE` ni DDL a mano: los cambios de datos van por migrations o scripts de `scripts/` con tests.
+
+### Deploy
+
+1. Push a `main` -> CD (`cd.yml`) construye y publica `ghcr.io/club-vanta/alter-tracker-backend:latest` (arm64). **No deploya solo.**
+2. En la instancia: `bash /home/ec2-user/deploy.sh`. Trae los secrets, hace `docker compose pull` y `up -d`; el servicio `migrate` corre `alembic upgrade head` antes de que arranque `app`.
+3. Verificar: `curl -s https://api-alter-tracker.club-vanta.com/health`.
+
+Antes de correr `deploy.sh`, confirmar que el job de CD de ese commit termino (`gh run list --workflow cd.yml --limit 1`): si no, se baja la imagen anterior.
+
+### Cambios a `docker-compose.yml` o `deploy.sh`
+
+Los dos archivos se copiaron al server una sola vez, en el `user_data` de la instancia, y `infra/ec2.tf` ignora cambios a `user_data` (`lifecycle.ignore_changes`). O sea: **editar el archivo en el repo no cambia el server**, y `tofu apply` no reemplaza la instancia por eso. Para llevar un cambio:
+
+1. Backup en el server: `cp /home/ec2-user/docker-compose.yml /home/ec2-user/docker-compose.yml.bak-$(date +%F)`.
+2. Comparar el archivo del server con el del repo en `main` (`cat` por SSM y `diff` local). Si difieren en algo que no es el cambio nuevo, frenar y averiguar por que antes de pisarlo.
+3. Aplicar el mismo cambio en el server y correr `deploy.sh`.
+
+### Correr un script de `scripts/` en produccion
+
+Dentro del contenedor `app`, que ya tiene `DATABASE_URL`:
+
+```bash
+docker exec -e PYTHONPATH=/app ec2-user-app-1 python scripts/<script>.py
+```
+
+---
+
 ## Reglas importantes
 
 1. **Soft delete siempre**: nunca `DELETE` de `users`, usar `is_disabled`.
