@@ -69,7 +69,7 @@ from app.models.models import (
 )
 from app.schemas import GuestMazmoRefreshResponse, MazmoRsvpEntry, MazmoUserEntry, SyncResponse
 from app.schemas.mazmo import is_anonymized
-from app.services.mazmo import MazmoClient
+from app.services.mazmo import MazmoAPIError, MazmoClient, MazmoNetworkError
 
 log = structlog.get_logger(__name__)
 
@@ -120,6 +120,7 @@ class GuestSyncer:
         rsvps_to_upsert = self._build_rsvps(rsvps, user_details, guest_id_map)
         inserted = self._upsert_rsvps(rsvps_to_upsert)
         self._update_cancelled_rsvps(guest_id_map)
+        await self._refresh_event_details()
 
         total = self._count_rsvps()
 
@@ -149,6 +150,26 @@ class GuestSyncer:
             meetup_id=str(self._meetup.id),
         )
         return rsvps, user_details
+
+    async def _refresh_event_details(self) -> None:
+        """
+        Refresh the meetup's date, cover and excerpt from the Mazmo thread.
+
+        Decoration, not core data: a Mazmo failure here is logged and the
+        RSVP sync still succeeds with the values already stored.
+        """
+        try:
+            async with MazmoClient(self._settings) as client:
+                details = await client.fetch_event_details(self._meetup.mazmo_meetup_url)
+        except (MazmoNetworkError, MazmoAPIError) as exc:
+            log.warning("Could not refresh event details", meetup_id=str(self._meetup.id), error=str(exc))
+            return
+
+        self._meetup.date = details.date
+        self._meetup.cover_url = details.cover_url
+        self._meetup.excerpt = details.excerpt
+        self._session.add(self._meetup)
+        self._session.commit()
 
     def _build_guests(
         self,

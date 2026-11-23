@@ -237,13 +237,13 @@ async def test_fetch_users_batches_requests():
     assert len(result) == 5
 
 
-# ── fetch_meetup_date ─────────────────────────────────────────────────────────
+# -- fetch_event_details --
 
 
 @pytest.mark.asyncio
-async def test_fetch_meetup_date_returns_parsed_datetime():
+async def test_fetch_event_details_returns_parsed_datetime():
     """
-    Verify that fetch_meetup_date correctly parses the event date.
+    Verify that fetch_event_details correctly parses the event date.
     """
     settings = get_settings()
 
@@ -256,13 +256,15 @@ async def test_fetch_meetup_date_returns_parsed_datetime():
         mock_get.return_value = mock_resp
 
         async with MazmoClient(settings) as client:
-            result = await client.fetch_meetup_date("https://mazmo.net/test/meetup-123")
+            result = await client.fetch_event_details("https://mazmo.net/test/meetup-123")
 
-    assert result == datetime(2026, 4, 15, 19, 0, 0, tzinfo=UTC)
+    assert result.date == datetime(2026, 4, 15, 19, 0, 0, tzinfo=UTC)
+    assert result.cover_url is None
+    assert result.excerpt is None
 
 
 @pytest.mark.asyncio
-async def test_fetch_meetup_date_raises_network_error_on_connection_failure():
+async def test_fetch_event_details_raises_network_error_on_connection_failure():
     """
     Verify that connection errors are wrapped in MazmoNetworkError.
 
@@ -276,11 +278,11 @@ async def test_fetch_meetup_date_raises_network_error_on_connection_failure():
 
         async with MazmoClient(settings) as client:
             with pytest.raises(MazmoNetworkError, match="Cannot reach Mazmo"):
-                await client.fetch_meetup_date("https://mazmo.net/test/meetup-123")
+                await client.fetch_event_details("https://mazmo.net/test/meetup-123")
 
 
 @pytest.mark.asyncio
-async def test_fetch_meetup_date_raises_api_error_on_http_error():
+async def test_fetch_event_details_raises_api_error_on_http_error():
     """
     Verify that HTTP errors are wrapped in MazmoAPIError.
     """
@@ -298,7 +300,7 @@ async def test_fetch_meetup_date_raises_api_error_on_http_error():
 
         async with MazmoClient(settings) as client:
             with pytest.raises(MazmoAPIError, match="Mazmo returned 404"):
-                await client.fetch_meetup_date("https://mazmo.net/test/meetup-123")
+                await client.fetch_event_details("https://mazmo.net/test/meetup-123")
 
 
 # -- MazmoUserEntry profile fields -----------------------------------------------

@@ -40,6 +40,8 @@ class MeetupPublic(BaseModel):
     is_finalized: bool
     finalized_at: datetime | None
     requires_payment: bool
+    cover_url: str | None
+    excerpt: str | None
     location_label: str | None
     latitude: float | None
     longitude: float | None

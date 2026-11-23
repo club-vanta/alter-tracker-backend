@@ -38,9 +38,8 @@ Headers mimic a real browser session to avoid 403s from Mazmo's CDN/WAF.
 """
 
 import asyncio
-from datetime import datetime
 from itertools import islice
-from typing import NamedTuple, TypedDict
+from typing import NamedTuple, NotRequired, TypedDict
 from urllib.parse import urlparse
 
 import httpx
@@ -49,6 +48,7 @@ import structlog
 from app.core.config import Settings
 from app.domain_types import MazmoUserId
 from app.schemas import MazmoAvatarEntry, MazmoRsvpEntry, MazmoUserEntry
+from app.services.mazmo_event import MazmoEventDetails, parse_event_details
 
 log = structlog.get_logger(__name__)
 
@@ -90,6 +90,8 @@ class RawEventField(TypedDict):
 
 class RawEventData(TypedDict):
     date: str
+    cover: NotRequired[str]
+    description: NotRequired[str]
 
 
 class RawThreadResponse(TypedDict):
@@ -236,17 +238,14 @@ class MazmoClient:
         log.info("Fetched %d RSVPs from Mazmo", len(result))
         return result
 
-    # ── Fetch meetup date ─────────────────────────────────────────────────────
+    # -- Fetch event details --
 
-    async def fetch_meetup_date(self, mazmo_url: str) -> datetime:
+    async def fetch_event_details(self, mazmo_url: str) -> MazmoEventDetails:
         """
-        Fetch the event date from a Mazmo thread URL.
+        Fetch the event date, cover URL and description excerpt from a Mazmo thread URL.
 
         Args:
             mazmo_url: Frontend URL like https://mazmo.net/{community}/{thread-slug}-{id}
-
-        Returns:
-            The event date as a datetime object.
 
         Raises:
             MazmoNetworkError: If Mazmo API is unreachable.
@@ -254,12 +253,11 @@ class MazmoClient:
         """
         api_url = self._to_api_url(mazmo_url)
         try:
-            log.info("Fetching meetup date from %s", api_url)
+            log.info("Fetching event details from %s", api_url)
             response = await self._client.get(api_url)
             response.raise_for_status()
             body: RawThreadResponse = response.json()
-            date_str = body["event"]["date"]
-            return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            return parse_event_details(body["event"])
         except httpx.RequestError as exc:
             raise MazmoNetworkError(f"Cannot reach Mazmo: {exc}") from exc
         except httpx.HTTPStatusError as exc:

@@ -243,7 +243,7 @@ async def create_meetup(
 
     try:
         async with MazmoClient(settings) as client:
-            event_date = await client.fetch_meetup_date(mazmo_url)
+            event = await client.fetch_event_details(mazmo_url)
     except MazmoNetworkError as exc:
         log.error("Mazmo network error", error=str(exc), mazmo_url=mazmo_url)
         raise HTTPException(
@@ -270,7 +270,9 @@ async def create_meetup(
         org_id=org_id,
         name=payload.name,
         mazmo_meetup_url=mazmo_url,
-        date=event_date,
+        date=event.date,
+        cover_url=event.cover_url,
+        excerpt=event.excerpt,
         requires_payment=payload.requires_payment,
     )
     session.add(meetup)
