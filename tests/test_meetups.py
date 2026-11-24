@@ -16,8 +16,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlmodel import Session, select
 
-from app.models.models import EventLog, EventType, GuestMazmoProfile, MeetupRsvp, Organization, OrgRole, User
+from app.models.models import EventLog, EventType, GuestMazmoProfile, Meetup, MeetupRsvp, Organization, OrgRole, User
 from app.services.mazmo import MazmoAPIError, MazmoNetworkError
+from app.services.mazmo_event import MazmoEventDetails
 from tests.conftest import make_guest, make_meetup, make_org_member, make_rsvp
 
 # -- Shared fixture -----------------------------------------------------------
@@ -61,6 +62,39 @@ def test_create_meetup_returns_201_with_meetup_data(
     assert data["mazmo_meetup_url"] == "https://mazmo.net/test/alter-5"
     assert "id" in data
     assert "date" in data
+
+
+def test_create_meetup_stores_cover_and_excerpt_from_mazmo(
+    client: TestClient,
+    admin_headers: dict,
+    session: Session,
+    org: Organization,
+    mock_mazmo_for_meetups: AsyncMock,
+):
+    """
+    Verify that the cover URL and excerpt fetched from Mazmo are stored and returned.
+
+    WHY: The public site shows them, so they must be saved at creation time.
+    """
+    cover = "https://prod.mazmocdn.com/events/covers/x.jpeg"
+    mock_mazmo_for_meetups.fetch_event_details.return_value = MazmoEventDetails(
+        datetime(2026, 4, 1, tzinfo=UTC), cover, "Hola"
+    )
+
+    resp = client.post(
+        f"/organizations/{org.id}/meetups/",
+        json={"name": "Alter con portada", "mazmo_meetup_url": "https://mazmo.net/test/alter-cover"},
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == status.HTTP_201_CREATED
+    data = resp.json()
+    assert data["cover_url"] == cover
+    assert data["excerpt"] == "Hola"
+    row = session.get(Meetup, uuid.UUID(data["id"]))
+    assert row is not None
+    assert row.cover_url == cover
+    assert row.excerpt == "Hola"
 
 
 def test_create_meetup_accessible_by_org_staff(
@@ -165,7 +199,7 @@ def test_create_meetup_returns_504_when_mazmo_unreachable(
     WHY: If we can't reach Mazmo to validate and fetch the event date,
     we can't create the meetup. 504 signals "upstream unreachable".
     """
-    mock_mazmo_for_meetups.fetch_meetup_date.side_effect = MazmoNetworkError("timeout")
+    mock_mazmo_for_meetups.fetch_event_details.side_effect = MazmoNetworkError("timeout")
 
     resp = client.post(
         f"/organizations/{org.id}/meetups/",
@@ -188,7 +222,7 @@ def test_create_meetup_returns_502_when_mazmo_returns_error(
     WHY: If Mazmo returns a 4xx/5xx (bad URL, deleted event), we return 502
     to indicate "upstream returned an error".
     """
-    mock_mazmo_for_meetups.fetch_meetup_date.side_effect = MazmoAPIError("404")
+    mock_mazmo_for_meetups.fetch_event_details.side_effect = MazmoAPIError("404")
 
     resp = client.post(
         f"/organizations/{org.id}/meetups/",

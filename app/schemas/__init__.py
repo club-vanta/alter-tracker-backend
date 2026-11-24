@@ -82,6 +82,7 @@ from app.schemas.organizations import (
     OrgPublic,
     OrgUpdate,
 )
+from app.schemas.public import PublicAlter, PublicAltersResponse
 from app.schemas.stats import (
     AfterwardsMeetupPublic,
     AgeGroupPublic,
@@ -213,6 +214,8 @@ __all__ = [
     "OrgUpdate",
     "PaymentResponse",
     "PaymentStats",
+    "PublicAlter",
+    "PublicAltersResponse",
     "RecoveryCodeResponse",
     "ResetPasswordRequest",
     "ResetPasswordResponse",

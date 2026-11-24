@@ -100,6 +100,12 @@ class Settings(BaseSettings):
     # run inside a PATCH, so a slow provider fails fast and the worker retries.
     open_meteo_request_timeout: float = 5.0
 
+    # -- Public site ---------------------------------------------------------------
+
+    # Slug of the one organization whose alters GET /public/alters exposes
+    # (env PUBLIC_ALTERS_ORG_SLUG). Unset means the public endpoint answers 404.
+    public_alters_org_slug: str | None = None
+
     # A regex of the allowed domains
     allowed_domains_regex: str = ALLOWED_DOMAINS_REGEX
 

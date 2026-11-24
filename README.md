@@ -64,6 +64,7 @@ Server runs at http://localhost:8000/docs
 | `DB_USER`                     | Yes*     | -                           | PostgreSQL username. Used by docker-compose. Set automatically by `deploy.sh` from AWS Secrets Manager (local: `devenv.nix`)       |
 | `DB_PASSWORD`                 | Yes*     | -                           | PostgreSQL password. Used by docker-compose. Set automatically by `deploy.sh` from AWS Secrets Manager (local: `devenv.nix`)       |
 | `ALGORITHM`                   | No       | `HS256`                     | JWT signing algorithm                                                                                                              |
+| `PUBLIC_ALTERS_ORG_SLUG`      | No       | -                           | Slug of the one org exposed by the public `GET /public/alters`. Unset means that endpoint answers 404. Set to `club-vanta` in production |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | No       | `720`                       | JWT token lifetime (12 hours)                                                                                                      |
 | `JSON_LOGS`                   | No       | `false`                     | Set `true` for JSON output (CloudWatch)                                                                                            |
 | `LOG_LEVEL`                   | No       | `INFO`                      | Minimum log level: DEBUG, INFO, WARNING, ERROR                                                                                     |
@@ -310,12 +311,31 @@ This will:
 deploy.sh
 ```
 
+**Backfill meetup covers and excerpts (once, after deploying this version):**
+
+Meetups created before covers and excerpts existed have both fields empty, so
+the public site shows no cover for past alters. Fill them from Mazmo once, from
+an SSM session on the instance:
+
+```bash
+docker exec -e PYTHONPATH=/app ec2-user-app-1 python scripts/backfill_meetup_event_details.py
+```
+
+The script only touches meetups without a cover, never changes dates, and
+commits each meetup on its own. It logs how many were `updated` and how many
+`failed`. If `failed` is greater than 0, Mazmo was unreachable or returned an
+error for those meetups (each failure is logged with its `meetup_id`): run the
+script again. It is idempotent, so meetups already filled are skipped. A
+meetup whose Mazmo thread was deleted (404) can never be filled, so it shows up
+as `failed` on every run; that is expected and safe to ignore.
+
 ---
 
-### Starting/stopping the instance for meetups
+### Starting/stopping the instance
 
-The instance only needs to be running during meetups — stopping it saves
-~$7.50/month in compute costs.
+The instance is kept running all the time. The workflows below exist to start
+and stop it by hand (for example to save compute costs), but they are not used
+day to day.
 
 Use the GitHub Actions manual workflows — triggerable from the GitHub UI or the GitHub mobile app:
 

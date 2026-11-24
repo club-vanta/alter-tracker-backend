@@ -259,6 +259,8 @@ def test_set_location_returns_200_with_the_saved_body_when_the_inline_fetch_hits
         "is_finalized": False,
         "finalized_at": None,
         "requires_payment": False,
+        "cover_url": None,
+        "excerpt": None,
         **LOCATION,
     }
     assert len(fetch_sessions) == 1

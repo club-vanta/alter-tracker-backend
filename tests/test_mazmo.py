@@ -237,13 +237,13 @@ async def test_fetch_users_batches_requests():
     assert len(result) == 5
 
 
-# ── fetch_meetup_date ─────────────────────────────────────────────────────────
+# -- fetch_event_details --
 
 
 @pytest.mark.asyncio
-async def test_fetch_meetup_date_returns_parsed_datetime():
+async def test_fetch_event_details_returns_parsed_datetime():
     """
-    Verify that fetch_meetup_date correctly parses the event date.
+    Verify that fetch_event_details correctly parses the event date.
     """
     settings = get_settings()
 
@@ -256,13 +256,15 @@ async def test_fetch_meetup_date_returns_parsed_datetime():
         mock_get.return_value = mock_resp
 
         async with MazmoClient(settings) as client:
-            result = await client.fetch_meetup_date("https://mazmo.net/test/meetup-123")
+            result = await client.fetch_event_details("https://mazmo.net/test/meetup-123")
 
-    assert result == datetime(2026, 4, 15, 19, 0, 0, tzinfo=UTC)
+    assert result.date == datetime(2026, 4, 15, 19, 0, 0, tzinfo=UTC)
+    assert result.cover_url is None
+    assert result.excerpt is None
 
 
 @pytest.mark.asyncio
-async def test_fetch_meetup_date_raises_network_error_on_connection_failure():
+async def test_fetch_event_details_raises_network_error_on_connection_failure():
     """
     Verify that connection errors are wrapped in MazmoNetworkError.
 
@@ -276,11 +278,11 @@ async def test_fetch_meetup_date_raises_network_error_on_connection_failure():
 
         async with MazmoClient(settings) as client:
             with pytest.raises(MazmoNetworkError, match="Cannot reach Mazmo"):
-                await client.fetch_meetup_date("https://mazmo.net/test/meetup-123")
+                await client.fetch_event_details("https://mazmo.net/test/meetup-123")
 
 
 @pytest.mark.asyncio
-async def test_fetch_meetup_date_raises_api_error_on_http_error():
+async def test_fetch_event_details_raises_api_error_on_http_error():
     """
     Verify that HTTP errors are wrapped in MazmoAPIError.
     """
@@ -298,7 +300,61 @@ async def test_fetch_meetup_date_raises_api_error_on_http_error():
 
         async with MazmoClient(settings) as client:
             with pytest.raises(MazmoAPIError, match="Mazmo returned 404"):
-                await client.fetch_meetup_date("https://mazmo.net/test/meetup-123")
+                await client.fetch_event_details("https://mazmo.net/test/meetup-123")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [
+        ValueError("not json"),
+        {"other": 1},
+        {"event": {}},
+        {"event": {"date": "garbage"}},
+        {"event": {"date": None}},
+        {"event": "text"},
+    ],
+    ids=["non-json", "no-event", "no-date", "bad-date", "null-date", "event-not-object"],
+)
+async def test_fetch_event_details_raises_api_error_on_unexpected_body(body: object):
+    """
+    Verify that a 200 with a non-JSON or malformed body becomes MazmoAPIError.
+
+    WHY: A WAF HTML page with status 200 must not escape as JSONDecodeError or KeyError.
+    """
+    settings = get_settings()
+
+    with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock) as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        if isinstance(body, Exception):
+            mock_resp.json.side_effect = body
+        else:
+            mock_resp.json.return_value = body
+        mock_get.return_value = mock_resp
+
+        async with MazmoClient(settings) as client:
+            with pytest.raises(MazmoAPIError, match="Unexpected Mazmo thread response"):
+                await client.fetch_event_details("https://mazmo.net/test/meetup-123")
+
+
+@pytest.mark.asyncio
+async def test_fetch_event_details_drops_invalid_cover_but_keeps_date():
+    """WHY: A cover that is not an https string of at most 512 chars must never reach the DB."""
+    settings = get_settings()
+    body = {"event": {"date": "2026-04-15T19:00:00.000Z", "cover": {"url": "x"}}}
+
+    with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock) as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = body
+        mock_get.return_value = mock_resp
+
+        async with MazmoClient(settings) as client:
+            result = await client.fetch_event_details("https://mazmo.net/test/meetup-123")
+
+    assert result.cover_url is None
+    assert result.date == datetime(2026, 4, 15, 19, 0, 0, tzinfo=UTC)
 
 
 # -- MazmoUserEntry profile fields -----------------------------------------------

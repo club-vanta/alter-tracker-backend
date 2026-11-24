@@ -450,6 +450,10 @@ class Meetup(SQLModel, table=True):
 
     requires_payment: bool = Field(default=False)
 
+    # From the Mazmo event thread, refreshed on every sync. Never the address.
+    cover_url: str | None = Field(default=None, max_length=512)
+    excerpt: str | None = Field(default=None, max_length=320)
+
     # Venue, set or cleared together (see MeetupLocationUpdate).
     location_label: str | None = Field(default=None, max_length=255)
     latitude: float | None = Field(default=None)

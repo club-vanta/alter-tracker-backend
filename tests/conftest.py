@@ -41,6 +41,7 @@ from app.models.models import (
     User,
     UserOrganization,
 )
+from app.services.mazmo_event import MazmoEventDetails
 
 settings = get_settings()
 
@@ -316,6 +317,8 @@ def make_meetup(
     date: datetime | None = None,
     requires_payment: bool = False,
     is_finalized: bool = False,
+    cover_url: str | None = None,
+    excerpt: str | None = None,
 ) -> Meetup:
     """Helper to create a Meetup directly in the test session."""
     meetup = Meetup(
@@ -325,6 +328,8 @@ def make_meetup(
         date=date or datetime.now(UTC),
         requires_payment=requires_payment,
         is_finalized=is_finalized,
+        cover_url=cover_url,
+        excerpt=excerpt,
     )
     session.add(meetup)
     session.flush()
@@ -507,7 +512,7 @@ def mock_mazmo():
         # Default happy-path behaviour (meetup-aware - accepts URL param)
         mock_instance.fetch_rsvps.return_value = FAKE_RSVPS
         mock_instance.fetch_users.return_value = FAKE_USERS
-        mock_instance.fetch_meetup_date.return_value = datetime(2026, 4, 1, tzinfo=UTC)
+        mock_instance.fetch_event_details.return_value = MazmoEventDetails(datetime(2026, 4, 1, tzinfo=UTC), None, None)
 
         # (Handling the 'async with' context manager)
 
@@ -570,7 +575,7 @@ def mock_mazmo_for_meetups():
         # Default happy-path behaviour
         mock_instance.fetch_rsvps.return_value = FAKE_RSVPS
         mock_instance.fetch_users.return_value = FAKE_USERS
-        mock_instance.fetch_meetup_date.return_value = datetime(2026, 4, 1, tzinfo=UTC)
+        mock_instance.fetch_event_details.return_value = MazmoEventDetails(datetime(2026, 4, 1, tzinfo=UTC), None, None)
 
         # Context manager support
         mock_instance.__aenter__.return_value = mock_instance
