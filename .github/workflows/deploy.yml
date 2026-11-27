@@ -1,0 +1,73 @@
+name: Deploy
+
+# Deploys a commit whose images are already in GHCR (tag sha-<short sha>).
+# Called by cd.yml after every build on main. Run it by hand with an older
+# sha to roll back, within these limits:
+# - The target must have the same Alembic head as the database. Rolling
+#   back past a migration fails at `migrate`: roll forward with a fix.
+# - Commits from before the OCI migration are refused by alter-deploy.
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: Full commit sha to deploy
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full 40-character commit sha to deploy (its images must exist in GHCR)
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    name: Deploy to OCI
+    runs-on: ubuntu-latest
+    environment: production
+    # Job level, so it also applies when cd.yml calls this workflow: never
+    # run two deploys at once, and never cancel one halfway.
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      # The server downloads the commit by sha, and GitHub serves any sha in
+      # the fork network: only commits that are in main's history may run.
+      - name: Check the commit is on main
+        env:
+          DEPLOY_SHA: ${{ inputs.sha }}
+        run: |
+          if ! git merge-base --is-ancestor "$DEPLOY_SHA" origin/main; then
+            echo "Cannot deploy ${DEPLOY_SHA}: it is not in the history of main." >&2
+            exit 1
+          fi
+
+      - name: Install OCI CLI
+        run: pipx install oci-cli==3.95.1
+
+      - name: Deploy through Run Command
+        env:
+          OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+          OCI_CLI_REGION: ${{ vars.OCI_CLI_REGION }}
+          OCI_COMPARTMENT_ID: ${{ vars.OCI_COMPARTMENT_ID }}
+          OCI_INSTANCE_ID: ${{ vars.OCI_INSTANCE_ID }}
+          DEPLOY_SHA: ${{ inputs.sha }}
+        run: .github/scripts/oci-deploy.sh "$DEPLOY_SHA"
+
+      - name: Check the public health endpoint
+        env:
+          API_HEALTH_URL: ${{ vars.API_HEALTH_URL }}
+        run: |
+          curl -fsS --retry 10 --retry-delay 6 --retry-all-errors "$API_HEALTH_URL"

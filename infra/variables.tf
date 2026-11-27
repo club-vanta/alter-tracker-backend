@@ -15,3 +15,9 @@ variable "cloudflare_domain" {
   type        = string
   default     = "club-vanta.com"
 }
+
+variable "serve_from_aws" {
+  description = "Point api-alter-tracker at the EC2 instance. Set to false at the OCI cutover (see README, \"Cutover\")."
+  type        = bool
+  default     = true
+}

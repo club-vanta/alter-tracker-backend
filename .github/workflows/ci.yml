@@ -61,3 +61,31 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
           fail_ci_if_error: false
+
+  infra:
+    name: Infra, shell scripts, backup image
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shellcheck
+        run: |
+          shellcheck scripts/*.sh docker/backup/backup.sh tests/infra/*.sh \
+            deploy/host/alter-deploy deploy/host/push-metrics.sh \
+            .github/scripts/*.sh infra/oci/scripts/*.sh
+
+      - uses: opentofu/setup-opentofu@v1
+
+      - name: OpenTofu format
+        run: tofu fmt -check -recursive infra
+
+      - name: OpenTofu validate
+        run: |
+          for root in infra infra/oci; do
+            tofu -chdir="$root" init -backend=false -input=false
+            tofu -chdir="$root" validate
+          done
+
+      - name: Backup and restore end to end
+        run: tests/infra/test_backup_restore.sh
