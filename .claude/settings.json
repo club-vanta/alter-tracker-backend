@@ -1,0 +1,6 @@
+{
+  "enabledPlugins": {
+    "engineering-skills@claude-skills-nix": true,
+    "engineering-advanced-skills@claude-skills-nix": true
+  }
+}
