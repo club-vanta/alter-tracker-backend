@@ -26,6 +26,9 @@ resource "oci_limits_quota" "free_tier" {
     "zero compute-memory quotas in compartment ${oci_identity_compartment.this.name}",
     "set compute-core quota standard-a1-core-count to ${var.instance_ocpus} in compartment ${oci_identity_compartment.this.name}",
     "set compute-memory quota standard-a1-memory-count to ${var.instance_memory_gbs} in compartment ${oci_identity_compartment.this.name}",
+    # A1 is also counted per region; "zero ... quotas" zeroes these too.
+    "set compute-core quota standard-a1-core-regional-count to ${var.instance_ocpus} in compartment ${oci_identity_compartment.this.name}",
+    "set compute-memory quota standard-a1-memory-regional-count to ${var.instance_memory_gbs} in compartment ${oci_identity_compartment.this.name}",
     "set block-storage quota total-storage-gb to ${50 + var.data_volume_gbs} in compartment ${oci_identity_compartment.this.name}",
     "set block-storage quota backup-count to 5 in compartment ${oci_identity_compartment.this.name}",
   ]

@@ -24,6 +24,9 @@ terraform {
       s3 = "https://ax7nqesq2qs0.compat.objectstorage.sa-valparaiso-1.oraclecloud.com"
     }
     shared_credentials_files = ["~/.oci/tofu-state-credentials"]
+    # Explicit, so an AWS_PROFILE in the environment (for the AWS root) does
+    # not send tofu looking for that profile in this file.
+    profile = "default"
 
     skip_region_validation      = true
     skip_credentials_validation = true

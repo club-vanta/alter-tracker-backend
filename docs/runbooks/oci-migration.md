@@ -34,6 +34,10 @@ rm /tmp/csk.json
 
 La clave secreta solo se muestra al crearla. Si la perdes, crea otra (maximo 2 por usuario).
 
+La key nueva tarda en propagarse: durante unos 10 minutos el endpoint S3 rechaza 1 de cada 3 pedidos con `403 SignatureDoesNotMatch`. No apliques nada hasta que `tofu init` y un par de `tofu plan` seguidos anden: si la escritura del state falla en medio de un apply, quedan recursos creados que tofu no conoce.
+
+Si tu shell exporta `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (por ejemplo el `.envrc` de otro repo), esas variables le ganan al archivo de credenciales y el backend da el mismo 403. Corre tofu con `env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY tofu ...`.
+
 ### 3. Genera la API key del deployer de GitHub
 
 ```bash
