@@ -99,6 +99,7 @@ resource "oci_core_volume" "data" {
   availability_domain = local.availability_domain
   display_name        = "${local.project_name}-data"
   size_in_gbs         = var.data_volume_gbs
+  vpus_per_gb         = 10 # Balanced; higher performance levels are billed
   freeform_tags       = local.tags
 
   lifecycle {
