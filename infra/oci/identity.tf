@@ -33,7 +33,8 @@ resource "oci_identity_policy" "instance" {
 # -- GitHub Actions deployer --
 # API key user whose only power is creating Run Command commands in this
 # compartment. The commands can only run `alter-deploy <sha>` as root
-# (see cloud-init.sh), so a leaked key can at most redeploy a commit.
+# (see cloud-init.sh), and alter-deploy only accepts commits in main's
+# history, so a leaked key can at most redeploy a commit from main.
 
 resource "oci_identity_user" "deployer" {
   compartment_id = var.tenancy_ocid

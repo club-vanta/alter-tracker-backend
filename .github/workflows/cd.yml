@@ -81,8 +81,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/club-vanta/alter-tracker-backend-backup
+          # No `latest`: the EC2 compose pulls backup:latest, and the image
+          # now needs BACKUP_REMOTE, which that compose does not set. OCI
+          # runs the sha tag. Restore `latest` once AWS is decommissioned.
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-,format=short
 
       - name: Build and push

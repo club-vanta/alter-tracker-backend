@@ -34,7 +34,17 @@ if ! blkid "$DEVICE"; then
 fi
 UUID="$(blkid -s UUID -o value "$DEVICE")"
 mkdir -p /var/lib/docker
-grep -q "$UUID" /etc/fstab || echo "UUID=$UUID /var/lib/docker xfs defaults,nofail 0 2" >>/etc/fstab
+# nofail keeps the machine bootable (and reachable through Bastion) without
+# the volume, but Docker must never start without it: on the boot disk,
+# Postgres would create a new, empty database and the app would serve it.
+grep -q "$UUID" /etc/fstab ||
+  echo "UUID=$UUID /var/lib/docker xfs defaults,nofail,x-systemd.before=docker.service 0 2" >>/etc/fstab
+mkdir -p /etc/systemd/system/docker.service.d
+cat >/etc/systemd/system/docker.service.d/require-data-volume.conf <<'UNIT'
+[Unit]
+RequiresMountsFor=/var/lib/docker
+UNIT
+systemctl daemon-reload
 mount /var/lib/docker
 restorecon -R /var/lib/docker
 

@@ -20,6 +20,16 @@ if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
   exit 2
 fi
 
+# GitHub serves any commit of the fork network under this repo's URLs, so a
+# sha alone proves nothing. Only commits in main's history may run, which
+# holds even if the deployer key leaks. "behind" is an older main commit
+# (rollback), "identical" is main's head.
+status="$(curl -fsS --retry 3 "https://api.github.com/repos/$REPO/compare/main...$sha" | jq -r .status)"
+if [[ "$status" != "identical" && "$status" != "behind" ]]; then
+  echo "Cannot deploy $sha: it is not in the history of main (compare status: $status)." >&2
+  exit 1
+fi
+
 release_dir="$RELEASES/$sha"
 if [[ ! -d "$release_dir" ]]; then
   mkdir -p "$RELEASES"
@@ -29,6 +39,12 @@ if [[ ! -d "$release_dir" ]]; then
     tar -xz -C "$tmp" --strip-components=1
   mv "$tmp" "$release_dir"
   trap - EXIT
+fi
+
+# Commits from before the OCI migration have an AWS-only deploy.sh.
+if [[ ! -f "$release_dir/deploy/host/alter-deploy" ]]; then
+  echo "Cannot deploy $sha: it predates the OCI deploy scripts. Deploy a newer commit." >&2
+  exit 1
 fi
 
 exec "$release_dir/scripts/deploy.sh" "$sha" "$release_dir"

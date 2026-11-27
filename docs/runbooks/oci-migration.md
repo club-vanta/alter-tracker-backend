@@ -257,7 +257,7 @@ S3 (backups), CloudWatch y Secrets Manager quedan como estan. El `tofu destroy` 
 
 **Despues del paso 11:** `gh workflow run start-instance.yml` (la IPv4 cambia), y despues el paso 1 de arriba: `tofu -chdir=infra apply` toma la IP nueva.
 
-**Deploy roto en OCI:** `gh workflow run deploy.yml -f sha=<sha anterior que andaba>`.
+**Deploy roto en OCI:** `gh workflow run deploy.yml -f sha=<sha anterior que andaba>`. Solo anda si ese commit tiene el mismo head de Alembic que la base: si el deploy roto agrego una migration, el `migrate` del commit viejo falla. En ese caso, arreglar para adelante con un commit nuevo. Los commits anteriores a esta migracion se rechazan (su `deploy.sh` es el de AWS).
 
 ## Si Oracle reclama o pierde la instancia
 

@@ -253,8 +253,12 @@ Every push to `main` builds the images (`cd.yml`) and then deploys them
    waits for `/health`, and installs the host files in `deploy/host/`.
 4. The workflow checks the public `/health`.
 
-Roll back by deploying an older commit: **Actions > Deploy > Run workflow**
-with its full sha, or `gh workflow run deploy.yml -f sha=<sha>`.
+Roll back by deploying an older commit of `main`: **Actions > Deploy > Run
+workflow** with its full sha, or `gh workflow run deploy.yml -f sha=<sha>`.
+This only works between commits with the same Alembic head: an older commit
+cannot run against a database that already has a newer migration, so fix
+forward instead. Only commits in `main`'s history are accepted, checked both
+in the workflow and on the server.
 
 The deploy job only runs when the repository variable `OCI_DEPLOY_ENABLED` is
 `true`. The `production` environment holds `OCI_CLI_USER`, `OCI_CLI_TENANCY`,

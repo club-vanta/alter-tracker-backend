@@ -84,8 +84,15 @@ compose=(docker compose -f "$release_dir/docker-compose.yml")
 echo "Pulling ${IMAGE_TAG}..."
 "${compose[@]}" pull --quiet
 
+fail_with_logs() {
+  echo "Deploy FAILED: $1 Last logs:"
+  "${compose[@]}" logs --tail 40 migrate app
+  exit 1
+}
+
 echo "Starting services..."
-"${compose[@]}" up -d --remove-orphans
+# Fails when migrate does not complete (for example a broken migration).
+"${compose[@]}" up -d --remove-orphans || fail_with_logs "docker compose up failed."
 
 echo "Waiting for the app health check..."
 healthy=false
@@ -97,11 +104,7 @@ for _ in $(seq 1 90); do
   sleep 2
 done
 
-if [[ "$healthy" != true ]]; then
-  echo "Deploy FAILED: the app did not answer /health within 3 minutes. Last logs:"
-  "${compose[@]}" logs --tail 40 migrate app
-  exit 1
-fi
+[[ "$healthy" == true ]] || fail_with_logs "the app did not answer /health within 3 minutes."
 
 # -- Host files from this release --
 
@@ -112,9 +115,10 @@ ln -sfn "$release_dir" "$BASE/current"
 # -- Cleanup --
 
 docker image prune -af --filter "until=168h" >/dev/null
-# Keep the newest releases, never the one just deployed.
+# Keep the newest releases, never the one just deployed. grep exits 1 on
+# empty input, which pipefail would turn into a failed deploy.
 find "$BASE/releases" -mindepth 1 -maxdepth 1 -type d -not -name '.*' -printf '%T@ %p\n' |
   sort -rn | tail -n "+$((KEEP_RELEASES + 1))" | cut -d' ' -f2- |
-  grep -vxF "$release_dir" | xargs -r rm -rf
+  { grep -vxF "$release_dir" || true; } | xargs -r rm -rf
 
 echo "== Deploy ${sha} OK (${IMAGE_TAG})"
