@@ -95,3 +95,14 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Off until the OCI server exists: set the repository variable
+  # OCI_DEPLOY_ENABLED to "true" to turn it on (see README).
+  deploy:
+    name: Deploy
+    needs: [build-and-push, build-and-push-backup]
+    if: vars.OCI_DEPLOY_ENABLED == 'true'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      sha: ${{ github.sha }}
+    secrets: inherit

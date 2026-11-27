@@ -59,14 +59,14 @@ Server runs at http://localhost:8000/docs
 | ----------------------------- | -------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                | Yes      | -                           | PostgreSQL connection string (e.g., `postgresql+psycopg://user:pass@host:5432/db`)                                                 |
 | `JWT_SIGNING_KEY`             | Yes      | -                           | JWT signing key. Generate with: `openssl rand -hex 32`                                                                             |
-| `ADMIN_USERNAME`              | Yes*     | -                           | Initial admin username. Used by `seed-admin` only. Set automatically by `deploy.sh` from AWS Secrets Manager (local: `devenv.nix`) |
-| `ADMIN_PASSWORD`              | Yes*     | -                           | Initial admin password. Used by `seed-admin` only. Set automatically by `deploy.sh` from AWS Secrets Manager (local: `devenv.nix`) |
-| `DB_USER`                     | Yes*     | -                           | PostgreSQL username. Used by docker-compose. Set automatically by `deploy.sh` from AWS Secrets Manager (local: `devenv.nix`)       |
-| `DB_PASSWORD`                 | Yes*     | -                           | PostgreSQL password. Used by docker-compose. Set automatically by `deploy.sh` from AWS Secrets Manager (local: `devenv.nix`)       |
+| `ADMIN_USERNAME`              | Yes*     | -                           | Initial admin username. Used by `seed-admin` only. Set automatically by `deploy.sh` from OCI Vault (local: `devenv.nix`)        |
+| `ADMIN_PASSWORD`              | Yes*     | -                           | Initial admin password. Used by `seed-admin` only. Set automatically by `deploy.sh` from OCI Vault (local: `devenv.nix`)        |
+| `DB_USER`                     | Yes*     | -                           | PostgreSQL username. Used by docker-compose. Set automatically by `deploy.sh` from OCI Vault (local: `devenv.nix`)              |
+| `DB_PASSWORD`                 | Yes*     | -                           | PostgreSQL password. Used by docker-compose. Set automatically by `deploy.sh` from OCI Vault (local: `devenv.nix`)              |
 | `ALGORITHM`                   | No       | `HS256`                     | JWT signing algorithm                                                                                                              |
 | `PUBLIC_ALTERS_ORG_SLUG`      | No       | -                           | Slug of the one org exposed by the public `GET /public/alters`. Unset means that endpoint answers 404. Set to `club-vanta` in production |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | No       | `720`                       | JWT token lifetime (12 hours)                                                                                                      |
-| `JSON_LOGS`                   | No       | `false`                     | Set `true` for JSON output (CloudWatch)                                                                                            |
+| `JSON_LOGS`                   | No       | `false`                     | Set `true` for JSON output (production)                                                                                            |
 | `LOG_LEVEL`                   | No       | `INFO`                      | Minimum log level: DEBUG, INFO, WARNING, ERROR                                                                                     |
 | `BACKEND_PORT`                | No       | `8000`                      | Port uvicorn listens on                                                                                                            |
 | `DEBUG`                       | No       | `false`                     | Enable SQLAlchemy SQL logging (never in prod)                                                                                      |
@@ -75,8 +75,8 @@ Server runs at http://localhost:8000/docs
 | `MAZMO_REQUEST_TIMEOUT`       | No       | `15.0`                      | Mazmo API timeout in seconds                                                                                                       |
 
 > \* Required at deploy time only (`seed-admin` / docker-compose), not by the
-> running API. In production, `deploy.sh` sets these automatically from AWS
-> Secrets Manager — you never need to set them manually.
+> running API. In production, `deploy.sh` sets these automatically from OCI
+> Vault, so you never need to set them manually.
 
 ### Local Development (devenv.nix)
 
@@ -91,35 +91,42 @@ LOG_LEVEL=DEBUG
 JWT_SIGNING_KEY=your-custom-key
 ```
 
-### Production (AWS Secrets Manager)
+### Production secrets (OCI Vault)
 
-All secrets are stored in a single AWS Secrets Manager entry and fetched by
-`deploy.sh` at deploy time — the app itself never talks to Secrets Manager:
+All secrets live in one OCI Vault secret, `alter-tracker-backend-secrets`, as
+JSON. `scripts/deploy.sh` reads it on every deploy with the instance principal
+(no keys on the server); the app itself never talks to Vault:
 
-| Secret Name                     | Fields                                                                          |
-| ------------------------------- | ------------------------------------------------------------------------------- |
-| `alter-tracker-backend/secrets` | `admin_username`, `admin_password`, `jwt_signing_key`, `db_user`, `db_password` |
+| Field             | Used by                              |
+| ----------------- | ------------------------------------ |
+| `admin_username`  | `seed` service                       |
+| `admin_password`  | `seed` service                       |
+| `jwt_signing_key` | app, worker, migrations              |
+| `db_user`         | Postgres and every service using it  |
+| `db_password`     | Postgres and every service using it  |
 
-Terraform creates the secret container automatically. After `tofu apply`,
-populate it with your values:
+`infra/oci` creates the secret with `{}`. Set the real value outside tofu, so it
+never reaches the state:
 
 ```bash
-aws secretsmanager put-secret-value \
-  --secret-id "alter-tracker-backend/secrets" \
-  --secret-string '{
-    "admin_username": "admin",
-    "admin_password": "your-secure-password",
-    "jwt_signing_key": "'"$(openssl rand -hex 32)"'",
-    "db_user": "alter_tracker",
-    "db_password": "'"$(openssl rand -hex 16)"'"
-  }'
+SECRET_ID=$(tofu -chdir=infra/oci output -raw app_secret_id)
+oci vault secret update-base64 --secret-id "$SECRET_ID" \
+  --secret-content-content "$(jq -nc \
+    --arg admin_username admin \
+    --arg admin_password 'your-secure-password' \
+    --arg jwt_signing_key "$(openssl rand -hex 32)" \
+    --arg db_user alter_tracker \
+    --arg db_password "$(openssl rand -hex 16)" \
+    '$ARGS.named' | base64 -w0)"
 ```
 
-> Do **not** put secret values in Terraform — they would end up in the state
-> file.
+The migration from AWS copies the existing JSON instead (see
+`docs/runbooks/oci-migration.md`, step 6). A second secret,
+`alter-tracker-backend-tunnel-token`, holds the Cloudflare Tunnel token and is
+managed by tofu.
 
 **Local dev:** `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `JWT_SIGNING_KEY`, `DB_USER`,
-and `DB_PASSWORD` are all set in `devenv.nix` — no AWS access needed.
+and `DB_PASSWORD` are all set in `devenv.nix`, so no cloud access is needed.
 
 ---
 
@@ -183,7 +190,7 @@ LOG_LEVEL=DEBUG dev-backend
 
 ### Production
 
-Set `JSON_LOGS=true` for CloudWatch-friendly JSON:
+Set `JSON_LOGS=true` for JSON output (production; shipped to OCI Logging):
 
 ```json
 {
@@ -203,7 +210,105 @@ Set `JSON_LOGS=true` for CloudWatch-friendly JSON:
 
 ---
 
-## Infrastructure (AWS)
+## Infrastructure (OCI)
+
+Production runs on one Oracle Cloud Always Free A1 instance (1 OCPU, 6 GB,
+Oracle Linux 9, `sa-valparaiso-1`), defined in `infra/oci/`. The migration
+from AWS, the cutover and the rollback are in
+[`docs/runbooks/oci-migration.md`](docs/runbooks/oci-migration.md); the design
+is in `docs/superpowers/specs/2026-11-27-oci-migration-design.md`.
+
+| File                       | Purpose                                                              |
+| -------------------------- | -------------------------------------------------------------------- |
+| `compartment.tf`           | Compartment, Always Free quotas, zero-spend budget                   |
+| `network.tf`               | VCN and subnet with no public ingress                                |
+| `compute.tf`               | Instance, data volume at `/var/lib/docker`, weekly volume backups    |
+| `cloud-init.sh`            | First boot: Docker, data volume, OCI CLI, `alter-deploy`             |
+| `vault.tf`                 | Vault, key, app secret, tunnel token secret                          |
+| `identity.tf`              | Instance dynamic group and policies, GitHub deployer user            |
+| `storage.tf`               | Database dump bucket (90-day lifecycle)                              |
+| `logging.tf`               | OCI Logging: container and host logs                                 |
+| `monitoring.tf`            | Email notifications and alarms                                       |
+| `bastion.tf`               | OCI Bastion for admin SSH                                            |
+| `cloudflare.tf`            | Cloudflare Tunnel, its ingress rules and DNS                         |
+| `scripts/admin-ssh.sh`     | Shell or one command on the server through Bastion                   |
+| `scripts/apply-with-retry.sh` | Retries the instance on "Out of host capacity"                    |
+
+There are no open ports. Public traffic arrives through the Cloudflare Tunnel
+(`cloudflared` runs in the compose stack), deploys through OCI Run Command, and
+admin shells through OCI Bastion.
+
+### Continuous deployment
+
+Every push to `main` builds the images (`cd.yml`) and then deploys them
+(`deploy.yml`):
+
+1. GitHub Actions creates a Run Command on the instance:
+   `sudo /usr/local/bin/alter-deploy <sha>`. The deployer API key may only
+   create these commands, and the agent user may only run `alter-deploy`.
+2. `alter-deploy` downloads the repo at that commit and runs its
+   `scripts/deploy.sh`, so the compose file and deploy logic on the server are
+   always the ones from the deployed commit.
+3. `deploy.sh` reads the secrets from Vault, runs the `sha-<short sha>` images,
+   waits for `/health`, and installs the host files in `deploy/host/`.
+4. The workflow checks the public `/health`.
+
+Roll back by deploying an older commit: **Actions > Deploy > Run workflow**
+with its full sha, or `gh workflow run deploy.yml -f sha=<sha>`.
+
+The deploy job only runs when the repository variable `OCI_DEPLOY_ENABLED` is
+`true`. The `production` environment holds `OCI_CLI_USER`, `OCI_CLI_TENANCY`,
+`OCI_CLI_FINGERPRINT`, `OCI_CLI_KEY_CONTENT` (secrets) and `OCI_CLI_REGION`,
+`OCI_COMPARTMENT_ID`, `OCI_INSTANCE_ID`, `API_HEALTH_URL` (variables); the
+runbook, step 7, sets them all.
+
+### Monitoring and logs
+
+- **Logs**: OCI Logging, log group `alter-tracker-backend`, log `server`
+  (containers plus `/var/log/alter-tracker/*.log`), 30 days. On the server,
+  `docker logs` still works.
+- **Alarms** to `infra-alerts@club-vanta.com`: CPU, memory, disk, error and
+  warning log lines, instance stopped reporting, and custom metrics stopped
+  arriving. Disk and log counts come from `deploy/host/push-metrics.sh` (cron,
+  every 5 minutes).
+- **Budget**: any actual spend in the tenancy sends an email. Everything here
+  is Always Free, so spend means something is wrong.
+- **UptimeRobot** on `/health`, as before.
+
+### Backups
+
+- The `backup` service dumps the database every 2 hours to the
+  `alter-tracker-backend-db-backups` bucket (kept 90 days).
+- The data volume has weekly backups, kept 3 weeks.
+- Restore with `scripts/restore_backup.sh` on the server (see the runbook,
+  step 9).
+
+### Credentials
+
+- **OCI**: `~/.oci/config`, profile `DEFAULT`, API key auth.
+- **Tofu state**: S3-compatible backend on OCI Object Storage, bucket
+  `alter-tracker-tofu-state`, with a Customer Secret Key in
+  `~/.oci/tofu-state-credentials` (runbook, steps 1 and 2).
+- **Cloudflare**: `infra/oci/terraform.tfvars` (gitignored). The token needs
+  Zone / DNS Edit and Account / Cloudflare Tunnel Edit.
+
+### Idle reclamation and capacity
+
+Oracle may reclaim an Always Free instance that is idle (CPU, network and
+memory under 20%) for 7 days, which applies to Free Tier accounts after the
+trial. Upgrading the account to Pay As You Go avoids it and keeps Always Free
+resources free; the quotas and the budget catch anything that would cost
+money. If the instance disappears, the `instance-absent` alarm fires and the
+runbook section "Si Oracle reclama o pierde la instancia" rebuilds it. If OCI
+answers "Out of host capacity", use `infra/oci/scripts/apply-with-retry.sh`.
+
+---
+
+## Infrastructure (AWS, until the cutover)
+
+The EC2 setup below serves production until the cutover in
+`docs/runbooks/oci-migration.md`, and stays stopped (not destroyed) for a while
+after it.
 
 The `infra/` directory contains OpenTofu/Terraform configuration:
 
@@ -466,7 +571,15 @@ Sync the guest list from Mazmo first via `POST /meetups/{meetup_id}/sync`.
 
 ### Access the production database
 
-The DB is a PostgreSQL container with no public port. Access it via SSM:
+The DB is a PostgreSQL container with no public port. On OCI, open a shell
+through Bastion; the container already has the credentials:
+
+```bash
+infra/oci/scripts/admin-ssh.sh
+sudo docker exec -it alter-tracker-db-1 sh -c 'psql -U "$POSTGRES_USER" -d alter_event_tracker'
+```
+
+On the AWS instance (until the cutover), via SSM:
 
 ```bash
 # 1. Open SSM session on the EC2 instance

@@ -1,0 +1,7 @@
+tenancy_ocid             = "ocid1.tenancy.oc1..your_tenancy_ocid"
+deployer_public_key_path = "~/.oci/alter-tracker-deployer_public.pem"
+cloudflare_account_id    = "your_cloudflare_account_id_here"
+cloudflare_api_token     = "your_api_token_here"
+
+# Flip at cutover (see README, "Cutover").
+# serve_production_hostname = true

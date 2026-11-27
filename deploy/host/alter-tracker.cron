@@ -1,0 +1,2 @@
+# Installed by scripts/deploy.sh as /etc/cron.d/alter-tracker.
+*/5 * * * * root /usr/local/bin/alter-push-metrics >/dev/null 2>>/var/log/alter-tracker/metrics.log

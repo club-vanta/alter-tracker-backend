@@ -16,8 +16,12 @@ data "cloudflare_zone" "club_vanta" {
 # A second-level subdomain like api.alter-tracker.club-vanta.com would cause a TLS cipher mismatch.
 # See: https://developers.cloudflare.com/ssl/troubleshooting/version-cipher-mismatch/#multi-level-subdomains
 
-# A record — updated each time the instance starts (IPv4 changes on every start)
+# A record - updated each time the instance starts (IPv4 changes on every start).
+# Set serve_from_aws = false at the OCI cutover: the OCI root then creates a
+# CNAME for the same name, which cannot coexist with these records.
 resource "cloudflare_dns_record" "api_a" {
+  count = var.serve_from_aws ? 1 : 0
+
   zone_id = data.cloudflare_zone.club_vanta.id
   name    = "api-alter-tracker"
   content = aws_instance.app_server.public_ip
@@ -26,14 +30,26 @@ resource "cloudflare_dns_record" "api_a" {
   ttl     = 1 # 1 = automatic (required when proxied = true)
 }
 
-# AAAA record — stable, IPv6 does not change between starts
+# AAAA record - stable, IPv6 does not change between starts
 resource "cloudflare_dns_record" "api_aaaa" {
+  count = var.serve_from_aws ? 1 : 0
+
   zone_id = data.cloudflare_zone.club_vanta.id
   name    = "api-alter-tracker"
   content = aws_instance.app_server.ipv6_addresses[0]
   type    = "AAAA"
   proxied = true
   ttl     = 1
+}
+
+moved {
+  from = cloudflare_dns_record.api_a
+  to   = cloudflare_dns_record.api_a[0]
+}
+
+moved {
+  from = cloudflare_dns_record.api_aaaa
+  to   = cloudflare_dns_record.api_aaaa[0]
 }
 
 # ── Health check ──────────────────────────────────────────────────────────────

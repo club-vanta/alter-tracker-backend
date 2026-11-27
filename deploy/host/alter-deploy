@@ -1,0 +1,34 @@
+#!/bin/bash
+# Entry point for deploys. cloud-init installs it as /usr/local/bin/alter-deploy
+# and lets the Oracle Cloud Agent user (ocarun) run it with sudo, nothing else.
+#
+# Usage: sudo alter-deploy <full 40-char commit sha>
+#
+# Downloads the repo at that commit and runs its scripts/deploy.sh, so the
+# compose file and deploy logic always match the commit being deployed.
+# Changes to this file need a new instance (or a manual copy): it lives
+# outside the release directories on purpose, as the one fixed piece.
+
+set -euo pipefail
+
+REPO="club-vanta/alter-tracker-backend"
+RELEASES="/opt/alter-tracker/releases"
+
+sha="${1:-}"
+if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Usage: alter-deploy <full 40-char commit sha>" >&2
+  exit 2
+fi
+
+release_dir="$RELEASES/$sha"
+if [[ ! -d "$release_dir" ]]; then
+  mkdir -p "$RELEASES"
+  tmp="$(mktemp -d "$RELEASES/.download.XXXXXX")"
+  trap 'rm -rf "$tmp"' EXIT
+  curl -fsSL --retry 3 "https://codeload.github.com/$REPO/tar.gz/$sha" |
+    tar -xz -C "$tmp" --strip-components=1
+  mv "$tmp" "$release_dir"
+  trap - EXIT
+fi
+
+exec "$release_dir/scripts/deploy.sh" "$sha" "$release_dir"

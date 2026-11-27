@@ -492,86 +492,71 @@ format         # ruff format
 
 ---
 
-## Produccion: la instancia EC2
+## Produccion: la instancia OCI
 
-El README tiene la guia para humanos (sesion interactiva, primer deploy, acceso a la DB). Esta seccion es para agentes: todo se hace con comandos no interactivos.
+El README tiene la guia para humanos y `docs/runbooks/oci-migration.md` la migracion, el cutover y el rollback. Esta seccion es para agentes: todo con comandos no interactivos.
 
 ### Datos fijos
 
 | Que | Valor |
 |-----|-------|
-| Instancia | `i-054c0dd0cd6c37dc5`, `us-east-1`, `t4g.small` (arm64) |
-| Estado normal | **Siempre prendida.** Los workflows `start-instance.yml` / `stop-instance.yml` existen pero no se usan en el dia a dia. |
-| API publica | `https://api-alter-tracker.club-vanta.com` (Cloudflare proxied, SSL flexible -> la instancia escucha en `:80`) |
-| Archivos en el server | `/home/ec2-user/deploy.sh`, `/home/ec2-user/docker-compose.yml` |
-| Contenedores | `ec2-user-app-1`, `ec2-user-db-1`, `ec2-user-weather-worker-1`, `ec2-user-backup-1` |
-| Secrets | Secrets Manager `alter-tracker-backend/secrets`, los lee `deploy.sh` con el rol de la instancia. Nunca leerlos desde afuera. |
-| Logs | CloudWatch, grupo `/alter-tracker-backend`, un stream por servicio (`app`, `db`, `migrate`, `seed`) |
+| Instancia | A1 Always Free (1 OCPU, 6 GB, aarch64), Oracle Linux 9, `sa-valparaiso-1`, compartment `alter-tracker`. OCID: `tofu -chdir=infra/oci output -raw instance_id` |
+| IaC | `infra/oci/` (state en Object Storage via backend s3). `infra/` es AWS y se retira despues del cutover |
+| API publica | `https://api-alter-tracker.club-vanta.com` por Cloudflare Tunnel (`cloudflared` en el compose). Hostname de prueba: `api-alter-tracker-oci.club-vanta.com` |
+| Puertos abiertos | Ninguno. Deploy por Run Command, shell por OCI Bastion |
+| Archivos en el server | `/opt/alter-tracker/current` -> release del ultimo deploy (repo completo en ese commit). `/usr/local/bin/alter-deploy` |
+| Contenedores | `alter-tracker-{db,app,weather-worker,cloudflared,backup}-1` |
+| Secrets | OCI Vault, secret `alter-tracker-backend-secrets`, los lee `deploy.sh` con instance principal. Nunca leerlos desde afuera |
+| Logs | OCI Logging, log group `alter-tracker-backend`, log `server`. En el server: `/var/log/alter-tracker/deploy.log` y `docker logs` |
 | Organizaciones | Club Vanta tiene slug `club-vanta`. La base es multi-organizacion: hay otras orgs que no se exponen en nada publico. |
+| Cuenta OCI | Free Tier. Nada fuera de Always Free: las quotas del compartment lo bloquean y el budget avisa |
 
 ### Credenciales
 
-Hace falta un perfil de AWS con permisos de SSM sobre la instancia. En la maquina del mantenedor es el perfil `base` de `~/.aws/credentials`: exportar `AWS_PROFILE=base` (no hay perfil `default`). Verificar con:
+`~/.oci/config`, perfil `DEFAULT` (API key).
+
+### Deploy
+
+Automatico: push a `main` -> `cd.yml` construye las imagenes -> `deploy.yml` crea un Run Command `sudo alter-deploy <sha>` -> el server baja el repo en ese commit y corre su `scripts/deploy.sh`. Nunca editar archivos a mano en el server: se pisan en el proximo deploy.
 
 ```bash
-aws ssm describe-instance-information --region us-east-1 \
-  --query 'InstanceInformationList[].{id:InstanceId,ping:PingStatus}' --output text
-# i-054c0dd0cd6c37dc5   Online
+gh run list --workflow deploy.yml --limit 3          # estado
+gh workflow run deploy.yml -f sha=<sha completo>     # redeploy o rollback
 ```
 
-### Correr un comando en la instancia (no interactivo)
+Los cambios a `docker-compose.yml`, `scripts/deploy.sh` y `deploy/host/` llegan solos con el deploy. `deploy/host/alter-deploy` y `infra/oci/cloud-init.sh` no: solo corren al crear la instancia.
 
-`aws ssm start-session` necesita una terminal y el plugin de Session Manager: no sirve para agentes. Usar `send-command` y leer el resultado. Los comandos corren como `root`.
+### Shell en el servidor (no interactivo)
+
+Run Command no sirve para operar: su usuario solo puede correr `alter-deploy`. Usar Bastion, que entra como `opc` (sudo sin password):
 
 ```bash
-CID=$(aws ssm send-command --region us-east-1 \
-  --instance-ids i-054c0dd0cd6c37dc5 \
-  --document-name AWS-RunShellScript \
-  --comment "que hace este comando" \
-  --parameters 'commands=["docker ps --format {{.Names}}"]' \
-  --query Command.CommandId --output text)
-sleep 5
-aws ssm get-command-invocation --region us-east-1 \
-  --command-id "$CID" --instance-id i-054c0dd0cd6c37dc5 \
-  --query '[Status,StandardOutputContent,StandardErrorContent]' --output text
+infra/oci/scripts/admin-ssh.sh 'sudo docker ps --format "{{.Names}} {{.Status}}"'
 ```
 
-Si `Status` es `InProgress`, esperar y volver a pedir la invocacion. Para comandos con comillas, el JSON de `commands` se vuelve dificil de escapar: escribir el script en un archivo y pasarlo con `--parameters file://params.json`.
+Cada llamada crea una sesion de Bastion (unos 30 segundos). Necesita `~/.ssh/id_ed25519` (o `SSH_KEY`).
 
 ### Consultas a la base (solo lectura)
 
-El contenedor `db` tiene `POSTGRES_USER` en su entorno, asi que no hace falta tocar los secrets:
-
 ```bash
-docker exec ec2-user-db-1 sh -c \
-  'psql -U "$POSTGRES_USER" -d alter_event_tracker -At -c "select name, slug from organizations"'
+infra/oci/scripts/admin-ssh.sh "sudo docker exec alter-tracker-db-1 sh -c 'psql -U \"\$POSTGRES_USER\" -d alter_event_tracker -At -c \"select name, slug from organizations\"'"
 ```
 
 Nunca correr `UPDATE`, `DELETE` ni DDL a mano: los cambios de datos van por migrations o scripts de `scripts/` con tests.
 
-### Deploy
-
-1. Push a `main` -> CD (`cd.yml`) construye y publica `ghcr.io/club-vanta/alter-tracker-backend:latest` (arm64). **No deploya solo.**
-2. En la instancia: `bash /home/ec2-user/deploy.sh`. Trae los secrets, hace `docker compose pull` y `up -d`; el servicio `migrate` corre `alembic upgrade head` antes de que arranque `app`.
-3. Verificar: `curl -s https://api-alter-tracker.club-vanta.com/health`.
-
-Antes de correr `deploy.sh`, confirmar que el job de CD de ese commit termino (`gh run list --workflow cd.yml --limit 1`): si no, se baja la imagen anterior.
-
-### Cambios a `docker-compose.yml` o `deploy.sh`
-
-Los dos archivos se copiaron al server una sola vez, en el `user_data` de la instancia, y `infra/ec2.tf` ignora cambios a `user_data` (`lifecycle.ignore_changes`). O sea: **editar el archivo en el repo no cambia el server**, y `tofu apply` no reemplaza la instancia por eso. Para llevar un cambio:
-
-1. Backup en el server: `cp /home/ec2-user/docker-compose.yml /home/ec2-user/docker-compose.yml.bak-$(date +%F)`.
-2. Comparar el archivo del server con el del repo en `main` (`cat` por SSM y `diff` local). Si difieren en algo que no es el cambio nuevo, frenar y averiguar por que antes de pisarlo.
-3. Aplicar el mismo cambio en el server y correr `deploy.sh`.
-
 ### Correr un script de `scripts/` en produccion
 
-Dentro del contenedor `app`, que ya tiene `DATABASE_URL`:
-
 ```bash
-docker exec -e PYTHONPATH=/app ec2-user-app-1 python scripts/<script>.py
+infra/oci/scripts/admin-ssh.sh 'sudo docker exec -e PYTHONPATH=/app alter-tracker-app-1 python scripts/<script>.py'
 ```
+
+### Cambios de infra
+
+`tofu -chdir=infra/oci plan` y mostrar el plan antes de cualquier `apply`. Todo recurso nuevo tiene que ser Always Free. La instancia ignora cambios de imagen y de `cloud-init.sh` a proposito: reemplazarla es `tofu apply -replace=oci_core_instance.app` (los datos viven en el block volume, con `prevent_destroy`).
+
+### Hasta el cutover: la EC2
+
+Mientras `docs/runbooks/oci-migration.md` no llegue al paso 10, produccion sigue en la EC2 `i-054c0dd0cd6c37dc5` (`us-east-1`, perfil de AWS `base`). Se opera con `aws ssm send-command` (los comandos corren como root; esperar y leer con `get-command-invocation`). Contenedores `ec2-user-*-1`, archivos en `/home/ec2-user/`. Antes de tocar un archivo ahi: backup y diff contra `main`.
 
 ---
 

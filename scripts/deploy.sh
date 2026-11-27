@@ -1,50 +1,120 @@
 #!/bin/bash
-# Run this on the EC2 instance to start (or update) the application.
-# The instance IAM role provides access to AWS Secrets Manager — no credentials needed.
-# Secrets are loaded into shell environment variables only — nothing is written to disk.
+# Deploys one commit on the OCI instance. Do not run it directly: the CD
+# workflow calls /usr/local/bin/alter-deploy <sha> through OCI Run Command,
+# and alter-deploy downloads the release and runs this script as root.
 #
-# Usage:
-#   deploy.sh
+# Usage: deploy.sh <full commit sha> <release dir>
 #
-# On first run: pulls the image, runs migrations, seeds the admin user, starts the app.
-# On subsequent runs: pulls the latest image and restarts the app.
+# - Reads configuration from instance metadata (set by infra/oci) and
+#   secrets from OCI Vault with the instance principal. Secrets only live in
+#   this process's environment; nothing is written to disk.
+# - Runs the images tagged sha-<short sha>. Redeploying an older sha is the
+#   rollback.
+# - Installs the host files in deploy/host/ from the same release.
 
 set -euo pipefail
 
-REGION="us-east-1"
-SECRET_ID="alter-tracker-backend/secrets"
-COMPOSE_FILE="/home/ec2-user/docker-compose.yml"
+sha="$1"
+release_dir="$2"
 
-echo "Fetching secrets from AWS Secrets Manager..."
-SECRET_JSON=$(aws secretsmanager get-secret-value \
-  --secret-id "$SECRET_ID" \
-  --region "$REGION" \
-  --query SecretString \
-  --output text)
+OCI="/opt/oci-cli/bin/oci"
+BASE="/opt/alter-tracker"
+LOG_DIR="/var/log/alter-tracker"
+KEEP_RELEASES=5
 
-extract() {
-  echo "$SECRET_JSON" | python3 -c "import sys, json; print(json.load(sys.stdin)['$1'])"
+mkdir -p "$LOG_DIR"
+# Run Command only returns the last 1 KB of output: the full log goes to a
+# file that the Unified Monitoring Agent ships to OCI Logging.
+exec > >(tee -a "$LOG_DIR/deploy.log") 2>&1
+echo "== Deploy ${sha} started at $(date -u +%FT%TZ)"
+
+# -- Configuration from instance metadata --
+
+instance="$(curl -sf -H 'Authorization: Bearer Oracle' http://169.254.169.254/opc/v2/instance/)"
+meta() {
+  jq -er --arg k "$1" '.metadata[$k]' <<<"$instance"
 }
 
-DB_USER=$(extract db_user)
-export DB_USER
+OCI_REGION="$(jq -er .canonicalRegionName <<<"$instance")"
+OCI_COMPARTMENT_ID="$(jq -er .compartmentId <<<"$instance")"
+OCI_NAMESPACE="$(meta oci_namespace)"
+BACKUP_BUCKET="$(meta backup_bucket)"
+export OCI_REGION OCI_COMPARTMENT_ID OCI_NAMESPACE BACKUP_BUCKET
 
-DB_PASSWORD=$(extract db_password)
-export DB_PASSWORD
+vault_id="$(meta vault_id)"
 
-JWT_SIGNING_KEY=$(extract jwt_signing_key)
-export JWT_SIGNING_KEY
+# -- Secrets from OCI Vault --
 
-ADMIN_USERNAME=$(extract admin_username)
-export ADMIN_USERNAME
+read_secret() {
+  "$OCI" secrets secret-bundle get-secret-bundle-by-name \
+    --auth instance_principal \
+    --region "$OCI_REGION" \
+    --vault-id "$vault_id" \
+    --secret-name "$1" \
+    --query 'data."secret-bundle-content".content' \
+    --raw-output | base64 -d
+}
 
-ADMIN_PASSWORD=$(extract admin_password)
-export ADMIN_PASSWORD
+app_secrets="$(read_secret "$(meta app_secret_name)")"
+field() {
+  if ! jq -er --arg k "$1" '.[$k]' <<<"$app_secrets"; then
+    echo "Cannot deploy: the Vault secret $(meta app_secret_name) has no '$1' field." \
+      "Populate it as described in README, \"Production secrets\"." >&2
+    exit 1
+  fi
+}
 
-echo "Pulling latest image..."
-docker compose -f "$COMPOSE_FILE" pull
+DB_USER="$(field db_user)"
+DB_PASSWORD="$(field db_password)"
+JWT_SIGNING_KEY="$(field jwt_signing_key)"
+ADMIN_USERNAME="$(field admin_username)"
+ADMIN_PASSWORD="$(field admin_password)"
+TUNNEL_TOKEN="$(read_secret "$(meta tunnel_secret_name)")"
+export DB_USER DB_PASSWORD JWT_SIGNING_KEY ADMIN_USERNAME ADMIN_PASSWORD TUNNEL_TOKEN
+unset app_secrets
+
+# Same tag the CD workflow pushes (docker/metadata-action, format=short).
+IMAGE_TAG="sha-${sha:0:7}"
+export IMAGE_TAG
+
+# -- Containers --
+
+compose=(docker compose -f "$release_dir/docker-compose.yml")
+
+echo "Pulling ${IMAGE_TAG}..."
+"${compose[@]}" pull --quiet
 
 echo "Starting services..."
-docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
+"${compose[@]}" up -d --remove-orphans
 
-echo "Done. App is running on :80"
+echo "Waiting for the app health check..."
+healthy=false
+for _ in $(seq 1 90); do
+  if curl -sf http://127.0.0.1:8000/health >/dev/null; then
+    healthy=true
+    break
+  fi
+  sleep 2
+done
+
+if [[ "$healthy" != true ]]; then
+  echo "Deploy FAILED: the app did not answer /health within 3 minutes. Last logs:"
+  "${compose[@]}" logs --tail 40 migrate app
+  exit 1
+fi
+
+# -- Host files from this release --
+
+install -m 755 "$release_dir/deploy/host/push-metrics.sh" /usr/local/bin/alter-push-metrics
+install -m 644 "$release_dir/deploy/host/alter-tracker.cron" /etc/cron.d/alter-tracker
+ln -sfn "$release_dir" "$BASE/current"
+
+# -- Cleanup --
+
+docker image prune -af --filter "until=168h" >/dev/null
+# Keep the newest releases, never the one just deployed.
+find "$BASE/releases" -mindepth 1 -maxdepth 1 -type d -not -name '.*' -printf '%T@ %p\n' |
+  sort -rn | tail -n "+$((KEEP_RELEASES + 1))" | cut -d' ' -f2- |
+  grep -vxF "$release_dir" | xargs -r rm -rf
+
+echo "== Deploy ${sha} OK (${IMAGE_TAG})"

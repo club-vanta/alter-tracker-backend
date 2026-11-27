@@ -1,7 +1,33 @@
+# Production stack. The server never keeps its own copy of this file:
+# /usr/local/bin/alter-deploy downloads it from the commit being deployed
+# (see scripts/deploy.sh), so what runs is always what is in git.
+#
+# Required environment (set by scripts/deploy.sh from OCI Vault):
+#   DB_USER, DB_PASSWORD, JWT_SIGNING_KEY, ADMIN_USERNAME, ADMIN_PASSWORD,
+#   TUNNEL_TOKEN, IMAGE_TAG, BACKUP_BUCKET, OCI_NAMESPACE, OCI_REGION,
+#   OCI_COMPARTMENT_ID
+
+# Fixed project name: every release runs from its own directory, and the
+# project name decides the volume and container names.
+name: alter-tracker
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+    # Adds attrs.com.docker.compose.service to every line, so OCI Logging
+    # can tell the services apart.
+    labels: com.docker.compose.service
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/alter_event_tracker
+  JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
+  JSON_LOGS: "true"
+
 services:
   db:
     image: postgres:18
-    pull_policy: always
     restart: unless-stopped
     environment:
       POSTGRES_DB: alter_event_tracker
@@ -13,110 +39,83 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d alter_event_tracker"]
       interval: 5s
       retries: 5
-    logging:
-      driver: awslogs
-      options:
-        awslogs-region: us-east-1
-        awslogs-group: /alter-tracker-backend
-        awslogs-stream: db
+    logging: *logging
 
   migrate:
-    image: ghcr.io/club-vanta/alter-tracker-backend:latest
-    pull_policy: always
+    image: ghcr.io/club-vanta/alter-tracker-backend:${IMAGE_TAG:?IMAGE_TAG is required}
     command: alembic upgrade head
-    environment:
-      DATABASE_URL: postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/alter_event_tracker
-      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
+    environment: *app-env
     depends_on:
       db:
         condition: service_healthy
     restart: on-failure
-    logging:
-      driver: awslogs
-      options:
-        awslogs-region: us-east-1
-        awslogs-group: /alter-tracker-backend
-        awslogs-stream: migrate
+    logging: *logging
 
   seed:
-    image: ghcr.io/club-vanta/alter-tracker-backend:latest
-    pull_policy: always
+    image: ghcr.io/club-vanta/alter-tracker-backend:${IMAGE_TAG:?IMAGE_TAG is required}
     command: python scripts/seed_admin.py
     environment:
+      <<: *app-env
       PYTHONPATH: /app
-      DATABASE_URL: postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/alter_event_tracker
-      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
       ADMIN_USERNAME: ${ADMIN_USERNAME}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
     depends_on:
       migrate:
         condition: service_completed_successfully
     restart: on-failure
-    logging:
-      driver: awslogs
-      options:
-        awslogs-region: us-east-1
-        awslogs-group: /alter-tracker-backend
-        awslogs-stream: seed
+    logging: *logging
 
   app:
-    image: ghcr.io/club-vanta/alter-tracker-backend:latest
-    pull_policy: always
+    image: ghcr.io/club-vanta/alter-tracker-backend:${IMAGE_TAG:?IMAGE_TAG is required}
     restart: always
+    # Only reachable from the host (deploy health check). Public traffic
+    # arrives through cloudflared over the compose network.
     ports:
-      - "80:8000"
+      - "127.0.0.1:8000:8000"
     environment:
-      DATABASE_URL: postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/alter_event_tracker
-      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
-      JSON_LOGS: "true"
+      <<: *app-env
       PUBLIC_ALTERS_ORG_SLUG: club-vanta
     depends_on:
       migrate:
         condition: service_completed_successfully
-    logging:
-      driver: awslogs
-      options:
-        awslogs-region: us-east-1
-        awslogs-group: /alter-tracker-backend
-        awslogs-stream: app
+    logging: *logging
 
   weather-worker:
-    image: ghcr.io/club-vanta/alter-tracker-backend:latest
-    pull_policy: always
+    image: ghcr.io/club-vanta/alter-tracker-backend:${IMAGE_TAG:?IMAGE_TAG is required}
     restart: always
     command: python -m app.jobs.weather_worker
     stop_grace_period: 20s
-    environment:
-      DATABASE_URL: postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/alter_event_tracker
-      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY}
-      JSON_LOGS: "true"
+    environment: *app-env
     depends_on:
       migrate:
         condition: service_completed_successfully
-    logging:
-      driver: awslogs
-      options:
-        awslogs-region: us-east-1
-        awslogs-group: /alter-tracker-backend
-        awslogs-stream: weather-worker
+    logging: *logging
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.11.2
+    restart: always
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    depends_on:
+      - app
+    logging: *logging
 
   backup:
-    image: ghcr.io/club-vanta/alter-tracker-backend-backup:latest
-    pull_policy: always
+    image: ghcr.io/club-vanta/alter-tracker-backend-backup:${IMAGE_TAG:?IMAGE_TAG is required}
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/alter_event_tracker
-      BACKUP_BUCKET: alter-tracker-backend-db-backups-784421200272
-      AWS_DEFAULT_REGION: us-east-1
+      # rclone on-the-fly remote, configured by the RCLONE_OOS_* variables.
+      BACKUP_REMOTE: ":oracleobjectstorage:${BACKUP_BUCKET}"
+      RCLONE_OOS_PROVIDER: instance_principal_auth
+      RCLONE_OOS_NAMESPACE: ${OCI_NAMESPACE}
+      RCLONE_OOS_REGION: ${OCI_REGION}
+      RCLONE_OOS_COMPARTMENT: ${OCI_COMPARTMENT_ID}
     depends_on:
       db:
         condition: service_healthy
-    logging:
-      driver: awslogs
-      options:
-        awslogs-region: us-east-1
-        awslogs-group: /alter-tracker-backend
-        awslogs-stream: backup
+    logging: *logging
 
 volumes:
   postgres_data:

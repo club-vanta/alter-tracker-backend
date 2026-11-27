@@ -14,6 +14,7 @@ in {
     httpie
     ruff
     basedpyright
+    shellcheck
   ];
 
   languages.python = {
@@ -30,7 +31,7 @@ in {
 
   env = {
     # ── Database ────────────────────────────────────────────────────────────────
-    # In production these come from AWS Secrets Manager (db_user / db_password fields).
+    # In production these come from OCI Vault (db_user / db_password fields).
     DB_USER = dbUser;
     DB_PASSWORD = dbPassword;
     DATABASE_URL = "postgresql+psycopg://${dbUser}:${dbPassword}@localhost:5432/alter_event_tracker";
@@ -40,7 +41,7 @@ in {
     ADMIN_PASSWORD = "insecure-changeme-123";
 
     # ── Auth ────────────────────────────────────────────────────────────────────
-    # Dummy JWT key for local dev only. In production this comes from AWS Secrets Manager.
+    # Dummy JWT key for local dev only. In production this comes from OCI Vault.
     JWT_SIGNING_KEY = "local-dev-insecure-key-do-not-use-in-production";
 
     # ── App ─────────────────────────────────────────────────────────────────────
